@@ -13,11 +13,9 @@
 //   attend sur channel     ←    invoke("notify_user_response", {token, result})
 //   résout Future               ferme bannière
 //
-// NB: remove_engine / remove_template / load_board_state / book_history_view
-// ne sont PAS gérées ici : ce sont des actions métier qui appartiennent au
-// SharedWorker (controller.removeEngine, controller.removeTemplate, etc.
-// dans match-worker.js), exposées via match_cmds.rs/template_cmds.rs et
-// dispatch_to_worker(), pas dupliquées localement en Rust.
+// NB: remove_template est gérée dans template_cmds.rs. Les moteurs externes
+// configurables (remove_engine, etc.) ont été retirés : Fairy-Stockfish est
+// désormais embarqué dans Jocly en WASM, plus rien à paramétrer côté app.
 
 use serde::Serialize;
 use std::collections::HashMap;

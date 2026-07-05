@@ -50,8 +50,18 @@ pub fn parse_pjn(data: String) -> Result<Vec<serde_json::Value>, String> {
     let mut matches = Vec::new();
     let mut offset  = 0usize;
 
-    // Découper par blocs de tags + coups (séparés par lignes vides)
-    let blocks: Vec<&str> = data.split("\n\n").collect();
+    // Les PGN du monde réel sont souvent en fins de ligne Windows (\r\n) et
+    // séparent parfois les parties par plusieurs lignes vides : sans cette
+    // normalisation, split("\n\n") ne trouve aucun bloc et le parsing
+    // retourne une liste vide ("Loading..." éternel dans la fenêtre book).
+    let data = data.replace("\r\n", "\n").replace('\r', "\n");
+    // Découper par blocs de tags + coups (séparés par lignes vides),
+    // en ignorant les blocs vides issus de lignes vides consécutives
+    let blocks: Vec<&str> = data
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+        .collect();
     let mut i = 0;
     while i < blocks.len() {
         let tag_block  = blocks[i].trim();

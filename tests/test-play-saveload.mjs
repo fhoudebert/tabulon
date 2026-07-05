@@ -6,7 +6,8 @@
 // il détecte notamment les appels userTurn() concurrents — la signature de
 // l'ancien bug de double boucle au Load.
 // Usage : node test-play-saveload.mjs   (depuis tabulon/)
-import { JSDOM } from './app/node_modules/jsdom/lib/api.js';
+import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 
 // ── Mock Tauri : bus d'events en mémoire + dialog.save pilotable ─────────────
@@ -96,7 +97,7 @@ globalThis.Jocly = {
 const clockEvents = [];
 await mockTauri.event.listen('play-event:3:update-clock', ({ payload }) => clockEvents.push(payload));
 
-await import('./app/content/play.js');
+await import('../app/content/play.js');
 document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -120,9 +121,22 @@ await waitFor(() => match.pendingUserTurn && clockEvents.some(e => e.clock.turn 
   'tour suivant');
 assert(clockEvents.at(-1).clock.mode === 'countup', 'sans clocked play : horloge countup par défaut (comme JoclyBoard)');
 
-// 1b. Bouton '…' : bascule montre/masque la barre de boutons (persistée)
+// 1b. Bouton '…' : bascule barre ⟷ sélecteurs de joueurs (persistée).
+// Le couplage est en CSS pur (.bar-visible masque .player-select-wrap) :
+// on vérifie la classe + la présence de la règle CSS d'exclusion mutuelle.
 const actions = document.querySelector('.ephemeral-actions');
-assert(!actions.classList.contains('bar-visible'), 'barre masquée par défaut');
+assert(!actions.classList.contains('bar-visible'), 'barre masquée par défaut → joueurs A/B visibles');
+{
+  const css = readFileSync('./app/content/tabulon.css', 'utf-8');
+  assert(css.includes('.ephemeral-actions.bar-visible .player-select-wrap { display: none; }'),
+    'règle CSS : barre visible → sélecteurs de joueurs masqués');
+  assert(css.includes('.ephemeral-actions.bar-visible #toggle-bar-group { margin-left: 0; }'),
+    "règle CSS : barre visible → '…' collé à droite de la barre (pas centré)");
+  const barGroup = document.querySelector('.ephemeral-appear');
+  const toggleGroup = document.getElementById('toggle-bar-group');
+  assert(barGroup.nextElementSibling === toggleGroup,
+    "DOM : le bouton '…' suit immédiatement la barre de boutons");
+}
 document.getElementById('button-toggle-bar').click();
 assert(actions.classList.contains('bar-visible'), 'clic … → barre visible');
 document.getElementById('button-toggle-bar').click();

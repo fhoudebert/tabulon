@@ -1,5 +1,6 @@
 // app/content/save-template.js
 import tRpc from './tabulon-rpc.js';
+import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 
 const matchId = (function () {
@@ -13,7 +14,8 @@ const initialName = (function () {
 })();
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await twu.init(`Save #${matchId} as template`);
+    await initI18n();
+    await twu.init(t('saveTemplate.title', { id: matchId }));
 
     const input      = document.querySelector('input');
     const btnSave    = document.getElementById('button-save');

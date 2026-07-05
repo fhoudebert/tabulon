@@ -175,7 +175,7 @@ html, body {
 /* On réimporte uniquement le woff2 des icônes sans le reste de photonkit */
 @font-face {
   font-family: 'photon-entypo';
-  src: url('../node_modules/photonkit/dist/fonts/photon-entypo.woff') format('woff');
+  src: url('../fonts/photon-entypo.woff') format('woff'), url('../fonts/photon-entypo.ttf') format('truetype');
 }
 .icon {
   font-family: 'photon-entypo';
@@ -415,6 +415,8 @@ strong { font-weight: 600; }
   cursor: pointer;
   text-decoration: underline;
 }
+
+.object-list-item .media-object { flex: 0 0 auto; border-radius: var(--radius); }
 
 /* ── Raccourcis dans les listes (portés de JoclyBoard, adaptés en flex) ─────── */
 /* Les items de liste passent en flex : l'image, le corps, puis les raccourcis
@@ -885,6 +887,13 @@ strong { font-weight: 600; }
    bascule se fait au CLIC sur le bouton '…' (#button-toggle-bar) — plus
    adapté à la tablette où le survol n'existe pas. play.js pose/retire la
    classe .bar-visible et persiste l'état dans le store. */
+/* Le bouton '…' est aligné à droite : marge auto quand il est seul (barre
+   masquée) ; quand la barre est visible, c'est ELLE qui porte la marge auto
+   (pull-right) et le '…' se colle à sa droite — deux marges auto simultanées
+   répartiraient l'espace et centreraient le bouton. */
+#toggle-bar-group { margin-left: auto; }
+.ephemeral-actions.bar-visible #toggle-bar-group { margin-left: 0; }
+
 .ephemeral-actions .ephemeral-appear { display: none; }
 .ephemeral-actions.bar-visible .ephemeral-appear { display: inline-flex; }
 /* Les sélecteurs de joueurs A/B et la barre s'excluent mutuellement :

@@ -29,7 +29,12 @@ pub fn new_match(
     state: State<AppState>,
     game_name: String,
     clock: Option<Value>,
-    fork_id: Option<u32>,
+    // String et non u32 : les ids de fork viennent de trois sources JS —
+    // le bouton Fork (id numérique du match parent), book.js ('book-…') et
+    // open-position.js ('pos-…'). Un Option<u32> faisait échouer la
+    // désérialisation pour les deux derniers : l'invoke rejetait en silence
+    // et cliquer une partie du livre / le bouton Open restait sans effet.
+    fork_id: Option<String>,
 ) -> Result<u32, String> {
     let id = state.next_match_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

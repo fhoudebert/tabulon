@@ -1,7 +1,8 @@
 // app/content/camera-view.js
 import tRpc       from './tabulon-rpc.js';
+import { initI18n, t } from './tabulon-i18n.js';
 import twu        from './tabulon-winutils.js';
-import { open, message as dlgMessage, ask, Store } from './tauri-bridge.js';
+import { open, message as dlgMessage, ask, Store, listen, emit } from './tauri-bridge.js';
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);
@@ -62,7 +63,7 @@ function AddViewPoint(camera, id, title) {
     li.appendChild(del);
     li.appendChild(ren);
     li.addEventListener('click', () => {
-        tRpc.call('set_camera', matchId, {
+        emit(`play-req:${matchId}:set-camera`, {
             type: 'move', camera: vp.camera,
             speed: selectedSpeed,
             smooth: parseFloat(document.getElementById('kalman').value) || 0.001
@@ -102,7 +103,7 @@ function AddSpeed(speedValue, id) {
 }
 
 function Spin(direction) {
-    tRpc.call('set_camera', matchId, {
+    emit(`play-req:${matchId}:set-camera`, {
         type: 'spin', direction,
         speed: selectedSpeed,
         smooth: parseFloat(document.getElementById('kalman').value) || 0.001
@@ -110,6 +111,10 @@ function Spin(direction) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Réponses de play.js aux requêtes get-camera ("Add view point")
+    await listen(`play-rep:${matchId}:get-camera`, ({ payload }) => {
+        if (payload?.camera) AddViewPoint(payload.camera);
+    });
     store = await Store.load('tabulon.json');
 
     const storedVPs = await store.get('camera-view:' + gameName) || [];
@@ -119,9 +124,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.querySelector('.add-view-point').addEventListener('click', () => {
-        tRpc.call('get_camera', matchId)
-            .then(AddViewPoint)
-            .catch(e => dlgMessage(e.message, { title: 'Getting camera', kind: 'error' }));
+        // La caméra courante arrive par play-rep:get-camera (listener ci-dessous)
+        emit(`play-req:${matchId}:get-camera`, null);
     });
 
     const storedSpeeds = await store.get('camera-view-speeds:' + gameName) || [];
@@ -146,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('spin-cw').addEventListener('click',  () => Spin('cw'));
     document.getElementById('spin-ccw').addEventListener('click', () => Spin('ccw'));
     document.getElementById('pause').addEventListener('click', () => {
-        tRpc.call('set_camera', matchId, { type: 'stop' })
+        emit(`play-req:${matchId}:set-camera`, { type: 'stop' })
             .catch(e => dlgMessage(e.message, { title: 'Stop camera', kind: 'error' }));
     });
 
@@ -154,7 +158,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         open('https://github.com/mi-g/joclyboard/wiki/Camera-View');
     });
 
-    await twu.init('Camera View #' + matchId);
+    await initI18n();
+    await twu.init(t('cameraView.title', { id: matchId }));
     document.getElementById('button-close').addEventListener('click', () => tRpc.close());
     twu.ready();
 });

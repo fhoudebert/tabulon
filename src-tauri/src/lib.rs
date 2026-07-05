@@ -65,10 +65,8 @@ pub fn run() {
             window_cmds::open_info,
             window_cmds::open_board_state,
             window_cmds::open_book,
-            window_cmds::open_book_match,
             window_cmds::open_moves,
             window_cmds::relay_to_window,
-            window_cmds::open_book_history,
             window_cmds::open_position,
             // ── Hub ───────────────────────────────────────────────────────────
             hub_cmds::get_app_info,

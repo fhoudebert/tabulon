@@ -7,7 +7,8 @@
 // Après le fix : la liste DOIT se charger quand même (mode dégradé), avec un
 // message d'erreur actionnable en console.
 // Usage : node test-hub-degraded.mjs   (depuis tabulon/)
-import { JSDOM } from './app/node_modules/jsdom/lib/api.js';
+import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -50,9 +51,9 @@ dom.window.__TAURI__ = mockTauri;
 const BASE = 'https://tauri.localhost/';
 dom.window.BrowserScriptLoader = {
   getBaseURL: () => BASE,
-  import: (p) => Promise.resolve(require('./dist/node/' + p)),
+  import: (p) => Promise.resolve(require('../dist/node/' + p)),
 };
-globalThis.Jocly = require('./dist/node/jocly.core.js');
+globalThis.Jocly = require('../dist/node/jocly.core.js');
 
 // Capturer les erreurs console pour vérifier le message actionnable
 const errors = [];
@@ -62,7 +63,7 @@ console.error = (...a) => { errors.push(a.join(' ')); origError(...a); };
 // storer un last-game pour vérifier que la restauration ne plante pas non plus
 storeData.set('last-game', 'classic-chess');
 
-await import('./app/content/hub.js');
+await import('../app/content/hub.js');
 document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -95,8 +96,7 @@ assert($$('#game-list li').length === 125, 'navigation Favorites/All fonctionnel
 const li0 = $$('#game-list li')[0];
 li0.querySelector('.list-shortcut-play').click();
 assert(invokeCalls.some(c => c.cmd === 'new_match'), 'raccourci Quick play fonctionnel');
-li0.querySelector('.list-shortcut-clock').click();
-assert(invokeCalls.some(c => c.cmd === 'open_clock_setup'), 'raccourci Clocked play fonctionnel');
+assert(!li0.querySelector('.list-shortcut-clock'), 'raccourci horloge absent (retiré)');
 
 // 4. Cliquer un jeu ne plante pas (SelectGame court-circuité proprement)
 li0.click();

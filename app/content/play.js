@@ -323,6 +323,33 @@ function initSatelliteListeners() {
         await joclyMatch.rollback(payload?.index ?? 0).catch(e => console.warn('[play] rollback:', e));
     });
 
+    // get-board-state : état du plateau (FEN ou équivalent Jocly) pour la
+    // fenêtre show-position ("Display board state" de la fenêtre History)
+    listen(prefix + 'get-board-state', async () => {
+        if (!joclyMatch) return;
+        const state = await joclyMatch.getBoardState().catch(() => null);
+        await emit(`play-rep:${matchId}:get-board-state`, { state });
+    });
+
+    // load-board-state : recharge la partie depuis un état saisi dans la
+    // fenêtre open-position (équivalent joclyboard::loadBoardState avec match)
+    listen(prefix + 'load-board-state', async ({ payload }) => {
+        if (!joclyMatch || !payload?.state) return;
+        await joclyMatch.abortUserTurn().catch(() => {});
+        await joclyMatch.abortMachineSearch().catch(() => {});
+        try {
+            await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: payload.state });
+            paused = false;
+            UpdatePause();
+            UpdateFooter('');
+            emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+            if (!loopActive) gameLoop();
+        } catch (e) {
+            console.warn('[play] load-board-state:', e.message || e);
+            UpdateFooter(t('play.loadFailed'));
+        }
+    });
+
     // get-clock : état de l'horloge pour la fenêtre clock.html
     listen(prefix + 'get-clock', async () => {
         await emit(`play-rep:${matchId}:get-clock`, ClockPayload());
@@ -332,7 +359,41 @@ function initSatelliteListeners() {
     listen(prefix + 'get-possible-moves', async () => {
         if (!joclyMatch) return;
         const moves = await joclyMatch.getPossibleMoves().catch(() => []);
-        await emit(`play-rep:${matchId}:get-possible-moves`, { moves: moves || [] });
+        const strMoves = await joclyMatch.getMoveString(moves).catch(() => []);
+        await emit(`play-rep:${matchId}:get-possible-moves`, { moves: moves || [], strMoves: strMoves || [] });
+    });
+
+    // input-move : joue un coup choisi dans la fenêtre "Possible moves"
+    // (équivalent joclyboard::inputMove) — on interrompt le userTurn en
+    // attente puis on applique ; la boucle reprend sur le tour suivant.
+    listen(prefix + 'input-move', async ({ payload }) => {
+        if (!joclyMatch || !payload?.move) return;
+        await joclyMatch.abortUserTurn().catch(() => {});
+        await joclyMatch.playMove(payload.move).catch(e => console.warn('[play] input-move:', e));
+        await ClockTurn(await joclyMatch.getTurn().catch(() => null)).catch(() => {});
+        emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+    });
+
+    // show-move : aperçu d'un coup au survol (best-effort : selon le jeu,
+    // le viewControl Jocly peut ne pas supporter la mise en évidence — on
+    // ignore alors silencieusement)
+    listen(prefix + 'show-move', async ({ payload }) => {
+        if (!joclyMatch) return;
+        await joclyMatch.viewControl('showMoves', { moves: payload?.move ? [payload.move] : [] })
+            .catch(() => {});
+    });
+
+    // get-camera / set-camera : pilotage caméra 3D (fenêtre camera-view),
+    // équivalent des messages getCamera/setCamera de joclyboard via
+    // l'API Jocly viewControl.
+    listen(prefix + 'get-camera', async () => {
+        if (!joclyMatch) return;
+        const camera = await joclyMatch.viewControl('getCamera').catch(() => null);
+        await emit(`play-rep:${matchId}:get-camera`, { camera });
+    });
+    listen(prefix + 'set-camera', async ({ payload }) => {
+        if (!joclyMatch) return;
+        await joclyMatch.viewControl('setCamera', payload || {}).catch(e => console.warn('[play] set-camera:', e));
     });
 }
 
@@ -388,7 +449,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (saveData) {
             await store?.set('fork:' + matchId, saveData);
         }
-        await tRpc.call('new_match', gameName, null, matchId);
+        await tRpc.call('new_match', gameName, null, String(matchId));
     });
     btn('button-camera',   () => tRpc.call('open_camera_view', matchId, gameName));
 
@@ -554,10 +615,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     console.info('[play] element attached', clockConfig ? '(with clock)' : '', forkId ? '(fork)' : '');
 
-    // Si fork : charger la position sauvegardee par la fenetre parente
+    // Rejoue une partie de livre (PGN/PJN) : coups SAN résolus un par un via
+    // l'API Jocly pickMove (qui matche la notation contre les coups légaux)
+    // puis appliqués par playMove. On tolère les décorations (+ # ! ?) en
+    // retentant sans elles si pickMove ne trouve pas.
+    async function BookReplay(book) {
+        let played = 0;
+        for (const tok of book.moves || []) {
+            let move = await joclyMatch.pickMove(tok).catch(() => null);
+            if (!move) move = await joclyMatch.pickMove(tok.replace(/[+#!?]+$/, '')).catch(() => null);
+            if (!move) { console.warn('[play] book: coup non résolu:', tok, 'après', played, 'coups'); break; }
+            await joclyMatch.playMove(move);
+            played++;
+        }
+        paused = true;
+        UpdatePause();
+        UpdateFooter(`${book.playerA || t('common.playerA')} vs ${book.playerB || t('common.playerB')}`);
+        emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+        console.info('[play] book: ' + played + ' coups rejoués');
+    }
+
+    // Si fork : charger la position sauvegardee par la fenetre parente.
+    // Cas particulier : payload {book} déposé par book.js → rejeu PGN/PJN.
     if (forkId) {
         const saveData = await store?.get('fork:' + forkId).catch(() => null);
-        if (saveData) {
+        if (saveData?.book) {
+            await BookReplay(saveData.book);
+            store?.delete('fork:' + forkId).catch(() => {});
+        } else if (saveData) {
             await joclyMatch.load(saveData).catch(e => console.warn('[play] fork load failed:', e));
             store?.delete('fork:' + forkId).catch(() => {});
         }

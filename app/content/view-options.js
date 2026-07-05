@@ -3,6 +3,7 @@
 // Communique avec play.html via Tauri events (play-req/play-rep:{matchId}:*).
 
 import tRpc from './tabulon-rpc.js';
+import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { listen, emit } from './tauri-bridge.js';
 
@@ -79,7 +80,8 @@ function ReadOptions() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await twu.init('View Options #' + matchId);
+    await initI18n();
+    await twu.init(t('viewOptions.title', { id: matchId }));
 
     // Recevoir la reponse de play.html
     listen('play-rep:' + matchId + ':get-view-options', ({ payload }) => {

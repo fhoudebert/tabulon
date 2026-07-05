@@ -5,7 +5,8 @@
 
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
-import { listen, emit } from './tauri-bridge.js';
+import { listen, emit, save as saveDialog, Store } from './tauri-bridge.js';
+import { initI18n, t } from './tabulon-i18n.js';
 
 const gameName = new URLSearchParams(window.location.search).get('game') || 'classic-chess';
 const matchId  = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
@@ -74,22 +75,32 @@ function RequestHistory() {
     emit('play-req:' + matchId + ':get-played-moves', null);
 }
 
-function SavePJN() {
+// "Save book" : exporte la partie en PJN. Le download `data:` URI d'Electron
+// ne fait rien dans la WebView Tauri : dialogue natif + save_text_file (même
+// correctif que le bouton Save de la fenêtre de jeu). Coups numérotés
+// ("1. e2-e4 e7-e5 2. …") pour rester relisible par parse_pjn/pickMove.
+async function SavePJN() {
     const date = new Date();
     const tags = [
         '[JoclyGame "' + gameName + '"]',
         '[Date "' + date.getFullYear() + '.' + (date.getMonth()+1) + '.' + date.getDate() + '"]',
         '[PlyCount "' + moveCount + '"]',
     ];
-    const text = tags.join('\n') + '\n\n' + moveStrings.join(' ') + '\n';
-    const a = document.createElement('a');
-    a.href = 'data:application/octet-stream,' + encodeURIComponent(text);
-    a.setAttribute('download', gameName + '.pjn');
-    a.click();
+    const numbered = moveStrings.map((mv, i) =>
+        (i % 2 === 0 ? Math.floor(i / 2) + 1 + '. ' : '') + mv).join(' ');
+    const text = tags.join('\n') + '\n\n' + numbered + '\n';
+    const path = await saveDialog({
+        defaultPath: gameName + '.pjn',
+        filters: [{ name: 'PJN', extensions: ['pjn', 'pgn'] }],
+    }).catch(() => null);
+    if (!path) return;
+    await tRpc.call('save_text_file', path, text)
+        .catch(e => console.warn('[history] save book failed:', e));
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await twu.init('History #' + matchId);
+    await initI18n();
+    await twu.init(t('history.title', { id: matchId }));
 
     // Recevoir la reponse de play.html
     listen('play-rep:' + matchId + ':get-played-moves', ({ payload }) => {
@@ -123,6 +134,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         emit('play-req:' + matchId + ':rollback-to', { index: currentIndex + 1 });
     });
     btn('save')?.addEventListener('click',  () => SavePJN());
+    // "Load board state" : ouvre la fenêtre de saisie d'un état (open-position)
+    btn('position')?.addEventListener('click', () =>
+        tRpc.call('open_position', gameName, Number(matchId)));
+    // "Display board state" : ouvre show-position, qui interroge play.js
+    btn('showpos')?.addEventListener('click', () =>
+        tRpc.call('open_show_position', gameName, Number(matchId)));
 
     document.getElementById('button-close')?.addEventListener('click', () => tRpc.close());
 

@@ -10,6 +10,7 @@
 // L'ancien tRpc.call('get_clock') invoquait une commande Rust qui n'existe
 // pas → promise rejeté → fenêtre vide.
 import twu from './tabulon-winutils.js';
+import { initI18n, t } from './tabulon-i18n.js';
 import { listen, emit } from './tauri-bridge.js';
 
 const matchId = (function () {
@@ -73,7 +74,8 @@ function ApplyClock({ players, clock: _clock }) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await twu.init('Clock #' + matchId);
+    await initI18n();
+    await twu.init(t('clock.title', { id: matchId }));
 
     [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach((which) => {
         const pd = document.createElement('div');
