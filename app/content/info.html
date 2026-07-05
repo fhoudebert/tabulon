@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>About</title>
+	<link rel="stylesheet" href="../node_modules/photonkit/dist/css/photon.css">
+	<link rel="stylesheet" href="tabulon.css">
+	<script>if (typeof module === 'object') { window.module = module; module = undefined; }</script>
+	<script src="../node_modules/jquery/dist/jquery.js" charset="utf-8"></script>
+	<script src="../browser/jocly.js" charset="utf-8"></script>
+	<script type="module" src="info.js"></script>
+</head>
+<body>
+<div class="window">
+	<div class="tab-group">
+		<div class="tab-item" data-tab="rules" style="display:none">Rules</div>
+		<div class="tab-item" data-tab="description" style="display:none">Description</div>
+		<div class="tab-item" data-tab="credits" style="display:none">Credits</div>
+	</div>
+	<div class="window-content info-content">
+		<div data-tab="rules"       class="info-panel" style="display:none"></div>
+		<div data-tab="description" class="info-panel" style="display:none"></div>
+		<div data-tab="credits"     class="info-panel" style="display:none"></div>
+	</div>
+</div>
+</body>
+</html>

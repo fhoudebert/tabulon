@@ -1,0 +1,928 @@
+/* tabulon.css
+ * Remplace photonkit/dist/css/photon.css
+ *
+ * Palette : bois naturel + encre sur fond ardoise clair
+ *   --bg          #F2EFE9   fond principal (parchemin)
+ *   --bg-alt      #E8E4DC   fond alternatif (légèrement plus sombre)
+ *   --surface     #FFFFFF   surfaces de fenêtre
+ *   --border      #C8C2B8   séparateurs
+ *   --text        #1A1814   texte principal
+ *   --text-muted  #6B6560   texte secondaire
+ *   --accent      #2B5C3F   vert plateau (tapis de jeu)
+ *   --accent-fg   #FFFFFF   texte sur accent
+ *   --danger      #8B2020   rouge erreur / suppression
+ *   --danger-fg   #FFFFFF
+ *   --radius      4px
+ *
+ * Police : system-ui (neutre, lisible, aucune dépendance réseau)
+ */
+
+/* ── Reset minimal ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1A1814;
+  background: #F2EFE9;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Variables ──────────────────────────────────────────────────────────────── */
+:root {
+  --bg:          #F2EFE9;
+  --bg-alt:      #E8E4DC;
+  --bg-dark:     #2A2724;
+  --surface:     #FFFFFF;
+  --border:      #C8C2B8;
+  --text:        #1A1814;
+  --text-muted:  #6B6560;
+  --accent:      #2B5C3F;
+  --accent-hover:#234D34;
+  --accent-fg:   #FFFFFF;
+  --primary:     #1E4A8A;
+  --primary-hover:#183D73;
+  --primary-fg:  #FFFFFF;
+  --danger:      #8B2020;
+  --danger-fg:   #FFFFFF;
+  --radius:      4px;
+  --shadow:      0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+}
+
+/* ── Layout fenêtre ─────────────────────────────────────────────────────────── */
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.window-gray { background: var(--bg); }
+
+.window-content {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+/* ── Toolbars ───────────────────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 36px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.toolbar-header {
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.toolbar-footer {
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+.toolbar .title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+/* ── Boutons ────────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 100ms, border-color 100ms;
+  -webkit-app-region: no-drag;
+}
+
+.btn:hover  { background: var(--bg-alt); }
+.btn:active { background: var(--bg); }
+
+.btn-default { /* identique à .btn */ }
+
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-fg);
+}
+.btn-primary:hover  { background: var(--primary-hover); border-color: var(--primary-hover); }
+
+.btn-positive {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.btn-positive:hover  { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.btn-negative {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-fg);
+}
+
+.btn.disabled,
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Groupes de boutons */
+.btn-group {
+  display: inline-flex;
+  gap: 0;
+}
+.btn-group .btn { border-radius: 0; border-right-width: 0; }
+.btn-group .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.btn-group .btn:last-child  { border-radius: 0 var(--radius) var(--radius) 0; border-right-width: 1px; }
+
+/* Alignement dans toolbar */
+.pull-left  { margin-right: auto; }
+.pull-right { margin-left: auto; }
+
+/* ── Icônes (Entypo via photonkit — on conserve la même police) ─────────────── */
+/* On réimporte uniquement le woff2 des icônes sans le reste de photonkit */
+@font-face {
+  font-family: 'photon-entypo';
+  src: url('../node_modules/photonkit/dist/fonts/photon-entypo.woff') format('woff');
+}
+.icon {
+  font-family: 'photon-entypo';
+  font-style: normal;
+  font-weight: normal;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: middle;
+  speak: none;
+}
+/* Codepoints photon-entypo réels (extraits de photonkit/dist/css/photon.css —
+   la police mappe les glyphes en \e8xx ; les anciens \e000-\e021 étaient des
+   placeholders inexistants dans le woff, d'où des icônes invisibles) */
+.icon-ccw::before           { content: '\e88f'; }
+.icon-cw::before            { content: '\e890'; }
+.icon-pause::before         { content: '\e899'; }
+.icon-play::before          { content: '\e897'; }
+.icon-stop::before          { content: '\e898'; }
+.icon-back::before          { content: '\e820'; }
+.icon-forward::before       { content: '\e832'; }
+.icon-to-start::before      { content: '\e89c'; }
+.icon-to-end::before        { content: '\e89b'; }
+.icon-left-dir::before      { content: '\e884'; }
+.icon-right-dir::before     { content: '\e885'; }
+.icon-up-dir::before        { content: '\e886'; }
+.icon-down-dir::before      { content: '\e883'; }
+.icon-down-bold::before     { content: '\e887'; }
+.icon-users::before         { content: '\e80b'; }
+.icon-eye::before           { content: '\e826'; }
+.icon-list::before          { content: '\e8a5'; }
+.icon-clock::before         { content: '\e862'; }
+.icon-level-down::before    { content: '\e892'; }
+.icon-resize-full::before   { content: '\e869'; }
+.icon-download::before      { content: '\e82d'; }
+.icon-upload::before        { content: '\e82e'; }
+.icon-camera::before        { content: '\e80f'; }
+.icon-video::before         { content: '\e80d'; }
+.icon-layout::before        { content: '\e810'; }
+.icon-flow-cascade::before  { content: '\e8d8'; }
+.icon-target::before        { content: '\e8a3'; }
+.icon-menu::before          { content: '\e811'; }
+.icon-star::before          { content: '\e808'; }
+.icon-star-empty::before    { content: '\e809'; }
+.icon-info-circled::before  { content: '\e81f'; }
+.icon-location::before      { content: '\e842'; }
+.icon-book::before          { content: '\e84f'; }
+.icon-dot-3::before         { content: '\e8bf'; }
+.icon-cancel::before        { content: '\e813'; }
+.icon-home::before          { content: '\e821'; }
+.icon-info::before          { content: '\e81e'; }
+.icon-plus::before          { content: '\e816'; }
+
+/* ── Formulaires ────────────────────────────────────────────────────────────── */
+.form-group {
+  margin-bottom: 12px;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.form-control {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 100ms, box-shadow 100ms;
+}
+
+.form-control:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(30,74,138,.2);
+}
+
+.form-control.error {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px rgba(139,32,32,.2);
+}
+
+select.form-control { cursor: pointer; }
+
+textarea.form-control {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* ── Checkbox ───────────────────────────────────────────────────────────────── */
+.checkbox {
+  margin-bottom: 8px;
+}
+.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.checkbox input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; }
+
+/* ── Listes ─────────────────────────────────────────────────────────────────── */
+.list-group { list-style: none; border: 1px solid var(--border); border-radius: var(--radius); }
+.list-group-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+}
+.list-group-item:last-child { border-bottom: none; }
+.list-group-item:hover { background: var(--bg-alt); }
+
+/* ── Onglets ────────────────────────────────────────────────────────────────── */
+.tab-group {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+  flex-shrink: 0;
+}
+.tab-item {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 100ms;
+}
+.tab-item:hover  { color: var(--text); }
+.tab-item.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Utilitaires ────────────────────────────────────────────────────────────── */
+.hidden { display: none !important; }
+
+.regular-link {
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+.regular-link:hover { text-decoration: underline; }
+
+strong { font-weight: 600; }
+
+/* ── Police 7 segments (horloge) ────────────────────────────────────────────── */
+@font-face {
+  font-family: "7segment";
+  src: url(vendor/7segment.ttf);
+}
+
+/* ── Hub (fenêtre principale) ───────────────────────────────────────────────── */
+.pane-group {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pane { flex: 1; overflow: auto; }
+
+.pane-sm.sidebar {
+  flex: 0 0 180px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.object-pane { flex: 1; overflow: auto; }
+
+.nav-group { margin-bottom: 16px; }
+
+.nav-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  padding: 4px 12px;
+}
+
+.nav-group-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 80ms;
+}
+.nav-group-item:hover  { background: var(--border); }
+.nav-group-item.active { background: var(--accent); color: var(--accent-fg); }
+.nav-group-item.active .icon { color: var(--accent-fg); }
+
+#about {
+  padding: 24px;
+  line-height: 1.8;
+}
+#about h3 { margin-bottom: 8px; font-size: 18px; }
+#about p   { margin-bottom: 8px; color: var(--text-muted); }
+
+.padded-more { padding: 8px; }
+
+.topped-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.topped-pane > ul { overflow-y: auto; flex-grow: 1; }
+
+.hub-notifier {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--bg-dark);
+  color: #fff;
+  font-size: 13px;
+}
+.hub-notifier a {
+  color: #7cf;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── Raccourcis dans les listes (portés de JoclyBoard, adaptés en flex) ─────── */
+/* Les items de liste passent en flex : l'image, le corps, puis les raccourcis
+   colorés révélés au survol (vert = quick play, bleu = clocked play,
+   rouge = suppression dans la liste des templates). */
+.object-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+.object-list-item .media-body { flex: 1; min-width: 0; }
+.object-list-item .list-shortcut {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  color: #fff;
+  cursor: pointer;
+  background-color: #0a0;          /* quick play : vert, comme JoclyBoard */
+}
+.object-list-item .list-shortcut .icon { font-size: 17px; color: #fff; }
+.object-list-item:hover .list-shortcut { display: flex; }
+.object-list-item .list-shortcut-info  { background-color: #667; }
+.object-list-item .list-shortcut-fav   { background-color: #d90; }
+.object-list-item .list-shortcut-del {
+  width: 20px;
+  height: 20px;
+  background-color: #a00;
+}
+.object-list-item .list-shortcut-del .icon { font-size: 11px; }
+/* Écrans tactiles (pas de survol) : raccourcis toujours visibles */
+@media (hover: none) {
+  .object-list-item .list-shortcut { display: flex; }
+}
+
+/* ── Hub : split liste + détail ─────────────────────────────────────────────── */
+/* #game-list-pane : conteneur flex horizontal (liste à gauche, détail à droite) */
+.hub-split {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Colonne liste (recherche + liste scrollable) */
+.game-list-col {
+  flex: 0 0 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-right: 1px solid var(--border);
+}
+.game-list-col > ul {
+  flex: 1;
+  overflow-y: auto;
+  border: none;
+  border-radius: 0;
+}
+
+/* Élément sélectionné dans la liste */
+.list-group-item.active,
+.list-group-item.active:hover { background: var(--accent); }
+.list-group-item.active strong,
+.list-group-item.active .media-body p,
+.list-group-item.active .icon { color: var(--accent-fg); }
+
+/* ── Hub : panneau de détail du jeu (ex-game.html) ──────────────────────────── */
+.game-detail {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* État vide : aucun jeu sélectionné */
+.game-detail-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.game-detail-empty .icon { font-size: 40px; }
+
+.game-detail-body { position: absolute; inset: 0; }
+
+/* Visuels animés 600x600 en fond, rotation crossfade gérée par hub.js */
+.game-detail .visuals,
+.game-detail .visuals > div { position: absolute; inset: 0; }
+.game-detail .visuals > div > div {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+/* Carte d'infos superposée aux visuels */
+.game-detail .info {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: min(340px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, .93);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .18);
+}
+
+.info-game {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.game-thumbnail {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.game-headings { min-width: 0; }
+.game-title   { font-size: 18px; font-weight: 700; }
+.game-summary { margin-top: 2px; font-size: 13px; color: var(--text-muted); }
+
+/* Boutons d'action empilés */
+.game-detail .buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.game-detail .buttons .btn {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Templates du jeu sélectionné (puces cliquables) */
+.templates-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.template {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.template:hover { background: var(--border); }
+
+/* Bouton retour liste — visible seulement en vue étroite */
+.detail-back {
+  display: none;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+}
+
+/* ── Hub : responsive tablette ──────────────────────────────────────────────── */
+/* Tablette paysage : sidebar réduite aux icônes, liste plus étroite */
+@media (max-width: 900px) {
+  .pane-sm.sidebar { flex: 0 0 52px; }
+  .sidebar .nav-group-title { display: none; }
+  .sidebar .nav-group-item {
+    font-size: 0;             /* masque le texte (nœud texte non wrappé) */
+    justify-content: center;
+    padding: 10px 0;
+  }
+  .sidebar .nav-group-item .icon { font-size: 16px; }
+  .game-list-col { flex-basis: 260px; }
+}
+
+/* Tablette portrait / fenêtre étroite : une seule vue à la fois.
+   Par défaut la liste prend tout ; .show-detail (posée par hub.js à la
+   sélection d'un jeu) bascule sur le détail plein écran, avec bouton retour. */
+@media (max-width: 680px) {
+  .game-list-col { flex: 1; border-right: none; }
+  .game-detail   { display: none; }
+  .hub-split.show-detail .game-list-col { display: none; }
+  .hub-split.show-detail .game-detail   { display: block; flex: 1; }
+  .detail-back { display: inline-block; }
+  .game-detail .info {
+    top: auto;
+    left: 16px;
+    max-height: 70%;
+    width: auto;
+  }
+}
+
+/* ── Fenêtre play.html ─────────────────────────────────────────────────────── */
+/* game-zone : colonne flex qui occupe toute la fenêtre */
+.game-zone {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* game-fullsize : zone centrale qui prend tout l'espace restant */
+.game-fullsize {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* game-area : là où Jocly injecte son iframe.
+   position: relative nécessaire car l'iframe est en position: absolute. */
+.game-area {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* game-header et game-footer : hauteur auto, pas de flex-grow */
+.game-header { flex-shrink: 0; }
+.game-footer { flex-shrink: 0; }
+
+/* -- Selecteurs joueurs dans play.html -------------------------------------- */
+.player-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+}
+.player-select-label {
+  font-size: 11px;
+  font-weight: bold;
+  color: #666;
+}
+.player-select {
+  font-size: 11px;
+  height: 22px;
+  padding: 0 2px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  max-width: 90px;
+}
+
+/* -- players.html ----------------------------------------------------------- */
+.players-container {
+  padding: 16px;
+}
+.players-headers,
+.players-forms {
+  display: flex;
+  gap: 16px;
+}
+.players-headers > div,
+.players-forms > div {
+  flex: 1;
+}
+.players-headers {
+  margin-bottom: 4px;
+}
+.players-container h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+}
+.players-container .form-control {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.players-container .form-group {
+  margin-top: 4px;
+}
+
+/* -- view-options.html ------------------------------------------------------ */
+.view-options {
+  padding: 16px;
+}
+.view-options .form-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  clear: both;
+}
+.view-options .form-group label {
+  min-width: 60px;
+  font-size: 13px;
+  color: #555;
+  float: none;
+}
+.view-options .form-group select {
+  flex: 1;
+  float: none;
+}
+.view-options .checkbox {
+  margin-bottom: 6px;
+  clear: both;
+}
+.view-options .checkbox label {
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+.view-options .checkbox input[type=checkbox] {
+  margin-right: 4px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+/* -- camera-view.html ------------------------------------------------------- */
+.camera-content {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.camera-section {
+  border-bottom: 1px solid #e8e8e8;
+  padding-bottom: 10px;
+}
+.camera-section:last-child {
+  border-bottom: none;
+}
+.camera-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.camera-row-header {
+  margin-bottom: 6px;
+}
+.camera-row label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  flex-shrink: 0;
+}
+.camera-row .btn-group {
+  display: flex;
+  gap: 2px;
+}
+.camera-kalman {
+  width: 90px;
+  text-align: right;
+}
+.camera-content .view-points,
+.camera-content .speeds {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.camera-content .view-points li,
+.camera-content .speeds li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 13px;
+}
+/* Bouton + vert compact (photonkit btn-positive + btn-mini) */
+.btn-positive.btn-mini {
+  background: #27ae60;
+  border-color: #27ae60;
+  color: #fff;
+  padding: 2px 7px;
+  font-size: 12px;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-positive.btn-mini:hover {
+  background: #219a52;
+}
+
+/* -- clock-setup.html ------------------------------------------------------- */
+.clock-setup-content {
+  padding: 12px 16px;
+}
+.clock-setup-content .symmetry {
+  width: 100%;
+  margin-bottom: 12px;
+}
+/* Lignes Time+unite cote a cote */
+.clock-setup-content .time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.clock-setup-content .time-row input.time {
+  flex: 1;
+}
+.clock-setup-content .time-row select.unit {
+  flex: 1;
+}
+/* Labels en casse normale (photonkit les met parfois en majuscules) */
+.clock-setup-content label {
+  text-transform: none;
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 4px;
+  display: block;
+}
+/* Lignes xtrasec et mps avec unite a droite */
+.clock-setup-content .unit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.clock-setup-content .unit-row input {
+  flex: 1;
+}
+.clock-setup-content .unit-label {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+}
+/* Selecteur de joueur A/B */
+.clock-setup-content .player-selector {
+  display: inline-block;
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.clock-setup-content .player-selector.highlighted {
+  background: #2980b9;
+  color: #fff;
+  border-color: #2980b9;
+}
+
+/* ── Fenêtre play.html : barre de boutons repliable ─────────────────────────── */
+/* JoclyBoard révélait la barre au survol (.ephemeral-actions:hover) ; ici la
+   bascule se fait au CLIC sur le bouton '…' (#button-toggle-bar) — plus
+   adapté à la tablette où le survol n'existe pas. play.js pose/retire la
+   classe .bar-visible et persiste l'état dans le store. */
+.ephemeral-actions .ephemeral-appear { display: none; }
+.ephemeral-actions.bar-visible .ephemeral-appear { display: inline-flex; }
+/* Les sélecteurs de joueurs A/B et la barre s'excluent mutuellement :
+   barre masquée (défaut) → joueurs visibles ; barre visible → joueurs
+   masqués. Le clic sur '…' bascule les deux d'un coup via .bar-visible. */
+.ephemeral-actions.bar-visible .player-select-wrap { display: none; }
+/* Quand la barre est ouverte, le titre s'efface pour lui laisser la place
+   (équivalent du .ephemeral-vanish de JoclyBoard) */
+.ephemeral-actions.bar-visible .ephemeral-vanish { display: none; }
+
+/* ── Fenêtre clock.html (affichage de l'horloge, porté de JoclyBoard) ───────── */
+.clock-content { height: 100%; padding: 0; }
+.clock-content .clock {
+  display: table;
+  height: 100%;
+  width: 100%;
+  table-layout: fixed;
+}
+.clock-content .clock > div       { display: table-row; }
+.clock-content .clock > div > div {
+  display: table-cell;
+  text-align: center;
+  vertical-align: middle;
+}
+/* Temps en police 7 segments ; le joueur au trait est en noir, l'autre grisé */
+.clock-content .times > div {
+  font-family: "7segment";
+  font-size: 15vmax;
+  color: #ccc;
+}
+.clock-content .times > div.turn { color: #000; }
+/* Onglets Player A / Player B ; le joueur au trait en pastille noire */
+.clock-content .players > div {
+  padding: 2px;
+  margin: 2px 6px;
+  border-radius: 4px;
+}
+.clock-content .players > div.turn {
+  background-color: #000;
+  color: #fff;
+}

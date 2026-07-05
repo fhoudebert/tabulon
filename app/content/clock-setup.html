@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Clock Setup</title>
+	<link rel="stylesheet" href="../node_modules/photonkit/dist/css/photon.css">
+	<link rel="stylesheet" href="tabulon.css">
+	<script>if (typeof module === 'object') { window.module = module; module = undefined; }</script>
+	<script src="../node_modules/jquery/dist/jquery.js" charset="utf-8"></script>
+	<script src="../browser/jocly.js" charset="utf-8"></script>
+	<script type="module" src="clock-setup.js"></script>
+</head>
+<body>
+<div class="window window-gray">
+	<div class="window-content clock-setup-content">
+		<form>
+			<select class="form-control symmetry">
+				<option value="same">Same for both players</option>
+				<option value="different">Players have different clocks</option>
+			</select>
+
+			<!-- Same for both -->
+			<div class="form-group group-same">
+				<label>Time</label>
+				<div class="time-row">
+					<input type="text" class="form-control time"/>
+					<select class="form-control unit">
+						<option value="1">seconds</option>
+						<option value="60">minutes</option>
+						<option value="3600">hours</option>
+					</select>
+				</div>
+			</div>
+			<div class="form-group group-same">
+				<label>Extra time per move</label>
+				<div class="unit-row">
+					<input type="text" class="form-control xtrasec"/>
+					<span class="unit-label">seconds</span>
+				</div>
+			</div>
+			<div class="form-group group-same">
+				<label>Moves per session</label>
+				<div class="unit-row">
+					<input type="text" class="form-control mps"/>
+					<span class="unit-label">moves</span>
+				</div>
+			</div>
+
+			<!-- Different players — selector -->
+			<div class="form-group group-different player-sel">
+				<div class="player-selector player0">Player A</div>
+				<div class="player-selector player1">Player B</div>
+			</div>
+
+			<!-- Player 0 (A) -->
+			<div class="form-group group-different player0">
+				<label>Time — Player A</label>
+				<div class="time-row">
+					<input type="text" class="form-control time"/>
+					<select class="form-control unit">
+						<option value="1">seconds</option>
+						<option value="60">minutes</option>
+						<option value="3600">hours</option>
+					</select>
+				</div>
+			</div>
+			<div class="form-group group-different player0">
+				<label>Extra time per move</label>
+				<div class="unit-row">
+					<input type="text" class="form-control xtrasec"/>
+					<span class="unit-label">seconds</span>
+				</div>
+			</div>
+			<div class="form-group group-different player0">
+				<label>Moves per session</label>
+				<div class="unit-row">
+					<input type="text" class="form-control mps"/>
+					<span class="unit-label">moves</span>
+				</div>
+			</div>
+
+			<!-- Player 1 (B) -->
+			<div class="form-group group-different player1">
+				<label>Time — Player B</label>
+				<div class="time-row">
+					<input type="text" class="form-control time"/>
+					<select class="form-control unit">
+						<option value="1">seconds</option>
+						<option value="60">minutes</option>
+						<option value="3600">hours</option>
+					</select>
+				</div>
+			</div>
+			<div class="form-group group-different player1">
+				<label>Extra time per move</label>
+				<div class="unit-row">
+					<input type="text" class="form-control xtrasec"/>
+					<span class="unit-label">seconds</span>
+				</div>
+			</div>
+			<div class="form-group group-different player1">
+				<label>Moves per session</label>
+				<div class="unit-row">
+					<input type="text" class="form-control mps"/>
+					<span class="unit-label">moves</span>
+				</div>
+			</div>
+
+		</form>
+	</div>
+	<footer class="toolbar toolbar-footer">
+		<div class="toolbar-actions">
+			<button id="button-cancel" class="btn btn-default">Cancel</button>
+			<button id="button-save" class="btn btn-primary pull-right">Play</button>
+		</div>
+	</footer>
+</div>
+</body>
+</html>

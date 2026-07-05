@@ -1,0 +1,45 @@
+[package]
+name        = "tabulon"
+version     = "0.1.0"
+edition     = "2021"
+rust-version = "1.77"
+
+[lib]
+name       = "tabulon_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# ── Tauri core ────────────────────────────────────────────────────────────────
+tauri = { version = "2", features = ["devtools"] }
+
+# ── Tauri plugins ─────────────────────────────────────────────────────────────
+tauri-plugin-store   = "2"   # persistance clé-valeur (remplace electron-store)
+tauri-plugin-shell   = "2"   # shell.openExternal + spawn moteurs (remplace child_process)
+tauri-plugin-dialog  = "2"   # boîtes de dialogue (remplace electron.dialog)
+tauri-plugin-os      = "2"   # détection plateforme (remplace os.platform())
+tauri-plugin-fs      = "2"   # accès fichiers locaux (remplace XHR file://)
+tauri-plugin-updater = "2"   # mises à jour auto (remplace electron-updater)
+tauri-plugin-cli     = "2"   # arguments CLI (remplace process.argv)
+
+# ── Sérialisation ─────────────────────────────────────────────────────────────
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ── Async ─────────────────────────────────────────────────────────────────────
+tokio = { version = "1", features = ["full"] }  # runtime async (notifyUser oneshot)
+
+# ── Utilitaires ───────────────────────────────────────────────────────────────
+log         = "0.4"       # macros log::info! / log::warn! / log::error!
+urlencoding = "2"         # encode les paramètres d'URL pour les fenêtres
+base64      = "0.22"      # décodage des frames JPEG vidéo
+anyhow      = "1"         # gestion d'erreurs ergonomique
+
+[profile.release]
+panic         = "abort"   # binaire plus petit, pas de stack unwinding
+codegen-units = 1         # optimisation maximale LTO
+lto           = true
+opt-level     = "s"       # priorité taille sur vitesse (WebView fait le gros du travail)
+strip         = true      # supprime les symboles debug du binaire final

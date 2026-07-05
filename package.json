@@ -1,0 +1,41 @@
+{
+  "name": "tabulon",
+  "description": "Desktop application for playing board games (Tauri)",
+  "version": "0.1.0",
+  "productName": "Tabulon",
+  "keywords": [
+    "board games",
+    "chess",
+    "draughts",
+    "tauri",
+    "javascript"
+  ],
+  "homepage": "https://github.com/fhoudebert/biscandine",
+  "author": {
+    "name": "fhoudebert"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fhoudebert/biscandine"
+  },
+  "license": "AGPL-3.0",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "npm run build:frontend && tauri build",
+    "build:frontend": "npm --prefix app install",
+    "lint": "node_modules/jshint/bin/jshint app/*.js app/content/*.js || true",
+    "tauri": "tauri",
+    "test": "node tests/run-tests.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "extract-zip": "^2.0.1",
+    "gulp": "^5.0.1",
+    "gulp-insert": "^0.5.0",
+    "gulp-jison": "^1.2.0",
+    "jshint": "^2.13.6"
+  },
+  "overrides": {
+    "graceful-fs": "^4.2.11"
+  }
+}

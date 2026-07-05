@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Tabulon</title>
+
+	<!-- Stylesheets -->
+	<link rel="stylesheet" href="../node_modules/photonkit/dist/css/photon.css">
+	<link rel="stylesheet" href="tabulon.css">
+
+	<!-- Javascript -->
+	<script>
+		if (typeof module === 'object') { window.module = module; module = undefined; }
+	</script>
+	<script src="../node_modules/jquery/dist/jquery.js" charset="utf-8"></script>
+	<script src="../browser/jocly.js" charset="utf-8"></script>
+	<script type="module" src="hub.js"></script>
+</head>
+
+<body>
+	<div class="window">
+
+		<div class="window-content hub-content">
+			<div class="pane-group">
+				<div class="pane pane-sm sidebar">
+					<nav class="nav-group">
+						<h5 class="nav-group-title" data-i18n="nav.games">Games</h5>
+						<span id="nav-games-all" class="nav-group-item">
+                			<span class="icon icon-home"></span> <span data-i18n="nav.all">All</span>
+						</span>
+						<span id="nav-games-fav"  class="nav-group-item">
+                			<span class="icon icon-star"></span> <span data-i18n="nav.favorites">Favorites</span>
+						</span>
+					</nav>
+					<nav class="nav-group">
+						<h5 class="nav-group-title" data-i18n="nav.configuration">Configuration</h5>
+						<span id="nav-templates" class="nav-group-item">
+                			<span class="icon icon-layout"></span> <span data-i18n="nav.templates">Templates</span>
+						</span>
+					</nav>
+					<nav class="nav-group">
+						<h5 class="nav-group-title" data-i18n="nav.about">About</h5>
+						<span id="nav-about" class="nav-group-item">
+                			<span class="icon icon-info"></span> Tabulon
+						</span>
+					</nav>
+				</div>
+
+				<div class="pane object-pane">
+          <div id="game-list-pane" class="pane hub-split" style="display:none">
+            <div class="game-list-col">
+              <div class="padded-more">
+                <input id="gamefilter" class="form-control" type="text" placeholder="Search game" data-i18n-placeholder="hub.search">
+              </div>
+              <ul class="pane list-group" id="game-list">
+              </ul>
+            </div>
+            <div id="game-detail" class="game-detail">
+              <div id="game-detail-empty" class="game-detail-empty">
+                <span class="icon icon-play"></span>
+                <p data-i18n="hub.selectGame">Select a game</p>
+              </div>
+              <div id="game-detail-body" class="game-detail-body" style="display:none">
+                <button id="detail-back" class="btn btn-default detail-back"><span class="icon icon-left-dir"></span> <span data-i18n="hub.back">Games</span></button>
+                <div class="visuals">
+                  <div></div>
+                </div>
+                <div class="info">
+                  <div class="info-game">
+                    <div class="game-thumbnail"></div>
+                    <div class="game-headings">
+                      <div class="game-title"></div>
+                      <div class="game-summary"></div>
+                    </div>
+                  </div>
+                  <div class="buttons">
+                    <button id="quickplay" class="btn btn-positive"><span class="icon icon-play"></span> <span data-i18n="btn.quickPlay">Quick play</span></button>
+                    <button id="clockedplay" class="btn btn-primary"><span class="icon icon-clock"></span> <span data-i18n="btn.clockedPlay">Clocked play</span></button>
+                    <input type="file" id="fileElem" accept=".pgn,.pdn,.pjn" style="display:none"/>
+                    <button id="openbook" class="btn btn-primary"><span class="icon icon-book"></span> <span data-i18n="btn.openBook">Open book</span></button>
+                    <button id="boardstate" class="btn btn-primary"><span class="icon icon-location"></span> <span data-i18n="btn.boardState">Board state</span></button>
+                    <button id="unfavorite" class="btn btn-primary" style="display:none"><span class="icon icon-star"></span> <span data-i18n="btn.favorite">Favorite</span></button>
+                    <button id="favorite" class="btn btn-primary" style="display:none"><span class="icon icon-star-empty"></span> <span data-i18n="btn.notFavorite">Not favorite</span></button>
+                    <button id="info" class="btn btn-primary"><span class="icon icon-info-circled"></span> <span data-i18n="btn.rulesCredits">Rules, credits, about</span></button>
+                  </div>
+                  <div class="templates-block" style="display:none">
+                    <h5 class="templates-title" data-i18n="hub.templates">Templates</h5>
+                    <div class="templates"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+					<ul class="pane list-group" id="template-list" style="display:none">
+					</ul>
+					<div class="pane" id="about" style="display:none">
+						<h3 class="appName"></h3>
+						<p><span data-i18n="about.version">Version</span> <span class="appVersion"></span></p>
+						<p><span data-i18n="about.locale">Language:</span> <span class="appLocale"></span></p>
+						<p><span data-i18n="about.intro">Tabulon is a multi-platform desktop application to play board games, based on the</span> <a href="https://github.com/fhoudebert/jocly2" data-i18n="about.joclyLib">Jocly library</a></p>
+						<p data-i18n="about.license">Jocly and Tabulon are released under AGPL v3.0 license.</p>
+                        <p data-i18n="about.features">Main features :</p>
+                        <ul>
+                            <li data-i18n="about.feat.ui">2D and 3D user interface available</li>                        
+                            <li data-i18n="about.feat.resize">Fully resizeable game windows</li>    
+                            <li data-i18n="about.feat.preview">Possible moves preview</li>                               
+                            <li data-i18n="about.feat.impexp">Game import/export</li>
+                            <li data-i18n="about.feat.clock">Clocked games</li> 
+                            <li data-i18n="about.feat.rules">Rules available for every game</li>
+                            <li data-i18n="about.feat.multi">Multi-windows: any number of games can be launched simultaneously</li>
+                        </ul>
+					</div>
+				</div>
+
+			</div>
+		</div>
+		<footer class="toolbar toolbar-footer hub-notifier hidden">
+			<div class="hub-notifier-text pull-left"></div>
+			<a class="hub-notifier-ok pull-left"></a>
+			<a class="hub-notifier-ko pull-left"></a>
+		</footer>
+
+
+	</div>
+</body>
+
+</html>
