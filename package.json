@@ -10,13 +10,13 @@
     "tauri",
     "javascript"
   ],
-  "homepage": "https://github.com/fhoudebert/biscandine",
+  "homepage": "https://github.com/fhoudebert/tabulon",
   "author": {
     "name": "fhoudebert"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/fhoudebert/biscandine"
+    "url": "https://github.com/fhoudebert/tabulon"
   },
   "license": "AGPL-3.0",
   "scripts": {
