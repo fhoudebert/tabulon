@@ -137,9 +137,8 @@ function buildPayload(method, args) {
     open_moves:          ([matchId])               => ({ matchId }),
     show_board_state:    ([gameName, matchId])     => ({ gameName, matchId }),
     relay_to_window:     ([target, event, payload])=> ({ target, event, payload }),
-    // engines
+    // fichiers
     is_file:             ([path])                  => ({ path }),
-    save_engine:         ([engine])                => ({ engine }),
     // templates
     play_template:       ([templateName])          => ({ templateName }),
     save_template:       ([matchId, name])         => ({ matchId, name }),
@@ -150,13 +149,11 @@ function buildPayload(method, args) {
     stop_recording:      ([matchId])               => ({ matchId }),
     // hub
     get_app_info:        ()                             => ({}),
-    remove_engine:       ([id])                        => ({ id }),
     remove_template:     ([templateName])              => ({ templateName }),
     load_board_state:    ([gameName, matchId, fen])    => ({ gameName, matchId, fen }),
     book_history_view:   ([matchId, spec])             => ({ matchId, spec }),
     notify_user_response:([token, result])             => ({ token, result }),
     // windows — hub actions
-    edit_engine:         ([id])                        => ({ id }),
     open_book_history:   ([matchId])                   => ({ matchId }),
     open_position:       ([gameName, matchId])         => ({ gameName, matchId }),
     // fs

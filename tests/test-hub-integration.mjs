@@ -6,7 +6,8 @@
 // store/os/window), exactement ce que Tauri injecte au runtime.
 //
 // Usage : node test-hub-integration.mjs   (depuis tabulon/, après npm i jsdom dans app/)
-import { JSDOM } from './app/node_modules/jsdom/lib/api.js';
+import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 import { createRequire } from 'module';
 import path from 'path';
@@ -65,12 +66,12 @@ dom.window.__TAURI__ = mockTauri;
 const BASE = 'https://tauri.localhost/';
 dom.window.BrowserScriptLoader = {
   getBaseURL: () => BASE,
-  import: (p) => Promise.resolve(require('./dist/node/' + p)),
+  import: (p) => Promise.resolve(require('../dist/node/' + p)),
 };
-globalThis.Jocly = require('./dist/node/jocly.core.js');
+globalThis.Jocly = require('../dist/node/jocly.core.js');
 
 // ── Exécution du vrai hub.js ──────────────────────────────────────────────────
-await import('./app/content/hub.js');
+await import('../app/content/hub.js');
 document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -101,8 +102,9 @@ assert($$('#game-list li img')[0].src.includes('/games/'), 'thumbnails de liste 
 
 // 2b. Raccourcis de liste : 4 icônes sur chaque item
 const li0 = $$('#game-list li')[0];
-assert(li0.querySelector('.list-shortcut-play .icon-play') && li0.querySelector('.list-shortcut-clock .icon-clock'),
-  'raccourcis play + horloge présents');
+assert(li0.querySelector('.list-shortcut-play .icon-play'), 'raccourci play présent');
+assert(!li0.querySelector('.list-shortcut-clock'),
+  'raccourci horloge RETIRÉ de la liste (manque de place) — Clocked play reste dans le détail');
 assert(li0.querySelector('.list-shortcut-info .icon-info-circled') && li0.querySelector('.list-shortcut-fav'),
   'raccourcis info + favori présents');
 li0.querySelector('.list-shortcut-info').click();
@@ -120,9 +122,6 @@ li0.querySelector('.list-shortcut-fav').click();
 await waitFor(() => invokeCalls.some(c => c.cmd === 'set_favorite' && c.payload.gameName === li0.dataset.game && c.payload.value === false),
   'set_favorite(false) au 2e clic');
 assert(li0.querySelector('.list-shortcut-fav .icon-star-empty'), 'étoile redevenue vide');
-li0.querySelector('.list-shortcut-clock').click();
-assert(invokeCalls.some(c => c.cmd === 'open_clock_setup' && c.payload.gameName === li0.dataset.game),
-  'clic icône horloge → open_clock_setup(jeu) sans sélectionner le jeu');
 assert(!li0.classList.contains('active'), 'le clic raccourci ne change pas la sélection (stopPropagation)');
 
 // 3. Sélection d'un jeu → panneau de détail (navigation interne, pas de fenêtre)

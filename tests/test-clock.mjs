@@ -4,7 +4,8 @@
 // est simulé par un répondeur branché sur un bus d'events en mémoire qui
 // reproduit le contrat émis par play.js (play-rep/play-event get-clock).
 // Usage : node test-clock.mjs   (depuis tabulon/)
-import { JSDOM } from './app/node_modules/jsdom/lib/api.js';
+import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 
 // ── Bus d'events en mémoire (remplace le bus Tauri) ──────────────────────────
@@ -41,7 +42,7 @@ globalThis.Jocly = { PLAYER_A, PLAYER_B };
 await mockTauri.event.listen('play-req:7:get-clock', () =>
   mockTauri.event.emit('play-rep:7:get-clock', payload()));
 
-await import('./app/content/clock.js');
+await import('../app/content/clock.js');
 document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));

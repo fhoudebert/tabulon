@@ -169,19 +169,6 @@ pub fn open_moves(app: AppHandle, match_id: u32) -> Result<(), String> {
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// rpc.call("openGame", gameName)  →  ouvre la fiche d'un jeu (game.html)
-#[tauri::command]
-pub fn open_game(app: AppHandle, game_name: String) -> Result<(), String> {
-    open_window(&app, WindowOptions {
-        label: &format!("game-{game_name}"),
-        url:   &format!("content/game.html?game={game_name}"),
-        title: &game_name,
-        width: 700.0, height: 500.0,
-        min_width: 400.0, min_height: 300.0,
-        persist_key: Some(format!("window:game-{game_name}")),
-    }).map(|_| ()).map_err(|e| e.to_string())
-}
-
 
 /// Ouvre book-history.html pour visualiser un PJN chargé
 #[tauri::command]

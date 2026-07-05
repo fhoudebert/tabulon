@@ -7,7 +7,8 @@
 //      config, puis via la SONDE du suffixe _fr quand la config ne déclare
 //      pas de fr (mécanisme demandé), avec fallback en pour description.
 // Usage : node test-i18n.mjs   (depuis tabulon/)
-import { JSDOM } from './app/node_modules/jsdom/lib/api.js';
+import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync, existsSync } from 'fs';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -51,11 +52,11 @@ function assert(cond, msg) {
   dom.window.__TAURI__ = mockTauri;
   dom.window.BrowserScriptLoader = {
     getBaseURL: () => 'https://tauri.localhost/',
-    import: (p) => Promise.resolve(require('./dist/node/' + p)),
+    import: (p) => Promise.resolve(require('../dist/node/' + p)),
   };
-  globalThis.Jocly = require('./dist/node/jocly.core.js');
+  globalThis.Jocly = require('../dist/node/jocly.core.js');
 
-  await import('./app/content/hub.js');
+  await import('../app/content/hub.js');
   document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
@@ -96,10 +97,10 @@ function assert(cond, msg) {
   dom.window.__TAURI__ = mockTauri;
   dom.window.BrowserScriptLoader = {
     getBaseURL: () => 'https://tauri.localhost/',
-    import: (p) => Promise.resolve(require('./dist/node/' + p)),
+    import: (p) => Promise.resolve(require('../dist/node/' + p)),
   };
   // B2 : simuler une config SANS fr déclaré pour vérifier la sonde _fr
-  const core = require('./dist/node/jocly.core.js');
+  const core = require('../dist/node/jocly.core.js');
   let stripFr = false;
   globalThis.Jocly = {
     ...core,
@@ -110,7 +111,7 @@ function assert(cond, msg) {
     },
   };
 
-  const { default: _ } = await import('./app/content/info.js').catch(() => ({}));
+  const { default: _ } = await import('../app/content/info.js').catch(() => ({}));
   document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
   const $ = (s) => document.querySelector(s);
 
@@ -127,7 +128,7 @@ function assert(cond, msg) {
   // B2 : config sans fr → la SONDE _fr doit trouver le fichier quand même
   stripFr = true;
   fetchedUrls.length = 0;
-  const { translateDom } = await import('./app/content/tabulon-i18n.js');
+  const { translateDom } = await import('../app/content/tabulon-i18n.js');
   // recharger les règles via le même mécanisme que GetHtml en réimportant la page :
   // on rejoue le flux en re-déclenchant DOMContentLoaded n'est pas possible
   // (module en cache) — on teste directement la construction des candidats
