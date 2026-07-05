@@ -130,6 +130,12 @@ assert(!actions.classList.contains('bar-visible'), 'barre masquée par défaut �
   const css = readFileSync('./app/content/tabulon.css', 'utf-8');
   assert(css.includes('.ephemeral-actions.bar-visible .player-select-wrap { display: none; }'),
     'règle CSS : barre visible → sélecteurs de joueurs masqués');
+  assert(css.includes('.ephemeral-actions.bar-visible #toggle-bar-group { margin-left: 0; }'),
+    "règle CSS : barre visible → '…' collé à droite de la barre (pas centré)");
+  const barGroup = document.querySelector('.ephemeral-appear');
+  const toggleGroup = document.getElementById('toggle-bar-group');
+  assert(barGroup.nextElementSibling === toggleGroup,
+    "DOM : le bouton '…' suit immédiatement la barre de boutons");
 }
 document.getElementById('button-toggle-bar').click();
 assert(actions.classList.contains('bar-visible'), 'clic … → barre visible');
