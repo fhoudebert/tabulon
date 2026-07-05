@@ -175,7 +175,7 @@ html, body {
 /* On réimporte uniquement le woff2 des icônes sans le reste de photonkit */
 @font-face {
   font-family: 'photon-entypo';
-  src: url('../node_modules/photonkit/dist/fonts/photon-entypo.woff') format('woff');
+  src: url('../fonts/photon-entypo.woff') format('woff'), url('../fonts/photon-entypo.ttf') format('truetype');
 }
 .icon {
   font-family: 'photon-entypo';
@@ -415,6 +415,8 @@ strong { font-weight: 600; }
   cursor: pointer;
   text-decoration: underline;
 }
+
+.object-list-item .media-object { flex: 0 0 auto; border-radius: var(--radius); }
 
 /* ── Raccourcis dans les listes (portés de JoclyBoard, adaptés en flex) ─────── */
 /* Les items de liste passent en flex : l'image, le corps, puis les raccourcis

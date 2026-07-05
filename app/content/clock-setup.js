@@ -1,5 +1,6 @@
 // app/content/clock-setup.js
 import tRpc  from './tabulon-rpc.js';
+import { initI18n, t } from './tabulon-i18n.js';
 import twu   from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
 
@@ -87,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     store = await Store.load('tabulon.json');
 
     await Jocly.getGameConfig(gameName)
-        .then(config => twu.init(config.model['title-en'] + ' clock setup'));
+        .then(config => twu.init(t('clockSetup.title', { game: config.model['title-en'] })));
 
     document.querySelectorAll('.player-selector').forEach(el => {
         el.addEventListener('click', function () {

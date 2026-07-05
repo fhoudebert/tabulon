@@ -3,6 +3,7 @@
 // Communique avec play.html via Tauri events (play-req/play-rep:{matchId}:*).
 
 import tRpc from './tabulon-rpc.js';
+import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { listen, emit } from './tauri-bridge.js';
 
@@ -11,12 +12,12 @@ const matchId = parseInt(new URLSearchParams(window.location.search).get('id') |
 function BuildSelect(sel, levels, currentType, currentLevelIndex) {
     sel.innerHTML = '';
     const optHuman = document.createElement('option');
-    optHuman.value = 'human'; optHuman.textContent = 'Human';
+    optHuman.value = 'human'; optHuman.textContent = t('common.human');
     sel.appendChild(optHuman);
     levels.forEach((lvl, i) => {
         const opt = document.createElement('option');
         opt.value = 'ai:' + i;
-        opt.textContent = lvl.label || lvl.name || ('Level ' + (i + 1));
+        opt.textContent = lvl.label || lvl.name || t('common.level', { n: i + 1 });
         sel.appendChild(opt);
     });
     sel.value = (currentType === 'ai' && currentLevelIndex >= 0)
@@ -24,7 +25,8 @@ function BuildSelect(sel, levels, currentType, currentLevelIndex) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await twu.init('Players #' + matchId);
+    await initI18n();
+    await twu.init(t('players.title', { id: matchId }));
 
     listen('play-rep:' + matchId + ':get-players', ({ payload }) => {
         const { levels, players } = payload;
@@ -36,7 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const info = players[key] || {};
             BuildSelect(sel, levels, info.type, info.levelIndex);
             const nameInput = form.querySelector('input[type=text]');
-            if (nameInput) nameInput.value = which === 'a' ? 'Player A' : 'Player B';
+            if (nameInput) nameInput.value = which === 'a' ? t('common.playerA') : t('common.playerB');
         });
         twu.ready();
     });

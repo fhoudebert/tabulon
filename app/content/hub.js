@@ -251,7 +251,12 @@ function InitDetailButtons() {
         if (!g()) return;
         const reader = new FileReader();
         reader.readAsText(this.files[0]);
-        reader.onload = (e) => tRpc.call('open_book', g(), this.value, e.target.result);
+        reader.onload = async (e) => {
+            // Le contenu passe par le store (trop gros pour l'URL) :
+            // book.js le lira et le parsera via la commande Rust parse_pjn.
+            await store.set('book:' + g(), { fileName: this.value, data: e.target.result });
+            tRpc.call('open_book', g(), this.value, '');
+        };
         this.value = '';
     });
     document.getElementById('openbook').addEventListener('click', () => {

@@ -98,31 +98,15 @@ function buildPayload(method, args) {
   const map = {
     // match lifecycle
     new_match:           ([gameName, clock, forkId]) => ({ gameName, clock: clock || null, forkId: forkId || null }),
-    new_clocked_match:   ([gameName])              => ({ gameName }),
-    clone_match:         ([matchId])               => ({ matchId }),
-    load_match:          ([matchId, data])         => ({ matchId, data }),
-    take_back:           ([matchId, toIndex])      => ({ matchId, toIndex }),
-    restart:             ([matchId])               => ({ matchId }),
-    pause:               ([matchId, paused])       => ({ matchId, paused }),
-    is_paused:           ([matchId])               => ({ matchId }),
-    replay_last_move:    ([matchId])               => ({ matchId }),
     // history
-    get_history:         ([matchId])               => ({ matchId }),
-    freeze:              ([matchId, index, anim])  => ({ matchId, index, animate: anim }),
     // players
-    get_players_info:    ([matchId])               => ({ matchId }),
-    set_players:         ([matchId, players])      => ({ matchId, players }),
     // clock
     open_clock:          ([matchId])               => ({ matchId }),
     // view
-    get_view_info:       ([matchId])               => ({ matchId }),
-    set_view_options:    ([matchId, options])      => ({ matchId, options }),
     // favorites
     is_favorite:         ([gameName])              => ({ gameName }),
     set_favorite:        ([gameName, value])       => ({ gameName, value }),
     // moves
-    input_move:          ([matchId, move_])        => ({ matchId, move: move_ }),
-    show_move:           ([matchId, move_])        => ({ matchId, move: move_ }),
     // windows
     open_history:        ([matchId])               => ({ matchId }),
     open_players:        ([matchId])               => ({ matchId }),
@@ -133,12 +117,11 @@ function buildPayload(method, args) {
     open_clock_setup:    ([gameName])              => ({ gameName }),
     open_board_state:    ([gameName, matchId])     => ({ gameName, matchId }),
     open_book:           ([gameName, fn_, data])   => ({ gameName, fileName: fn_, data }),
-    open_book_match:     ([gameName, match_])      => ({ gameName, bookMatch: match_ }),
     open_moves:          ([matchId])               => ({ matchId }),
-    show_board_state:    ([gameName, matchId])     => ({ gameName, matchId }),
     relay_to_window:     ([target, event, payload])=> ({ target, event, payload }),
     // fichiers
-    is_file:             ([path])                  => ({ path }),
+    parse_pjn:           ([data])                  => ({ data }),
+    open_show_position:  ([gameName, matchId])     => ({ gameName, matchId }),
     // templates
     play_template:       ([templateName])          => ({ templateName }),
     save_template:       ([matchId, name])         => ({ matchId, name }),
@@ -150,18 +133,13 @@ function buildPayload(method, args) {
     // hub
     get_app_info:        ()                             => ({}),
     remove_template:     ([templateName])              => ({ templateName }),
-    load_board_state:    ([gameName, matchId, fen])    => ({ gameName, matchId, fen }),
-    book_history_view:   ([matchId, spec])             => ({ matchId, spec }),
     notify_user_response:([token, result])             => ({ token, result }),
     // windows — hub actions
-    open_book_history:   ([matchId])                   => ({ matchId }),
     open_position:       ([gameName, matchId])         => ({ gameName, matchId }),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),
     // camera
-    get_camera:          ([matchId])               => ({ matchId }),
-    set_camera:          ([matchId, details])      => ({ matchId, details }),
     // notify
     notify_user:         ([request])               => ({ request }),
   };

@@ -120,10 +120,13 @@ pub fn open_info(app: AppHandle, game_name: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>) -> Result<(), String> {
     let id_str = match_id.map(|i| i.to_string()).unwrap_or_default();
+    // JoclyBoard : "Board state" ouvre la fenêtre de SAISIE d'un état
+    // (open-position) pour démarrer/recharger une partie — pas la fenêtre
+    // d'affichage (show-position), réservée à "Display board state".
     let label = format!("board-state-{game_name}-{id_str}");
     open_window(&app, WindowOptions {
         label: &label,
-        url:   &format!("content/show-position.html?game={game_name}&id={id_str}"),
+        url:   &format!("content/open-position.html?game={game_name}&id={id_str}"),
         title: &format!("{game_name} board state"),
         width: 400.0, height: 300.0,
         min_width: 280.0, min_height: 180.0,
@@ -147,15 +150,6 @@ pub fn open_book(app: AppHandle, game_name: String, file_name: String, _data: St
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// rpc.call("openBookMatch", gameName, match)
-/// Stub non fonctionnel sans worker — à réimplémenter quand le parsing PJN
-/// sera disponible côté Rust ou côté JS dans book.html.
-#[tauri::command]
-pub fn open_book_match(_app: AppHandle, game_name: String, _book_match: serde_json::Value) -> Result<(), String> {
-    log::warn!("openBookMatch not implemented without worker (game: {game_name})");
-    Ok(())
-}
-
 /// rpc.call("openMoves", matchId)
 #[tauri::command]
 pub fn open_moves(app: AppHandle, match_id: u32) -> Result<(), String> {
@@ -170,18 +164,6 @@ pub fn open_moves(app: AppHandle, match_id: u32) -> Result<(), String> {
 }
 
 
-/// Ouvre book-history.html pour visualiser un PJN chargé
-#[tauri::command]
-pub fn open_book_history(app: AppHandle, match_id: u32) -> Result<(), String> {
-    open_window(&app, WindowOptions {
-        label: &format!("book-history-{match_id}"),
-        url:   &format!("content/book-history.html?id={match_id}"),
-        title: &format!("Book #{match_id}"),
-        width: 500.0, height: 600.0,
-        min_width: 300.0, min_height: 300.0,
-        persist_key: Some(format!("window:book-history-{match_id}")),
-    }).map(|_| ()).map_err(|e| e.to_string())
-}
 
 /// rpc.call("openBoardState", gameName, matchId)  →  open-position.html (saisie FEN)
 #[tauri::command]
