@@ -414,6 +414,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     try { InitDetailButtons(); }
     catch (e) { detailAvailable = false; console.error('[hub] InitDetailButtons:', e); }
 
+    // Garde : si ../browser/jocly.js n'a pas chargé (dist/ absent des assets
+    // embarqués — build fait sans dist/ ou avec un src-tauri/target périmé),
+    // afficher la cause dans l'interface au lieu d'une liste vide muette.
+    if (typeof Jocly === 'undefined') {
+        console.error('[hub] window.Jocly absent : ../browser/jocly.js n\'a pas chargé.',
+            'Causes probables : dist/ manquant au moment du build, ou src-tauri/target',
+            'périmé (assets embarqués sans dist) — supprimer target/ et rebuilder.');
+        document.getElementById('game-list-pane').style.display = '';
+        const ul = document.getElementById('game-list');
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.innerHTML = '<div class="media-body"><strong></strong><p></p></div>';
+        li.querySelector('strong').textContent = t('hub.joclyMissing');
+        li.querySelector('p').textContent = t('hub.joclyMissingHint');
+        ul.appendChild(li);
+        RenderAbout();
+        await twu.init(appInfo.name + ' ' + appInfo.version);
+        twu.ready();
+        return;
+    }
+
     console.info('[hub] calling ListGames()');
     await ListGames();
     console.info('[hub] ListGames() done — allGameList has', allGameList.length, 'games');
