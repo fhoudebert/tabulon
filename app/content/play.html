@@ -31,7 +31,7 @@
 				<footer class="toolbar toolbar-footer">
 					<div class="toolbar-actions ephemeral-actions">
 
-						<button id="button-stop-video" class="btn btn-default pull-left hidden" title="Stop recording">
+						<button id="button-stop-video" class="btn btn-default pull-left hidden" title="Stop recording" data-i18n-title="tip.stopRecording">
 							<span class="icon icon-stop"></span>
 						</button>
 
@@ -51,60 +51,73 @@
 					<span class="pull-left player-select-wrap" id="skin-select-wrap" style="display:none">
 						<select id="select-skin" class="player-select" title="View options" data-i18n-title="tip.viewOptions"></select>
 					</span>
+					<!-- Actions rapides visibles quand la barre est masquée (même
+					     mécanique d'exclusion que les sélecteurs, via player-select-wrap) -->
+					<span class="pull-left player-select-wrap" id="quick-actions-wrap">
+						<button id="quick-takeback" class="btn btn-default" title="Take back" data-i18n-title="tip.takeBack">
+							<span class="icon icon-back"></span>
+						</button>
+						<button id="quick-restart" class="btn btn-default" title="Restart" data-i18n-title="tip.restart">
+							<span class="icon icon-ccw"></span>
+						</button>
+					</span>
 						<div class="btn-group pull-right ephemeral-appear">
-							<button id="button-players" class="btn btn-default" title="Players">
+							<button id="button-players" class="btn btn-default" title="Players" data-i18n-title="tip.players">
 								<span class="icon icon-users"></span>
 							</button>
-							<button id="button-options" class="btn btn-default" title="View options">
+							<button id="button-options" class="btn btn-default" title="View options" data-i18n-title="tip.viewOptions">
 								<span class="icon icon-eye"></span>
 							</button>
-							<button id="button-takeback" class="btn btn-default" title="Take back">
+							<button id="button-takeback" class="btn btn-default" title="Take back" data-i18n-title="tip.takeBack">
 								<span class="icon icon-back"></span>
 							</button>
-							<button id="button-restart" class="btn btn-default" title="Restart">
+							<button id="button-restart" class="btn btn-default" title="Restart" data-i18n-title="tip.restart">
 								<span class="icon icon-ccw"></span>
 							</button>
-							<button id="button-history" class="btn btn-default" title="History">
+							<button id="button-history" class="btn btn-default" title="History" data-i18n-title="tip.history">
 								<span class="icon icon-list"></span>
 							</button>
-							<button id="button-clock" class="btn btn-default" title="Clock">
+							<button id="button-clock" class="btn btn-default" title="Clock" data-i18n-title="tip.clock">
 								<span class="icon icon-clock"></span>
 							</button>
-							<button id="button-replay" class="btn btn-default" title="Replay last move">
+							<button id="button-replay" class="btn btn-default" title="Replay last move" data-i18n-title="tip.replay">
 								<span class="icon icon-level-down"></span>
 							</button>
-							<button id="button-pause" class="btn btn-default" title="Pause">
+							<button id="button-pause" class="btn btn-default" title="Pause" data-i18n-title="tip.pause">
 								<span class="icon icon-pause"></span>
 							</button>
 							<button id="button-resume" class="btn btn-default" title="Resume" style="display:none">
 								<span class="icon icon-play"></span>
 							</button>
-							<button id="button-fullscreen" class="btn btn-default" title="Full screen">
+							<button id="button-fullscreen" class="btn btn-default" title="Full screen" data-i18n-title="tip.fullscreen">
 								<span class="icon icon-resize-full"></span>
 							</button>
-							<button id="button-save" class="btn btn-default" title="Save">
+							<button id="button-save" class="btn btn-default" title="Save" data-i18n-title="tip.save">
 								<span class="icon icon-download"></span>
 							</button>
                             <input type="file" id="fileElem" accept="application/json" style="display:none"/>
-							<button id="button-load" class="btn btn-default" title="Load">
+							<button id="button-load" class="btn btn-default" title="Load" data-i18n-title="tip.load">
 								<span class="icon icon-upload"></span>
 							</button>
-							<button id="button-snapshot" class="btn btn-default" title="Take snapshot">
+							<button id="button-snapshot" class="btn btn-default" title="Take snapshot" data-i18n-title="tip.snapshot">
 								<span class="icon icon-camera"></span>
 							</button>
-<button id="button-template" class="btn btn-default" title="Save template">
+							<button id="button-video" class="btn btn-default" title="Record video" data-i18n-title="tip.recordVideo">
+								<span class="icon icon-video"></span>
+							</button>
+<button id="button-template" class="btn btn-default" title="Save template" data-i18n-title="tip.saveTemplate">
 								<span class="icon icon-layout"></span>
 							</button>
-							<button id="button-clone" class="btn btn-default" title="Fork">
+							<button id="button-clone" class="btn btn-default" title="Fork" data-i18n-title="tip.fork">
 								<span class="icon icon-flow-cascade"></span>
 							</button>
-							<button id="button-camera" class="btn btn-default" title="Camera view">
+							<button id="button-camera" class="btn btn-default" title="Camera view" data-i18n-title="tip.cameraView">
 								<span class="icon icon-target"></span>
 							</button>
 <button id="button-favorite-yes" class="btn btn-default" title="Unfavorite" style="display:none">
 								<span class="icon icon-star"></span>
 							</button>
-							<button id="button-favorite-no" class="btn btn-default" title="Favorite">
+							<button id="button-favorite-no" class="btn btn-default" title="Favorite" data-i18n-title="tip.favorite">
 								<span class="icon icon-star-empty"></span>
 							</button>
 							<button id="button-help" class="btn btn-default" title="Rules, credits, about">
@@ -112,7 +125,7 @@
 							</button>
 						</div>
 						<div class="btn-group" id="toggle-bar-group">
-							<button id="button-toggle-bar" class="btn btn-default" title="Show/hide buttons">
+							<button id="button-toggle-bar" class="btn btn-default" title="Show/hide buttons" data-i18n-title="tip.toggleBar">
 								<span class="icon icon-dot-3"></span>
 							</button>
 						</div>

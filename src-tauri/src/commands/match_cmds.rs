@@ -14,7 +14,7 @@
 use crate::state::{AppState, Match};
 use crate::window_manager::{open_window, WindowOptions};
 use serde_json::Value;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, Emitter};
 use tauri_plugin_store::StoreExt;
 
 // ── Cycle de vie d'une partie ──────────────────────────────────────────────────
@@ -109,8 +109,9 @@ pub fn set_favorite(
     } else {
         favs.remove(&game_name);
     }
-    store.set("favoriteGames", Value::Object(favs));
+    store.set("favoriteGames", Value::Object(favs.clone()));
     store.save().map_err(|e| e.to_string())?;
+    let _ = app.emit("updateFavorites", Value::Object(favs));
     Ok(())
 }
 

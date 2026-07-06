@@ -27,6 +27,8 @@ const mockTauri = {
       switch (cmd) {
         case 'get_app_info': return { name: 'Tabulon', version: 'test', homepage: 'https://example.org' };
         case 'is_favorite':  return !!(favorites && favorites[payload.gameName]);
+        case 'play_template':
+          return { gameName: 'classic-chess', gameData: { game: 'classic-chess', playedMoves: [] }, clock: null };
         case 'set_favorite':
           favorites = favorites || {};
           if (payload.value) favorites[payload.gameName] = Date.now();
@@ -170,7 +172,13 @@ await waitFor(() => $$('#game-detail .template').length === 1, 'template du jeu 
 assert($('#game-detail .template').textContent === 'Ma partie rapide', 'seul le template de classic-chess apparaît');
 assert($('#game-detail .templates-block').style.display !== 'none', 'bloc Templates visible');
 $('#game-detail .template').click();
-assert(invokeCalls.some(c => c.cmd === 'play_template' && c.payload.templateName === 'Ma partie rapide'), 'clic template → play_template');
+await waitFor(() => invokeCalls.some(c => c.cmd === 'play_template' && c.payload.templateName === 'Ma partie rapide'), 'play_template appelé');
+// play_template retourne les données (mock) → le hub doit LANCER la partie
+await waitFor(() => invokeCalls.some(c => c.cmd === 'new_match' && String(c.payload.forkId || '').startsWith('tpl-')),
+  'clic template → new_match');
+const tplLaunch = invokeCalls.find(c => c.cmd === 'new_match' && String(c.payload.forkId || '').startsWith('tpl-'));
+assert(storeData.get('fork:' + tplLaunch.payload.forkId)?.game === 'classic-chess',
+  'clic template → gameData déposé sous fork:{tpl-…} puis new_match (l\'ancien code ignorait le retour)');
 
 // 8. Changement de jeu : visuels nettoyés et remplacés, favoris re-synchronisés
 // (le push updateFavorites de l'étape 6 a re-rendu la liste pour rafraîchir
