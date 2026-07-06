@@ -90,6 +90,12 @@ L'état vit dans `play.js` : `{mode, 1: ms, -1: ms, xtrasec_±1, mps_±1, turn, 
 
 Clés notables : `nav-last`, `last-game`, `favoriteGames`, `templates`, `view-options:{game}`, `clock` (derniers réglages du setup), `play-footer-bar` (barre de boutons visible), `window:{label}` (géométrie), `fork:{id}` (transfert de position au fork).
 
+## Capture vidéo
+
+`play.js` pompe des frames JPEG (`viewControl('takeSnapshot', {format:'jpeg', quality})`) vers la commande Rust `record_frame`, qui les pousse sur le stdin d'un ffmpeg spawné par `start_recording` (`-f mjpeg … libx264`, `-loglevel error` obligatoire avec stderr pipé sous peine de deadlock du buffer). Boucle séquentielle auto-replanifiée (pas de setInterval qui empile des captures concurrentes en 3D), saut des temps morts après `video-record:ignoreIdenticalFrames` doublons (défaut 30), capture indisponible en skin 2D (limitation Jocly : rendu WebGL requis — boutons grisés avec tooltip).
+
+**Fin d'enregistrement** : le MP4 n'est lisible qu'après fermeture du stdin d'ffmpeg (écriture de l'atome moov) — sinon "unrecognized file format". Trois chemins y mènent : re-clic sur le bouton Record video (bascule, état `.recording` rouge), le bouton Stop dédié, et deux filets automatiques si la fenêtre de jeu se ferme en cours d'enregistrement (`beforeunload` côté JS + hook `WindowEvent::Destroyed` sur `play-{id}` dans lib.rs → `video_cmds::finalize_recording`). Prérequis : ffmpeg dans le PATH.
+
 ## Pièges connus
 
 - **`src-tauri/target/` à supprimer** après tout ajout/suppression de fichier dans `app/` (assets embarqués périmés → symptômes de fichiers « fantômes »).

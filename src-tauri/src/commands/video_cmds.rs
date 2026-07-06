@@ -161,13 +161,13 @@ pub fn record_frame(
     Ok(())
 }
 
-/// Ferme le pipe stdin de ffmpeg → ffmpeg finalise le fichier MP4.
-/// Équivalent de videoRecorder.finalize().
-#[tauri::command]
-pub fn stop_recording(
-    state:    State<'_, VideoState>,
-    match_id: u32,
-) -> Result<String, String> {
+/// Finalise l'enregistrement d'un match : ferme stdin → ffmpeg écrit l'atome
+/// moov et le MP4 devient lisible. Sans cette étape le fichier est corrompu
+/// ("unrecognized file format") — c'est pourquoi elle est appelée à la fois
+/// par la commande stop_recording ET par le hook de fermeture de fenêtre
+/// (lib.rs, WindowEvent::Destroyed sur "play-{id}") : fermer la fenêtre de
+/// jeu en cours d'enregistrement finalise quand même le fichier.
+pub fn finalize_recording(state: &VideoState, match_id: u32) -> Result<String, String> {
     let mut recordings = state.recordings.lock().unwrap();
     let mut rec = recordings.remove(&match_id)
         .ok_or_else(|| format!("stop_recording: no active recording for match {match_id}"))?;
@@ -196,4 +196,14 @@ pub fn stop_recording(
             .into_iter().rev().collect::<Vec<_>>().join(" | ");
         Err(format!("ffmpeg exited with status {exit_status}: {tail}"))
     }
+}
+
+/// Ferme le pipe stdin de ffmpeg → ffmpeg finalise le fichier MP4.
+/// Équivalent de videoRecorder.finalize().
+#[tauri::command]
+pub fn stop_recording(
+    state:    State<'_, VideoState>,
+    match_id: u32,
+) -> Result<String, String> {
+    finalize_recording(&state, match_id)
 }

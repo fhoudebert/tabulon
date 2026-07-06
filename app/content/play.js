@@ -253,9 +253,10 @@ function initSatelliteListeners() {
         await joclyMatch.setViewOptions(payload || {}).catch(e => console.warn('[play] setViewOptions:', e));
         // Persister dans le store pour la prochaine ouverture
         store?.set('view-options:' + gameName, payload || {});
-        // Synchroniser le sélecteur de skin du footer
+        // Synchroniser le sélecteur de skin du footer et la garde capture 2D/3D
         const sel = document.getElementById('select-skin');
         if (sel && payload?.skin) sel.value = payload.skin;
+        if (payload?.skin) UpdateCaptureButtons(payload.skin);
     });
 
     // get-players : retourne les joueurs actuels + niveaux disponibles
@@ -628,6 +629,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         videoLastFrame = null;
         videoIdenticalCount = 0;
         document.getElementById('button-stop-video')?.classList.remove('hidden');
+        // Le bouton 'Record video' devient une BASCULE : re-cliquer arrête
+        // l'enregistrement (état visuel .recording + tooltip 'Stop recording')
+        const vbtn = document.getElementById('button-video');
+        vbtn?.classList.add('recording');
+        if (vbtn) vbtn.title = t('tip.stopRecording');
         const quality = await store?.get('video-record:quality').catch(() => undefined);
         const ignoreIdentical = await store?.get('video-record:ignoreIdenticalFrames').catch(() => null) || 30;
         PumpFrame(quality, ignoreIdentical);
@@ -637,6 +643,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!videoRecording) return;
         videoRecording = false;
         document.getElementById('button-stop-video')?.classList.add('hidden');
+        const vbtn = document.getElementById('button-video');
+        vbtn?.classList.remove('recording');
+        if (vbtn) vbtn.title = t('tip.recordVideo');
         if (error) { UpdateFooter(t('play.videoError', { error })); tRpc.call('stop_recording', matchId).catch(() => {}); return; }
         try {
             const path = await tRpc.call('stop_recording', matchId);
@@ -646,7 +655,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    btn('button-video',      () => StartRecording());
+    // Actions rapides du footer (barre masquée) : proxys vers les boutons
+    // de la barre — un seul handler par action, zéro duplication de logique.
+    btn('quick-takeback', () => document.getElementById('button-takeback')?.click());
+    btn('quick-restart',  () => document.getElementById('button-restart')?.click());
+
+    // Bascule : démarrer si à l'arrêt, arrêter si en cours (demande UX)
+    btn('button-video',      () => videoRecording ? StopRecording() : StartRecording());
+    // Filet JS : finaliser si la fenêtre se ferme pendant l'enregistrement
+    // (doublé côté Rust par le hook WindowEvent::Destroyed de lib.rs, qui
+    // couvre aussi le cas où cet invoke n'a pas le temps de partir)
+    window.addEventListener('beforeunload', () => {
+        if (videoRecording) { videoRecording = false; tRpc.call('stop_recording', matchId).catch(() => {}); }
+    });
     btn('button-stop-video', () => StopRecording());
 
     // Take snapshot : viewControl('takeSnapshot') retourne un data-URI ; le
@@ -696,6 +717,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Sélecteur de skin (2D/3D) du footer, à côté des joueurs A/B — visible
     // seulement quand la barre de boutons est masquée (classe
     // player-select-wrap, exclusion gérée en CSS par .bar-visible).
+    // Capture d'écran / vidéo : disponibles uniquement en 3D (limitation
+    // Jocly : viewControl('takeSnapshot') rejette "Snapshot only available
+    // on 3D views" en 2D — c'est le rendu WebGL qui est capturé). On grise
+    // les deux boutons quand le skin courant est un 2D CONNU ; si les
+    // métadonnées manquent, on laisse actif (jocly signalera).
+    function UpdateCaptureButtons(skinName) {
+        const entry = skins.find(sk => sk.name === skinName);
+        const disable = entry ? !entry['3d'] : false;
+        for (const [id, tipKey] of [['button-snapshot', 'tip.snapshot'], ['button-video', 'tip.recordVideo']]) {
+            const el = document.getElementById(id);
+            if (!el) continue;
+            el.disabled = disable;
+            el.title = disable ? t('play.capture3dOnly') : t(tipKey);
+        }
+        if (disable && videoRecording) StopRecording();   // passage en 2D pendant la capture
+    }
+    UpdateCaptureButtons(viewOptions.skin);
+
     const skinSel = document.getElementById('select-skin');
     if (skinSel && skins.length > 1) {
         skins.forEach(sk => {
@@ -710,6 +749,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             opts.skin = skinSel.value;
             await joclyMatch.setViewOptions(opts).catch(e => console.warn('[play] setViewOptions:', e));
             store?.set('view-options:' + gameName, opts);
+            UpdateCaptureButtons(skinSel.value);
         });
         document.getElementById('skin-select-wrap').style.display = '';
     }

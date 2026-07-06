@@ -64,6 +64,7 @@ const DICT = {
         'tip.cameraView': 'Camera view', 'tip.toggleBar': 'Show/hide buttons',
         'tip.stopRecording': 'Stop recording',
         // play — dynamiques
+        'tip.recordVideo': 'Record video', 'play.videoSaved': 'Video saved: {path}', 'play.videoError': 'Recording failed: {error}', 'play.capture3dOnly': 'Snapshot and video require a 3D skin',
         'play.thinking': 'Thinking...', 'play.draw': 'Draw',
         'play.aWins': 'Player A wins', 'play.bWins': 'Player B wins',
         'play.loadFailed': 'Load failed: wrong game file?',
@@ -154,6 +155,7 @@ const DICT = {
         'tip.saveTemplate': 'Enregistrer comme modèle', 'tip.fork': 'Dupliquer la partie',
         'tip.cameraView': 'Vue caméra', 'tip.toggleBar': 'Afficher/masquer les boutons',
         'tip.stopRecording': "Arrêter l'enregistrement",
+        'tip.recordVideo': 'Enregistrer une vidéo', 'play.videoSaved': 'Vidéo enregistrée : {path}', 'play.videoError': "Échec de l'enregistrement : {error}", 'play.capture3dOnly': 'Capture et vidéo nécessitent un habillage 3D',
         'play.thinking': 'Réflexion...', 'play.draw': 'Partie nulle',
         'play.aWins': 'Le joueur A gagne', 'play.bWins': 'Le joueur B gagne',
         'play.loadFailed': 'Échec du chargement : mauvais fichier de jeu ?',
