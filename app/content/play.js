@@ -11,6 +11,7 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
+import { initI18n, t } from './tabulon-i18n.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
 const gameName = new URLSearchParams(window.location.search).get('game') || 'classic-chess';
@@ -42,8 +43,8 @@ let originalClock = { ...clock };
 function ClockPayload() {
     return {
         players: {
-            1:    { name: 'Player A' },   // Jocly.PLAYER_A
-            '-1': { name: 'Player B' },   // Jocly.PLAYER_B
+            1:    { name: t('common.playerA') },   // Jocly.PLAYER_A
+            '-1': { name: t('common.playerB') },   // Jocly.PLAYER_B
         },
         clock,
     };
@@ -137,7 +138,7 @@ async function gameLoop() {
                     // Tour IA.
                     // machineSearch() en mode proxy iframe retourne {move, ...}
                     // mais NE joue PAS le coup -- il faut appeler playMove().
-                    UpdateFooter('Thinking...');
+                    UpdateFooter(t('play.thinking'));
                     const result = await joclyMatch.machineSearch({ level });
                     UpdateFooter('');
 
@@ -166,9 +167,9 @@ async function gameLoop() {
 
             if (finished) {
                 ClockStop();
-                UpdateFooter(winner === 0 ? 'Draw'
-                    : winner > 0 ? 'Player A wins'
-                    : 'Player B wins');
+                UpdateFooter(winner === 0 ? t('play.draw')
+                    : winner > 0 ? t('play.aWins')
+                    : t('play.bWins'));
                 loopActive = false;
             }
             // Notifier les satellites (history.js) qu'un coup a ete joue
@@ -204,13 +205,13 @@ function BuildPlayerSelect(selectId, playerKey) {
 
     const optHuman = document.createElement('option');
     optHuman.value = '';
-    optHuman.textContent = 'Human';
+    optHuman.textContent = t('common.human');
     sel.appendChild(optHuman);
 
     levels.forEach((lvl, i) => {
         const opt = document.createElement('option');
         opt.value = String(i);
-        opt.textContent = lvl.label || lvl.name || ('Level ' + (i + 1));
+        opt.textContent = lvl.label || lvl.name || t('common.level', { n: i + 1 });
         sel.appendChild(opt);
     });
 
@@ -411,11 +412,12 @@ function initSatelliteListeners() {
 
 // -- DOMContentLoaded ---------------------------------------------------------
 document.addEventListener('DOMContentLoaded', async () => {
+    await initI18n();
     console.info('[play] DOMContentLoaded, game:', gameName, 'id:', matchId);
     store = await Store.load('tabulon.json');
 
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(config.model['title-en'] + ' #' + matchId, '.game-header');
+    await twu.init(t('play.title', { game: config.model['title-en'], id: matchId }), '.game-header');
 
     levels = config.model.levels || [];
     BuildPlayerSelect('select-player-a', Jocly.PLAYER_A);
@@ -526,7 +528,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!data) return;
         const path = await saveDialog({
             defaultPath: gameName + '.json',
-            filters: [{ name: 'Jocly match', extensions: ['json'] }],
+            filters: [{ name: t('play.saveFilter'), extensions: ['json'] }],
         }).catch(() => null);
         if (!path) return;   // dialogue annulé
         await tRpc.call('save_text_file', path, JSON.stringify(data, null, 2))
@@ -557,7 +559,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             catch (err) {
                 // ex. "Trying to load X to Y match" (mauvais jeu)
                 console.warn('[play] load failed:', err.message);
-                UpdateFooter('Load failed: wrong game file?');
+                UpdateFooter(t('play.loadFailed'));
                 if (!loopActive) gameLoop();
                 return;
             }
@@ -570,6 +572,82 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     });
     btn('button-load', () => fileElem?.click());
+
+    // ── Capture vidéo ─────────────────────────────────────────────────────
+    // Réparation vs JoclyBoard (Linux) : la pompe n'est plus un setInterval
+    // 30 fps — quand takeSnapshot dépasse 33 ms (3D/WebGL), les captures
+    // s'empilaient en concurrence (frames désordonnées, UI asphyxiée). Ici
+    // une boucle SÉQUENTIELLE auto-replanifiée : capture → envoi → attente
+    // du reliquat de la période. Les options de JoclyBoard sont reprises :
+    //   video-record:quality               qualité JPEG (store, optionnel)
+    //   video-record:ignoreIdenticalFrames après N frames identiques
+    //                                      consécutives, on cesse d'envoyer
+    //                                      (la vidéo saute les temps morts)
+    let videoRecording = false;
+    let videoLastFrame = null;
+    let videoIdenticalCount = 0;
+
+    async function PumpFrame(quality, ignoreIdentical) {
+        if (!videoRecording) return;
+        const t0 = Date.now();
+        let snapshot = await joclyMatch.viewControl('takeSnapshot', { format: 'jpeg', quality })
+            .catch(() => null);
+        if (!videoRecording) return;   // arrêté pendant la capture
+        if (snapshot) {
+            if (snapshot === videoLastFrame) {
+                videoIdenticalCount++;
+                if (videoIdenticalCount > ignoreIdentical) snapshot = null;
+            } else {
+                videoIdenticalCount = 0;
+                videoLastFrame = snapshot;
+            }
+        }
+        if (snapshot) {
+            try { await tRpc.call('record_frame', matchId, snapshot); }
+            catch (e) {
+                // ffmpeg mort (disque plein, codec…) : arrêter proprement et
+                // remonter la cause au lieu de marteler des erreurs à 30 fps
+                console.warn('[play] record_frame:', e);
+                StopRecording(e.message || String(e));
+                return;
+            }
+        }
+        setTimeout(() => PumpFrame(quality, ignoreIdentical),
+            Math.max(0, 1000 / 30 - (Date.now() - t0)));
+    }
+
+    async function StartRecording() {
+        if (videoRecording || !joclyMatch) return;
+        try { await tRpc.call('start_recording', matchId); }
+        catch (e) {
+            // "Recording cancelled" = dialogue annulé : silencieux
+            if (!/cancel/i.test(String(e.message || e))) UpdateFooter(t('play.videoError', { error: e.message || e }));
+            return;
+        }
+        videoRecording = true;
+        videoLastFrame = null;
+        videoIdenticalCount = 0;
+        document.getElementById('button-stop-video')?.classList.remove('hidden');
+        const quality = await store?.get('video-record:quality').catch(() => undefined);
+        const ignoreIdentical = await store?.get('video-record:ignoreIdenticalFrames').catch(() => null) || 30;
+        PumpFrame(quality, ignoreIdentical);
+    }
+
+    async function StopRecording(error) {
+        if (!videoRecording) return;
+        videoRecording = false;
+        document.getElementById('button-stop-video')?.classList.add('hidden');
+        if (error) { UpdateFooter(t('play.videoError', { error })); tRpc.call('stop_recording', matchId).catch(() => {}); return; }
+        try {
+            const path = await tRpc.call('stop_recording', matchId);
+            UpdateFooter(t('play.videoSaved', { path }));
+        } catch (e) {
+            UpdateFooter(t('play.videoError', { error: e.message || e }));
+        }
+    }
+
+    btn('button-video',      () => StartRecording());
+    btn('button-stop-video', () => StopRecording());
 
     // Take snapshot : viewControl('takeSnapshot') retourne un data-URI ; le
     // download a.click() d'Electron ne fait rien sous Tauri → dialogue natif

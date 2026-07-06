@@ -93,22 +93,9 @@ pub async fn start_recording(
         }
     }
 
-    // Lire les options d'enregistrement depuis le store.
-    // TODO: ces deux réglages ne sont pas encore exposés dans une fenêtre
-    // d'options (aucun fichier JS n'écrit ces clés de store actuellement)
-    // ni appliqués à la commande ffmpeg ci-dessous — préfixées par `_` pour
-    // l'instant, à câbler quand l'UI correspondante existera.
-    let _ignore_identical: u32 = app
-        .store("tabulon.json").ok()
-        .and_then(|s| s.get("video-record:ignoreIdenticalFrames"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(30) as u32;
-
-    let _reuse_last: bool = app
-        .store("tabulon.json").ok()
-        .and_then(|s| s.get("video-record:reuseLastFrame"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    // NB : les options de capture (ignoreIdenticalFrames, quality) sont
+    // appliquées côté play.js, qui possède la pompe à frames — ffmpeg ne
+    // reçoit que le flux JPEG final.
 
     // Lancer ffmpeg
     // Entrée : flux JPEG bruts sur stdin (format mjpeg)
@@ -116,6 +103,10 @@ pub async fn start_recording(
     let mut child = Command::new("ffmpeg")
         .args([
             "-y",                    // écraser sans demander
+            // -loglevel error : indispensable avec stderr pipé — le flux de
+            // progression normal de ffmpeg remplirait le buffer du pipe
+            // (64 Ko) et BLOQUERAIT l'encodage (deadlock classique Linux)
+            "-loglevel", "error",
             "-f",    "mjpeg",        // format d'entrée : JPEG concaténés
             "-r",    "30",           // fréquence d'images
             "-i",    "pipe:0",       // lire depuis stdin
@@ -127,7 +118,7 @@ pub async fn start_recording(
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())   // -loglevel error : seules les erreurs y passent
         .spawn()
         .map_err(|e| format!("Cannot start ffmpeg: {e}. Is ffmpeg installed?"))?;
 
@@ -184,7 +175,9 @@ pub fn stop_recording(
     // Fermer stdin → signal EOF pour ffmpeg
     drop(rec.stdin);
 
-    // Attendre la fin de ffmpeg (avec timeout raisonnable)
+    // Récupérer stderr AVANT wait (les erreurs ffmpeg y sont, cf. -loglevel error)
+    let stderr_pipe = rec.process.stderr.take();
+
     let exit_status = rec.process.wait()
         .map_err(|e| format!("stop_recording: ffmpeg wait error: {e}"))?;
 
@@ -192,6 +185,15 @@ pub fn stop_recording(
         log::info!("stopRecording match={match_id} → {}", rec.path);
         Ok(rec.path)
     } else {
-        Err(format!("ffmpeg exited with status {exit_status}"))
+        // Remonter la vraie cause (codec absent, disque plein, droits…) au
+        // lieu d'un code de sortie opaque — c'était le point aveugle Linux.
+        let mut err_out = String::new();
+        if let Some(mut se) = stderr_pipe {
+            use std::io::Read;
+            let _ = se.read_to_string(&mut err_out);
+        }
+        let tail: String = err_out.lines().rev().take(4).collect::<Vec<_>>()
+            .into_iter().rev().collect::<Vec<_>>().join(" | ");
+        Err(format!("ffmpeg exited with status {exit_status}: {tail}"))
     }
 }
