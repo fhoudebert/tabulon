@@ -24,6 +24,22 @@ pub fn run() {
         .manage(NotifyChannels::default())
         .manage(VideoState::default())
         // ── Setup ─────────────────────────────────────────────────────────────
+        // Filet de sécurité vidéo : si une fenêtre de jeu est détruite pendant
+        // un enregistrement (fermeture, fin d'app), finaliser le MP4 — sinon
+        // ffmpeg ne reçoit jamais l'EOF et le fichier reste illisible.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(id_str) = window.label().strip_prefix("play-") {
+                    if let Ok(match_id) = id_str.parse::<u32>() {
+                        use tauri::Manager;
+                        let state = window.app_handle().state::<VideoState>();
+                        if let Ok(path) = video_cmds::finalize_recording(&state, match_id) {
+                            log::info!("fenêtre play-{match_id} fermée : vidéo finalisée → {path}");
+                        }
+                    }
+                }
+            }
+        })
         .setup(|app| {
             let cli_matches = app.cli().matches()?;
             if !cli_matches.args.contains_key("no-autoupdate") {
