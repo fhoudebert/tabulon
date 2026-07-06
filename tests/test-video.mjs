@@ -130,14 +130,34 @@ assert(true, 'nouvelle image → envois repris');
 //    consécutive, et le nombre de captures reste ≈ durée/25ms (pas ×N).
 assert(match.snapshots < 80, `pas d'empilement de captures (${match.snapshots} captures pour ~1,2 s)`);
 
-// 6. Stop : stop_recording, bouton masqué, chemin au footer, pompe arrêtée
-document.getElementById('button-stop-video').click();
+// 5b. Pendant l'enregistrement : bouton-bascule en état .recording
+assert(document.getElementById('button-video').classList.contains('recording'),
+  "enregistrement en cours : bouton 'Record video' marqué .recording (icône rouge)");
+assert(document.getElementById('button-video').title.length > 0 &&
+       document.getElementById('button-video').title !== 'Record video',
+  'tooltip du bouton devenu "Stop recording"');
+
+// 6. Stop PAR LA BASCULE : re-clic sur 'Record video' → stop_recording,
+//    bouton stop masqué, chemin au footer, pompe arrêtée
+document.getElementById('button-video').click();
 await waitFor(() => invokeCalls.some(c => c.cmd === 'stop_recording'), 'stop_recording');
 await waitFor(() => stopBtn().classList.contains('hidden'), 'bouton stop masqué');
 await waitFor(() => document.getElementById('board-footer-text').textContent.includes('/tmp/partie.mp4'), 'footer');
 const framesAfterStop = frames().length;
 await sleep(250);
 assert(frames().length === framesAfterStop, 'pompe arrêtée : plus aucune frame après stop');
+
+assert(!document.getElementById('button-video').classList.contains('recording'),
+  'après stop : état .recording retiré');
+
+// 7. Filet beforeunload : fermer la fenêtre en cours d'enregistrement
+//    déclenche stop_recording (le MP4 sera finalisé, plus de fichier corrompu)
+document.getElementById('button-video').click();   // redémarrer (bascule)
+await waitFor(() => document.getElementById('button-video').classList.contains('recording'), 'redémarré');
+const stopsBefore = invokeCalls.filter(c => c.cmd === 'stop_recording').length;
+window.dispatchEvent(new dom.window.Event('beforeunload'));
+await waitFor(() => invokeCalls.filter(c => c.cmd === 'stop_recording').length > stopsBefore, 'stop au beforeunload');
+assert(true, 'fermeture de fenêtre → stop_recording envoyé (finalisation du MP4)');
 
 console.log(`\n${passed} assertions OK — capture vidéo validée.`);
 process.exit(0);
