@@ -124,3 +124,23 @@ pub fn save_text_file(path: String, contents: String) -> Result<(), String> {
     }
     fs::write(p, contents).map_err(|e| format!("save_text_file: {e}"))
 }
+
+/// Écrit un data-URI image (PNG/JPEG base64) dans un fichier binaire.
+///
+/// Utilisé par play.js (bouton "Take snapshot") : viewControl('takeSnapshot')
+/// retourne un data-URI, et le download `a.click()` d'Electron n'existe pas
+/// dans la WebView Tauri — on passe par le dialogue natif + cette commande.
+#[tauri::command]
+pub fn save_data_uri_file(path: String, data_uri: String) -> Result<(), String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let p = Path::new(&path);
+    if !p.is_absolute() {
+        return Err(format!("save_data_uri_file: chemin non absolu: {path}"));
+    }
+    let b64 = data_uri
+        .strip_prefix("data:image/png;base64,")
+        .or_else(|| data_uri.strip_prefix("data:image/jpeg;base64,"))
+        .ok_or("save_data_uri_file: data-URI attendu (image/png ou image/jpeg)")?;
+    let bytes = STANDARD.decode(b64).map_err(|e| format!("save_data_uri_file: base64: {e}"))?;
+    fs::write(p, bytes).map_err(|e| format!("save_data_uri_file: {e}"))
+}

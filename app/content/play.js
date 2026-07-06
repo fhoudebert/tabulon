@@ -323,6 +323,18 @@ function initSatelliteListeners() {
         await joclyMatch.rollback(payload?.index ?? 0).catch(e => console.warn('[play] rollback:', e));
     });
 
+    // get-template-data : données complètes pour "Save template"
+    // (save-template.html les transmet ensuite à la commande Rust save_template)
+    listen(prefix + 'get-template-data', async () => {
+        if (!joclyMatch) return;
+        const gameData = await joclyMatch.save().catch(() => null);
+        await emit(`play-rep:${matchId}:get-template-data`, {
+            gameName,
+            gameData,
+            clock: clockConfig || null,
+        });
+    });
+
     // get-board-state : état du plateau (FEN ou équivalent Jocly) pour la
     // fenêtre show-position ("Display board state" de la fenêtre History)
     listen(prefix + 'get-board-state', async () => {
@@ -559,11 +571,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     btn('button-load', () => fileElem?.click());
 
-    btn('button-snapshot', () => {
-        joclyMatch?.viewControl('takeSnapshot').then(snapshot => {
-            const a = document.createElement('a');
-            a.href = snapshot; a.download = gameName + '.png'; a.click();
-        }).catch(e => console.warn('[play] Snapshot error:', e));
+    // Take snapshot : viewControl('takeSnapshot') retourne un data-URI ; le
+    // download a.click() d'Electron ne fait rien sous Tauri → dialogue natif
+    // + commande Rust save_data_uri_file (écriture binaire du PNG).
+    btn('button-snapshot', async () => {
+        if (!joclyMatch) return;
+        const snapshot = await joclyMatch.viewControl('takeSnapshot')
+            .catch(e => { console.warn('[play] Snapshot error:', e); return null; });
+        if (!snapshot) return;
+        const path = await saveDialog({
+            defaultPath: gameName + '.png',
+            filters: [{ name: 'PNG', extensions: ['png'] }],
+        }).catch(() => null);
+        if (!path) return;
+        await tRpc.call('save_data_uri_file', path, snapshot)
+            .catch(e => console.warn('[play] snapshot save failed:', e));
     });
 
     // Init Jocly
