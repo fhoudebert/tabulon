@@ -222,7 +222,7 @@ function InitDetailButtons() {
     // détail manque (ancien hub.html encore servi), on désactive le panneau
     // avec un message actionnable au lieu de laisser un TypeError bloquer
     // tout le DOMContentLoaded (et donc le chargement de la liste des jeux).
-    const required = ['quickplay', 'clockedplay', 'info', 'boardstate',
+    const required = ['quickplay', 'clockedplay', 'invitation', 'info', 'boardstate',
         'favorite', 'unfavorite', 'fileElem', 'openbook', 'detail-back',
         'game-detail-body', 'game-detail-empty'];
     const missing = required.filter(id => !document.getElementById(id));
@@ -237,6 +237,7 @@ function InitDetailButtons() {
     const g = () => currentGame;
     document.getElementById('quickplay').addEventListener('click',   () => g() && tRpc.call('new_match', g()));
     document.getElementById('clockedplay').addEventListener('click', () => g() && tRpc.call('open_clock_setup', g()));
+    document.getElementById('invitation').addEventListener('click',  () => g() && tRpc.call('open_invitation', g()));
     document.getElementById('info').addEventListener('click',        () => g() && tRpc.call('open_info', g()));
     document.getElementById('boardstate').addEventListener('click',  () => g() && tRpc.call('open_board_state', g()));
 
@@ -379,6 +380,17 @@ tRpc.listen({
         UpdateGameList();           // re-rendre : les étoiles changent aussi dans All
         UpdateDetailFavorite();     // synchroniser le bouton Favorite du détail
     },
+    // Import/désinstallation d'une extension : l'index du dist externe a
+    // changé → relister les jeux (ListGames se termine par un clic sur la nav
+    // courante, qui re-rend la liste).
+    // Import/désinstallation d'extension : l'index du dist a changé, mais le
+    // BrowserScriptLoader de Jocly CACHE jocly-allgames.js pour la durée de
+    // vie de la page (cache[url] fermé sur le module) — relancer ListGames()
+    // relirait l'index périmé. Seul un rechargement de la page repart d'un
+    // cache vierge ; le hub restaure ensuite sa navigation depuis le store.
+    extensionsChanged: () => {
+        location.reload();
+    },
     updateTemplates: async (templates) => {
         await UpdateTemplates(templates);
         if (await store.get('nav-last') === 'templates') UpdateTemplateList();
@@ -409,6 +421,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         SetNav('templates'); document.getElementById('template-list').style.display = '';
         await UpdateTemplates(); UpdateTemplateList();
     });
+    // Écran Extensions : fenêtre dédiée, pas un panneau du hub (la nav
+    // courante ne change pas).
+    document.getElementById('nav-extensions').addEventListener('click', () => {
+        tRpc.call('open_extensions');
+    });
+
     document.getElementById('nav-about').addEventListener('click', () => {
         SetNav('about'); document.getElementById('about').style.display = '';
         RenderAbout();

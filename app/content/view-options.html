@@ -3,7 +3,7 @@
 
 <head>
 		<link rel="icon" href="data:,">
-	<title>Tabulon</title>
+	<title data-i18n="viewOptions.title">Tabulon</title>
 
 	<!-- Stylesheets -->
 	<link rel="stylesheet" href="tabulon.css">
@@ -25,36 +25,36 @@
 			<div class="view-options">
 				<form>
 					<div id="skin" class="form-group hidden">
-						<label class="pull-left">Skin</label>
+						<label class="pull-left" data-i18n="view.skin">Skin</label>
 						<select class="form-control pull-left"></select>
 					</div>
 					<div id="sounds" class="checkbox hidden">
 						<label>
-							<input type="checkbox"> Sounds
+							<input type="checkbox"> <span data-i18n="view.sounds">Sounds</span>
 						</label>
 					</div>
 					<div id="notation" class="checkbox hidden">
 						<label>
-							<input type="checkbox"> Notation
+							<input type="checkbox"> <span data-i18n="view.notation">Notation</span>
 						</label>
 					</div>
 					<div id="showMoves" class="checkbox hidden">
 						<label>
-							<input type="checkbox"> Show moves
+							<input type="checkbox"> <span data-i18n="view.showMoves">Show moves</span>
 						</label>
 					</div>
 					<div id="autoComplete" class="checkbox hidden">
 						<label>
-							<input type="checkbox"> Auto-complete moves
+							<input type="checkbox"> <span data-i18n="view.autoComplete">Auto-complete moves</span>
 						</label>
 					</div>
 					<div id="anaglyph" class="checkbox hidden">
 						<label>
-							<input type="checkbox"> Anaglyph view
+							<input type="checkbox"> <span data-i18n="view.anaglyph">Anaglyph view</span>
 						</label>
 					</div>
 					<div id="viewAs" class="form-group hidden">
-						<label class="pull-left">View as</label>
+						<label class="pull-left" data-i18n="view.viewAs">View as</label>
 						<select class="form-control pull-left"></select>
 					</div>
 				</form>
@@ -62,7 +62,7 @@
 		</div>
 		<footer class="toolbar toolbar-footer">
 			<div class="toolbar-actions">
-				<button id="button-close" class="btn btn-default pull-right">Close</button>
+				<button id="button-close" class="btn btn-default pull-right"><span data-i18n="common.close">Close</span></button>
 			</div>
 		</footer>
 	</div>

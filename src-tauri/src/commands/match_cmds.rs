@@ -35,6 +35,10 @@ pub fn new_match(
     // désérialisation pour les deux derniers : l'invoke rejetait en silence
     // et cliquer une partie du livre / le bouton Open restait sans effet.
     fork_id: Option<String>,
+    // Idem fork_id, pour une partie rejointe via un lien d'invitation
+    // (voir invitation.js) : play.html lit le store "invite:{invite_id}"
+    // pour configurer le joueur distant avant de démarrer.
+    invite_id: Option<String>,
 ) -> Result<u32, String> {
     let id = state.next_match_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -60,9 +64,13 @@ pub fn new_match(
         .map(|fid| format!("&fork={fid}"))
         .unwrap_or_default();
 
+    let invite_param = invite_id
+        .map(|iid| format!("&invite={iid}"))
+        .unwrap_or_default();
+
     open_window(&app, WindowOptions {
         label:     &format!("play-{id}"),
-        url:       &format!("content/play.html?game={game_name}&id={id}{clock_param}{fork_param}"),
+        url:       &format!("content/play.html?game={game_name}&id={id}{clock_param}{fork_param}{invite_param}"),
         title:     &game_name,
         width:     700.0, height: 630.0,
         min_width: 400.0, min_height: 400.0,

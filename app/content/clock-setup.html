@@ -2,7 +2,7 @@
 <html>
 <head>
 		<link rel="icon" href="data:,">
-	<title>Clock Setup</title>
+	<title data-i18n="clockSetup.title">Clock Setup</title>
 	<link rel="stylesheet" href="tabulon.css">
 	<script>if (typeof module === 'object') { window.module = module; module = undefined; }</script>
 	<script src="../node_modules/jquery/dist/jquery.js" charset="utf-8"></script>
@@ -14,94 +14,94 @@
 	<div class="window-content clock-setup-content">
 		<form>
 			<select class="form-control symmetry">
-				<option value="same">Same for both players</option>
-				<option value="different">Players have different clocks</option>
+				<option value="same" data-i18n="clockSetup.same">Same for both players</option>
+				<option value="different" data-i18n="clockSetup.different">Players have different clocks</option>
 			</select>
 
 			<!-- Same for both -->
 			<div class="form-group group-same">
-				<label>Time</label>
+				<label data-i18n="clockSetup.time">Time</label>
 				<div class="time-row">
 					<input type="text" class="form-control time"/>
 					<select class="form-control unit">
-						<option value="1">seconds</option>
-						<option value="60">minutes</option>
-						<option value="3600">hours</option>
+						<option value="1" data-i18n="unit.seconds">seconds</option>
+						<option value="60" data-i18n="unit.minutes">minutes</option>
+						<option value="3600" data-i18n="unit.hours">hours</option>
 					</select>
 				</div>
 			</div>
 			<div class="form-group group-same">
-				<label>Extra time per move</label>
+				<label data-i18n="clockSetup.extra">Extra time per move</label>
 				<div class="unit-row">
 					<input type="text" class="form-control xtrasec"/>
-					<span class="unit-label">seconds</span>
+					<span class="unit-label" data-i18n="unit.seconds">seconds</span>
 				</div>
 			</div>
 			<div class="form-group group-same">
-				<label>Moves per session</label>
+				<label data-i18n="clockSetup.mps">Moves per session</label>
 				<div class="unit-row">
 					<input type="text" class="form-control mps"/>
-					<span class="unit-label">moves</span>
+					<span class="unit-label" data-i18n="unit.moves">moves</span>
 				</div>
 			</div>
 
 			<!-- Different players — selector -->
 			<div class="form-group group-different player-sel">
-				<div class="player-selector player0">Player A</div>
-				<div class="player-selector player1">Player B</div>
+				<div class="player-selector player0" data-i18n="common.playerA">Player A</div>
+				<div class="player-selector player1" data-i18n="common.playerB">Player B</div>
 			</div>
 
 			<!-- Player 0 (A) -->
 			<div class="form-group group-different player0">
-				<label>Time — Player A</label>
+				<label data-i18n="clockSetup.timeA">Time — Player A</label>
 				<div class="time-row">
 					<input type="text" class="form-control time"/>
 					<select class="form-control unit">
-						<option value="1">seconds</option>
-						<option value="60">minutes</option>
-						<option value="3600">hours</option>
+						<option value="1" data-i18n="unit.seconds">seconds</option>
+						<option value="60" data-i18n="unit.minutes">minutes</option>
+						<option value="3600" data-i18n="unit.hours">hours</option>
 					</select>
 				</div>
 			</div>
 			<div class="form-group group-different player0">
-				<label>Extra time per move</label>
+				<label data-i18n="clockSetup.extra">Extra time per move</label>
 				<div class="unit-row">
 					<input type="text" class="form-control xtrasec"/>
-					<span class="unit-label">seconds</span>
+					<span class="unit-label" data-i18n="unit.seconds">seconds</span>
 				</div>
 			</div>
 			<div class="form-group group-different player0">
-				<label>Moves per session</label>
+				<label data-i18n="clockSetup.mps">Moves per session</label>
 				<div class="unit-row">
 					<input type="text" class="form-control mps"/>
-					<span class="unit-label">moves</span>
+					<span class="unit-label" data-i18n="unit.moves">moves</span>
 				</div>
 			</div>
 
 			<!-- Player 1 (B) -->
 			<div class="form-group group-different player1">
-				<label>Time — Player B</label>
+				<label data-i18n="clockSetup.timeB">Time — Player B</label>
 				<div class="time-row">
 					<input type="text" class="form-control time"/>
 					<select class="form-control unit">
-						<option value="1">seconds</option>
-						<option value="60">minutes</option>
-						<option value="3600">hours</option>
+						<option value="1" data-i18n="unit.seconds">seconds</option>
+						<option value="60" data-i18n="unit.minutes">minutes</option>
+						<option value="3600" data-i18n="unit.hours">hours</option>
 					</select>
 				</div>
 			</div>
 			<div class="form-group group-different player1">
-				<label>Extra time per move</label>
+				<label data-i18n="clockSetup.extra">Extra time per move</label>
 				<div class="unit-row">
 					<input type="text" class="form-control xtrasec"/>
-					<span class="unit-label">seconds</span>
+					<span class="unit-label" data-i18n="unit.seconds">seconds</span>
 				</div>
 			</div>
 			<div class="form-group group-different player1">
-				<label>Moves per session</label>
+				<label data-i18n="clockSetup.mps">Moves per session</label>
 				<div class="unit-row">
 					<input type="text" class="form-control mps"/>
-					<span class="unit-label">moves</span>
+					<span class="unit-label" data-i18n="unit.moves">moves</span>
 				</div>
 			</div>
 
@@ -109,8 +109,8 @@
 	</div>
 	<footer class="toolbar toolbar-footer">
 		<div class="toolbar-actions">
-			<button id="button-cancel" class="btn btn-default">Cancel</button>
-			<button id="button-save" class="btn btn-primary pull-right">Play</button>
+			<button id="button-cancel" class="btn btn-default"><span data-i18n="common.cancel">Cancel</span></button>
+			<button id="button-save" class="btn btn-primary pull-right"><span data-i18n="common.play">Play</span></button>
 		</div>
 	</footer>
 </div>

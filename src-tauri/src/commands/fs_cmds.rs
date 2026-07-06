@@ -145,12 +145,24 @@ pub fn save_data_uri_file(path: String, data_uri: String) -> Result<(), String> 
     fs::write(p, bytes).map_err(|e| format!("save_data_uri_file: {e}"))
 }
 
-/// Indique à l'UI si un dist/ externe est chargé et son chemin.
+/// Indique à l'UI si un dist/ externe est chargé, son chemin, et s'il est
+/// INSCRIPTIBLE (import/désinstallation d'extensions). Le test est une
+/// écriture réelle : les métadonnées de permissions mentent avec les ACL,
+/// les montages en lecture seule ou les dossiers système.
 /// Utilisé par l'écran Extensions / le panneau About.
 #[tauri::command]
 pub fn get_dist_info() -> serde_json::Value {
     match crate::dist_override::external_dist() {
-        Some(p) => serde_json::json!({ "external": true, "path": p.display().to_string() }),
-        None    => serde_json::json!({ "external": false, "path": null }),
+        Some(p) => {
+            let probe = p.join(".tabulon-write-test");
+            let writable = std::fs::write(&probe, b"").is_ok();
+            if writable { let _ = std::fs::remove_file(&probe); }
+            serde_json::json!({
+                "external": true,
+                "path": p.display().to_string(),
+                "writable": writable,
+            })
+        }
+        None => serde_json::json!({ "external": false, "path": null, "writable": false }),
     }
 }

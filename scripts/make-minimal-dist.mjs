@@ -6,15 +6,8 @@
 // au runtime (voir dist_override.rs) : l'app marche seule (quelques jeux) et
 // l'utilisateur ajoute la ludothèque complète sans rebuild.
 //
-// Le CHOIX des modules embarqués appartient à qui compile : fourinarow pour
-// une app minimale, mais chessbase, checkers, ou toute sélection est possible.
-// check-dist.mjs ne régénère JAMAIS un dist-minimal valide : relancer ce
-// script explicitement pour changer la sélection.
-//
 // Prérequis : un dist/ complet à la racine (build de jocly2). Usage :
-//   node scripts/make-minimal-dist.mjs [module …]
-//   ex.  node scripts/make-minimal-dist.mjs chessbase checkers
-//   (défaut sans argument : fourinarow — ou TABULON_MODULES="a,b" en env)
+//   node scripts/make-minimal-dist.mjs
 import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync, rmSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -22,6 +15,9 @@ import path from 'path';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const src  = path.join(root, 'dist');
 const out  = path.join(root, 'dist-minimal');
+// Le CHOIX des modules embarqués appartient à qui compile : fourinarow (défaut)
+// pour une app minimale, mais chessbase, checkers, ou toute sélection.
+//   node scripts/make-minimal-dist.mjs [module …]   ou   TABULON_MODULES="a,b"
 const KEEP_MODULES = process.argv.slice(2).length ? process.argv.slice(2)
   : (process.env.TABULON_MODULES || 'fourinarow').split(',').map(s => s.trim()).filter(Boolean);
 
