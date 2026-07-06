@@ -891,6 +891,9 @@ strong { font-weight: 600; }
    masquée) ; quand la barre est visible, c'est ELLE qui porte la marge auto
    (pull-right) et le '…' se colle à sa droite — deux marges auto simultanées
    répartiraient l'espace et centreraient le bouton. */
+/* Enregistrement vidéo en cours : icône rouge sur le bouton-bascule */
+#button-video.recording .icon { color: #c00; }
+
 #toggle-bar-group { margin-left: auto; }
 .ephemeral-actions.bar-visible #toggle-bar-group { margin-left: 0; }
 
