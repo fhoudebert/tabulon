@@ -5,12 +5,13 @@
 // chaque fenêtre play.html), les templates sont maintenant gérés directement
 // via le store Tauri côté Rust, comme les favoris dans match_cmds.rs.
 //
-// TODO : save_template doit recevoir les données à sauvegarder depuis play.js
-// plutôt que d'essayer de lire l'état d'un match côté Rust — à câbler quand
-// la fenêtre save-template.html sera connectée au nouveau flow.
+// Les données d'un template viennent de play.js via le protocole satellite
+// (get-template-data) : save-template.html les récupère puis les passe ici.
+// Forme : { gameName, gameData: <match.save()>, clock?, lastUsed }.
+// Chaque mutation émet le push "updateTemplates" pour rafraîchir le hub.
 
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 
 #[tauri::command]
@@ -34,9 +35,13 @@ pub fn save_template(
     let mut templates = store.get("templates")
         .and_then(|v| if let Value::Object(m) = v { Some(m) } else { None })
         .unwrap_or_default();
-    templates.insert(name, data.unwrap_or(serde_json::json!({ "matchId": match_id })));
-    store.set("templates", Value::Object(templates));
-    store.save().map_err(|e| e.to_string())
+    let _ = match_id; // l'id ne sert qu'au titre de la fenêtre ; les données font foi
+    let value = data.ok_or("save_template: données du template manquantes (get-template-data)")?;
+    templates.insert(name, value);
+    store.set("templates", Value::Object(templates.clone()));
+    store.save().map_err(|e| e.to_string())?;
+    let _ = app.emit("updateTemplates", Value::Object(templates));
+    Ok(())
 }
 
 #[tauri::command]
@@ -45,12 +50,24 @@ pub fn play_template(
     template_name: String,
 ) -> Result<Value, String> {
     let store = app.store("tabulon.json").map_err(|e| e.to_string())?;
-    let templates = store.get("templates")
+    let mut templates = store.get("templates")
         .and_then(|v| if let Value::Object(m) = v { Some(m) } else { None })
         .unwrap_or_default();
-    templates.get(&template_name)
+    let mut tpl = templates.get(&template_name)
         .cloned()
-        .ok_or_else(|| format!("Template not found: {template_name}"))
+        .ok_or_else(|| format!("Template not found: {template_name}"))?;
+    // Marquer l'usage (tri "dernier utilisé" du hub) et notifier
+    if let Value::Object(ref mut m) = tpl {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64).unwrap_or(0);
+        m.insert("lastUsed".into(), Value::Number(serde_json::Number::from(now)));
+        templates.insert(template_name, tpl.clone());
+        store.set("templates", Value::Object(templates.clone()));
+        let _ = store.save();
+        let _ = app.emit("updateTemplates", Value::Object(templates));
+    }
+    Ok(tpl)
 }
 
 #[tauri::command]
@@ -60,6 +77,8 @@ pub fn remove_template(app: AppHandle, template_name: String) -> Result<(), Stri
         .and_then(|v| if let Value::Object(m) = v { Some(m) } else { None })
         .unwrap_or_default();
     templates.remove(&template_name);
-    store.set("templates", Value::Object(templates));
-    store.save().map_err(|e| e.to_string())
+    store.set("templates", Value::Object(templates.clone()));
+    store.save().map_err(|e| e.to_string())?;
+    let _ = app.emit("updateTemplates", Value::Object(templates));
+    Ok(())
 }

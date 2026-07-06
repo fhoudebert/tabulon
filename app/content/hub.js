@@ -206,7 +206,7 @@ async function UpdateDetailTemplates() {
         const div = document.createElement('div');
         div.className = 'template';
         div.textContent = template.templateName;
-        div.addEventListener('click', () => tRpc.call('play_template', template.templateName));
+        div.addEventListener('click', () => PlayTemplate(template.templateName));
         container.appendChild(div);
     });
 }
@@ -270,6 +270,25 @@ function InitDetailButtons() {
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────
+// Lance une partie depuis un template : play_template (Rust) retourne les
+// données sauvegardées {gameName, gameData, clock} et marque lastUsed ;
+// on transmet gameData par le canal fork puis new_match. L'ancien code
+// appelait play_template et ignorait le retour : rien ne se lançait.
+async function PlayTemplate(templateName) {
+    const tpl = await tRpc.call('play_template', templateName).catch(e => {
+        console.warn('[hub] play_template:', e);
+        return null;
+    });
+    if (!tpl?.gameName) return;
+    if (tpl.gameData) {
+        const id = 'tpl-' + Date.now();
+        await store.set('fork:' + id, tpl.gameData);
+        tRpc.call('new_match', tpl.gameName, tpl.clock || null, id);
+    } else {
+        tRpc.call('new_match', tpl.gameName, tpl.clock || null);
+    }
+}
+
 async function UpdateTemplates(templates) {
     templates = templates || await store.get('templates') || {};
     templateList = Object.keys(templates)
@@ -291,7 +310,7 @@ function UpdateTemplateList() {
             <div title="${t('tip.removeTemplate')}" class="media-object pull-right list-shortcut list-shortcut-del">
                 <span class="icon icon-cancel"></span>
             </div>`;
-        li.addEventListener('click', () => tRpc.call('play_template', template.templateName));
+        li.addEventListener('click', () => PlayTemplate(template.templateName));
         li.querySelector('.list-shortcut').addEventListener('click', (e) => {
             e.stopPropagation();
             tRpc.call('remove_template', template.templateName);

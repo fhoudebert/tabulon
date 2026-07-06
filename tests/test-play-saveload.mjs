@@ -61,6 +61,7 @@ const match = {
     return new Promise((resolve, reject) => { this.pendingUserTurn = { resolve, reject }; });
   },
   async save() { return { game: 'testgame', playedMoves: [...this.playedMoves] }; },
+  async viewControl(what) { return what === 'takeSnapshot' ? 'data:image/png;base64,iVBORw0KGgo=' : null; },
   async load(data) {
     if (data.game && data.game !== 'testgame')
       throw new Error(`Trying to load ${data.game} to testgame match`);
@@ -179,6 +180,14 @@ for (let i = 0; i < 3; i++) { playHumanMove(); await waitFor(() => match.pending
 assert(match.overlappingUserTurns === 0,
   'AUCUN userTurn concurrent : pas de double gameLoop après Load (bug corrigé)');
 assert(match.playedMoves.length === 8, 'la partie continue normalement (5 chargés + 3 joués)');
+
+// 4b. TAKE SNAPSHOT : dialogue natif + save_data_uri_file (plus de a.click())
+nextSavePath = '/tmp/photo.png';
+document.getElementById('button-snapshot').click();
+await waitFor(() => invokeCalls.some(c => c.cmd === 'save_data_uri_file'), 'snapshot écrit');
+const snap = invokeCalls.find(c => c.cmd === 'save_data_uri_file');
+assert(snap.payload.path === '/tmp/photo.png' && snap.payload.dataUri.startsWith('data:image/png;base64,'),
+  'Take snapshot → dialogue natif puis écriture binaire du data-URI');
 
 // 5. LOAD d'un fichier du mauvais jeu : message d'erreur, boucle intacte
 const wrongFile = new dom.window.File(

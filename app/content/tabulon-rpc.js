@@ -124,7 +124,7 @@ function buildPayload(method, args) {
     open_show_position:  ([gameName, matchId])     => ({ gameName, matchId }),
     // templates
     play_template:       ([templateName])          => ({ templateName }),
-    save_template:       ([matchId, name])         => ({ matchId, name }),
+    save_template:       ([matchId, name, data])   => ({ matchId, name, data }),
     is_template_name_valid: ([name])               => ({ name }),
     // video
     start_recording:     ([matchId])               => ({ matchId }),
@@ -139,6 +139,7 @@ function buildPayload(method, args) {
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),
+    save_data_uri_file:  ([path, dataUri])         => ({ path, dataUri }),
     // camera
     // notify
     notify_user:         ([request])               => ({ request }),

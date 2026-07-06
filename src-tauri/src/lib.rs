@@ -83,6 +83,7 @@ pub fn run() {
             // ── Fichiers ─────────────────────────────────────────────────────
             fs_cmds::read_text_file,
             fs_cmds::save_text_file,
+            fs_cmds::save_data_uri_file,
             fs_cmds::parse_pjn,
         ])
         .run(tauri::generate_context!())
