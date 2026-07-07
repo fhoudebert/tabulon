@@ -61,6 +61,12 @@ pub fn open_window(app: &AppHandle, opts: WindowOptions) -> tauri::Result<Webvie
         .inner_size(width, height)
         .min_inner_size(opts.min_width, opts.min_height);
 
+    // Si un dist/ externe est actif, injecter la réécriture d'assets AVANT le
+    // chargement de la page (donc avant le <script src="../browser/jocly.js">).
+    if crate::dist_override::has_external_dist() {
+        builder = builder.initialization_script(crate::ASSET_REWRITE_JS);
+    }
+
     if let Some(g) = geometry {
         builder = builder.position(g.x, g.y);
     }
