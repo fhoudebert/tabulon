@@ -47,10 +47,20 @@
   // 1. Réécriture des <script src>/<img src>/<link href> présents au parse.
   //    On agit très tôt (document_start) ; pour le <script src=jocly.js> qui
   //    suit dans le <head>, on réécrit à la volée via un MutationObserver.
+  // Réécriture des <script src>/<img src>/<link href> ajoutés au DOM.
+  // IMPORTANT : on NE réécrit PAS le <script src="../browser/jocly.js">.
+  // Jocly calcule sa baseURL interne à partir du pathname de CE script
+  // (BrowserScriptLoader.setBaseURL) ; s'il pointait sur tabulon-dist://,
+  // la baseURL deviendrait absolue au protocole et les fetch suivants
+  // seraient mal formés ("Game … not found"). En le laissant relatif à la
+  // page, la baseURL reste /browser/ et TOUTES les requêtes de fichiers de
+  // jeux (jocly.core.js, games/**) passent ensuite par le hook fetch/XHR
+  // ci-dessous, qui les redirige correctement vers le dist externe.
   function rewriteEl(el) {
     var attr = el.tagName === 'LINK' ? 'href' : 'src';
     var v = el.getAttribute && el.getAttribute(attr);
     if (!v) return;
+    if (el.tagName === 'SCRIPT' && /(^|\/)browser\/jocly\.js(\?|$)/.test(v)) return; // laisser tel quel
     var d = toDist(v);
     if (d) el.setAttribute(attr, d);
   }

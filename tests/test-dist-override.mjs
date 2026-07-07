@@ -66,6 +66,16 @@ assert(fetchUrls.at(-1) === 'https://tauri.localhost/content/tabulon.css',
 window.fetch('https://example.com/api');
 assert(fetchUrls.at(-1) === 'https://example.com/api', 'fetch externe → inchangé');
 
+// 3b. fetch d'un fichier de jeu en chemin ABSOLU (comme Jocly le fait depuis
+//     sa baseURL /browser/) → redirigé vers le dist externe : c'est ce qui
+//     manquait ("Game classic-chess not found").
+window.fetch('/browser/games/chessbase/classic-chess-config.js');
+assert(fetchUrls.at(-1) === PROTO + 'browser/games/chessbase/classic-chess-config.js',
+  'fetch(/browser/games/…-config.js) absolu → dist externe (chargement du jeu)');
+window.fetch('/browser/jocly.core.js');
+assert(fetchUrls.at(-1) === PROTO + 'browser/jocly.core.js',
+  'fetch(/browser/jocly.core.js) → moteur servi depuis le dist externe');
+
 // 4. XHR vers browser/ → redirigé
 const xhr = new window.XMLHttpRequest();
 xhr.open('GET', '../browser/games/chessbase/res/images/x.png');
@@ -81,8 +91,8 @@ await new Promise((resolve) => {
   img.src = 'https://tauri.localhost/games/checkers/draughts-thumb3d.png';
   window.document.body.appendChild(img);
   setTimeout(() => {
-    assert(s.getAttribute('src') === PROTO + 'browser/jocly.js',
-      '<script src="../browser/jocly.js"> réécrit vers le dist externe');
+    assert(s.getAttribute('src') === '../browser/jocly.js',
+      '<script src="../browser/jocly.js"> NON réécrit (Jocly doit calculer sa baseURL depuis la page)');
     assert(img.getAttribute('src') === PROTO + 'games/checkers/draughts-thumb3d.png',
       '<img src="…/games/…"> réécrit vers le dist externe');
     resolve();
