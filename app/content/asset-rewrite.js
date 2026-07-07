@@ -13,12 +13,25 @@
   // servis via https://<scheme>.localhost/ ; ailleurs via <scheme>://localhost/.
   // On laisse la webview résoudre le host : une URL relative au protocole
   // suffit si on préfixe correctement. Tauri expose le convertisseur.
+  // Le format d'URL d'un protocole custom diffère selon la plateforme :
+  //   Linux (WebKitGTK) : tabulon-dist://localhost/<path>
+  //   Windows (WebView2) : http://tabulon-dist.localhost/<path>
+  //   macOS (WKWebView)  : tabulon-dist://localhost/<path>
+  // convertFileSrc() connaît le bon format : on l'utilise TOUJOURS quand il est
+  // disponible (withGlobalTauri le garantit tôt). Le repli en dur ne sert que
+  // si __TAURI__ n'est pas encore prêt — auquel cas on tente le format le plus
+  // courant, mais ce cas ne devrait pas se produire avec l'injection au
+  // initialization_script.
   var PROTO = 'tabulon-dist://localhost/';
-  if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc) {
-    // convertFileSrc(path, protocol) → URL correcte pour la plateforme.
-    PROTO = window.__TAURI__.core.convertFileSrc('', 'tabulon-dist');
-    if (PROTO.charAt(PROTO.length - 1) !== '/') PROTO += '/';
-  }
+  try {
+    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc) {
+      PROTO = window.__TAURI__.core.convertFileSrc('x', 'tabulon-dist');
+      // convertFileSrc('x', …) → .../x : on retire le segment factice pour
+      // obtenir la base, robuste quel que soit le format de la plateforme.
+      PROTO = PROTO.replace(/x$/, '');
+      if (PROTO.charAt(PROTO.length - 1) !== '/') PROTO += '/';
+    }
+  } catch (e) { /* repli en dur conservé */ }
 
   // Transforme une URL de page (relative ou absolue) contenant /browser/ ou
   // /games/ en URL du protocole custom. Retourne null si non concernée.

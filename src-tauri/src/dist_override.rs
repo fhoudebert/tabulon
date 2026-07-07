@@ -39,14 +39,40 @@ pub fn external_dist() -> Option<&'static Path> {
                     return Some(p);
                 }
             }
+            // Répertoires candidats, dans l'ordre. On collecte plusieurs bases
+            // car l'emplacement de l'exécutable dépend fortement du format de
+            // distribution sous Linux/macOS.
+            let mut bases: Vec<PathBuf> = Vec::new();
+
+            // AppImage : std::env::current_exe() renvoie un chemin DANS le
+            // montage temporaire (/tmp/.mount_XXXX/usr/bin/tabulon), en lecture
+            // seule — jamais le dossier où l'utilisateur a posé le .AppImage.
+            // AppImage exporte $APPIMAGE = chemin absolu du .AppImage lui-même :
+            // c'est à côté de CE fichier qu'on doit chercher dist/.
+            // (C'était la cause du "AppImage ne charge pas le dist externe".)
+            if let Ok(appimage) = std::env::var("APPIMAGE") {
+                if let Some(dir) = Path::new(&appimage).parent() {
+                    bases.push(dir.to_path_buf());
+                }
+            }
+
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(dir) = exe.parent() {
-                    for cand in [dir.join("dist"), dir.join("..").join("dist")] {
-                        if cand.join("browser").is_dir() {
-                            log::info!("dist externe : {}", cand.display());
-                            return Some(cand);
-                        }
-                    }
+                    bases.push(dir.to_path_buf());
+                    bases.push(dir.join("..")); // .app/AppImage internes, exe imbriqué
+                    // macOS .app : exe = Tabulon.app/Contents/MacOS/tabulon ;
+                    // le dist se pose à côté du bundle .app → remonter de 3.
+                    bases.push(dir.join("..").join("..").join(".."));
+                }
+            }
+
+            for base in bases {
+                let cand = base.join("dist");
+                if cand.join("browser").is_dir() {
+                    // Canonicaliser pour un log lisible (résout les ../).
+                    let shown = std::fs::canonicalize(&cand).unwrap_or(cand.clone());
+                    log::info!("dist externe : {}", shown.display());
+                    return Some(cand);
                 }
             }
             log::info!("aucun dist externe — utilisation des assets embarqués");

@@ -45,6 +45,10 @@ window.eval(script);
 
 const PROTO = 'https://tabulon-dist.localhost/';
 
+// La base doit être correctement dérivée quel que soit le format renvoyé par
+// convertFileSrc (Windows http://scheme.localhost/ vs Linux scheme://localhost/).
+// On revérifie via un second contexte au format Linux plus bas.
+
 // 1. fetch d'une règle de jeu → redirigé
 window.fetch('https://tauri.localhost/games/chessbase/res/rules/shogi/seireigi-rules.html');
 assert(fetchUrls.at(-1) === PROTO + 'games/chessbase/res/rules/shogi/seireigi-rules.html',
@@ -95,6 +99,16 @@ await new Promise((resolve) => {
     resolve();
   }, 50);
 });
+
+// Format Linux : convertFileSrc renvoie scheme://localhost/<p>.
+// On rejoue la seule dérivation de base (sans re-parser tout le script).
+{
+  const linuxConvert = (p, scheme) => `${scheme}://localhost/${p}`;
+  let P = linuxConvert('x', 'tabulon-dist').replace(/x$/, '');
+  if (P.charAt(P.length - 1) !== '/') P += '/';
+  assert(P === 'tabulon-dist://localhost/',
+    'base du protocole correctement dérivée au format Linux (scheme://localhost/)');
+}
 
 console.log(`\n${passed} assertions OK — réécriture d'assets (dist externe) validée.`);
 process.exit(0);

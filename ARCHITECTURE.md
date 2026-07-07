@@ -105,7 +105,7 @@ URL relatives (`../browser/jocly.js`, `../games/…`) résolues sur les assets
 embarqués. Mécanisme (`dist_override.rs` + `asset-rewrite.js`) :
 
 1. `dist_override::external_dist()` cherche un dist utilisable : `TABULON_DIST`,
-   `<exe>/dist`, `<exe>/../dist` (résolu une fois, `OnceLock`).
+   `$APPIMAGE` (dossier du .AppImage, pas le montage temporaire), `<exe>/dist`, remontées pour .app/AppImage (résolu une fois, `OnceLock`).
 2. Si présent, un protocole custom `tabulon-dist://` sert ses fichiers (repli
    sur `asset_resolver()` embarqué), avec garde anti-traversée (`..` rejeté).
 3. `asset-rewrite.js` (injecté via `initialization_script` sur toutes les

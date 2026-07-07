@@ -88,8 +88,11 @@ tabulon/
 ```
 
 At startup Tabulon looks for a usable external dist in this order: the
-`TABULON_DIST` environment variable (absolute path), `<exe dir>/dist`, then
-`<exe dir>/../dist`. If found, requests for `browser/**` and `games/**` are
+`TABULON_DIST` environment variable (absolute path), then `dist/` next to the
+program. For an **AppImage**, "next to the program" means next to the
+`.AppImage` file itself (resolved via `$APPIMAGE`), not the temporary mount —
+so place `dist/` in the same folder as `tabulon.AppImage`. For a macOS `.app`
+bundle, place `dist/` next to the bundle. If found, requests for `browser/**` and `games/**` are
 served from it (falling back to the embedded minimal dist for anything
 missing); otherwise only the bundled games are available. The active source is
 reported by the `get_dist_info` command (About panel / Extensions screen). The
