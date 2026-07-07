@@ -8,7 +8,11 @@
 //
 // Ce fichier n'est PAS un module ES : il est injecté tel quel via
 // initialization_script et doit s'exécuter en contexte global, sans import.
-(function () {
+// Il est aussi ré-injecté à l'identique dans l'<iframe> Jocly (voir plus bas),
+// d'où la forme "fonction nommée + auto-appel" : SELF_SOURCE contient sa
+// propre source pour la ré-injection.
+function __applyDistRewrite() {
+  var SELF_SOURCE = __applyDistRewrite.toString();
   // Base absolue du protocole custom. Sur Windows, les protocoles custom sont
   // servis via https://<scheme>.localhost/ ; ailleurs via <scheme>://localhost/.
   // On laisse la webview résoudre le host : une URL relative au protocole
@@ -44,6 +48,12 @@
     } catch (e) { return null; }
   }
 
+  // Exposés globalement (window.*) : distURL pour la réécriture explicite des
+  // backgrounds CSS par le code de page (hub.js), et applyDistRewrite pour la
+  // ré-injection dans l'iframe Jocly.
+  window.__distURL = function (url) { return toDist(url) || url; };
+  window.__applyDistRewrite = __applyDistRewrite;
+
   // 1. Réécriture des <script src>/<img src>/<link href> présents au parse.
   //    On agit très tôt (document_start) ; pour le <script src=jocly.js> qui
   //    suit dans le <head>, on réécrit à la volée via un MutationObserver.
@@ -64,13 +74,38 @@
     var d = toDist(v);
     if (d) el.setAttribute(attr, d);
   }
+
+  // L'<iframe> de Jocly (attachElement → jocly.embed.html) est un contexte
+  // séparé où ce script n'est pas ré-injecté et où Jocly RECHARGE le jeu
+  // (createMatch) — d'où "Game … not found" quand le jeu est seulement dans le
+  // dist externe. On garde l'iframe sur NOTRE origine (pour préserver le
+  // postMessage parent↔iframe, qui vérifie l'origine) et on injecte ce même
+  // script à l'intérieur dès que son document est accessible : les fetch de
+  // jeux de l'iframe passent alors aussi par le dist externe.
+  function injectIntoIframe(iframe) {
+    function inject() {
+      try {
+        var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+        if (!doc || doc.__distRewriteInjected) return;
+        doc.__distRewriteInjected = true;
+        var s = doc.createElement('script');
+        // Ré-injecte CE script (fonction + auto-appel) dans l'iframe.
+        s.textContent = SELF_SOURCE + '\n__applyDistRewrite();';
+        (doc.head || doc.documentElement).insertBefore(s, (doc.head || doc.documentElement).firstChild);
+      } catch (e) { /* pas encore prêt / cross-origin : onload réessaiera */ }
+    }
+    inject();
+    iframe.addEventListener('load', inject);
+  }
   try {
     new MutationObserver(function (muts) {
       muts.forEach(function (mu) {
         mu.addedNodes && mu.addedNodes.forEach(function (n) {
           if (n.nodeType !== 1) return;
+          if (n.tagName === 'IFRAME') injectIntoIframe(n);
           if (/^(SCRIPT|IMG|LINK)$/.test(n.tagName)) rewriteEl(n);
           n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href]').forEach(rewriteEl);
+          n.querySelectorAll && n.querySelectorAll('iframe').forEach(injectIntoIframe);
         });
       });
     }).observe(document.documentElement, { childList: true, subtree: true });
@@ -94,4 +129,47 @@
     if (d) arguments[1] = d;
     return _open.apply(this, arguments);
   };
-})();
+
+  // 4. Image().src / <img>.src assignés en JS (préchargement des visuels et
+  //    thumbnails) : ces affectations ne déclenchent pas le MutationObserver.
+  try {
+    var iproto = window.HTMLImageElement && window.HTMLImageElement.prototype;
+    var idesc = iproto && Object.getOwnPropertyDescriptor(iproto, 'src');
+    if (idesc && idesc.set) {
+      Object.defineProperty(iproto, 'src', {
+        configurable: true, enumerable: idesc.enumerable,
+        get: function () { return idesc.get.call(this); },
+        set: function (v) { var d = (typeof v === 'string') && toDist(v); idesc.set.call(this, d || v); },
+      });
+    }
+  } catch (e) { /* non redéfinissable : ignore */ }
+
+  // 5. style.backgroundImage: url(...) posé en JS (vignettes du hub). Passe par
+  //    le CSSOM, hors fetch/img/observer. On réécrit les url(...) au setter.
+  try {
+    var SP = window.CSSStyleDeclaration && window.CSSStyleDeclaration.prototype;
+    if (SP && SP.setProperty) {
+      var rewriteCssUrls = function (val) {
+        return String(val).replace(/url\((['"]?)([^'")]+)\1\)/g, function (m, q, u) {
+          var d = toDist(u); return d ? 'url(' + q + d + q + ')' : m;
+        });
+      };
+      var _setProp = SP.setProperty;
+      SP.setProperty = function (prop, val, prio) {
+        if (/background/i.test(prop) && val) val = rewriteCssUrls(val);
+        return _setProp.call(this, prop, val, prio);
+      };
+      ['backgroundImage', 'background'].forEach(function (name) {
+        var d = Object.getOwnPropertyDescriptor(SP, name);
+        if (d && d.set) {
+          Object.defineProperty(SP, name, {
+            configurable: true, enumerable: d.enumerable,
+            get: function () { return d.get.call(this); },
+            set: function (v) { d.set.call(this, rewriteCssUrls(v)); },
+          });
+        }
+      });
+    }
+  } catch (e) { /* CSSOM non redéfinissable : ignore */ }
+}
+__applyDistRewrite();

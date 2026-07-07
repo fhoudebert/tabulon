@@ -120,5 +120,21 @@ await new Promise((resolve) => {
     'base du protocole correctement dérivée au format Linux (scheme://localhost/)');
 }
 
+// Image().src assigné en JS (préchargement visuels/thumbnails) → redirigé
+{
+  const img = new window.Image();
+  img.src = 'browser/games/chessbase/res/visuals/capablanca-600x600-2d.jpg';
+  assert(String(img.src).includes('tabulon-dist.localhost/browser/games/chessbase/res/visuals/'),
+    'new Image().src (préchargement visuel) → dist externe');
+}
+
+// window.__distURL exposé pour réécriture explicite des backgrounds CSS (hub.js)
+assert(typeof window.__distURL === 'function', 'window.__distURL exposé par asset-rewrite.js');
+assert(window.__distURL('browser/games/chessbase/res/rules/capa10x8/capablanca-thumb.png')
+       === PROTO + 'browser/games/chessbase/res/rules/capa10x8/capablanca-thumb.png',
+  'window.__distURL réécrit un chemin de thumbnail vers le dist externe');
+assert(window.__distURL('content/tabulon.css') === 'content/tabulon.css',
+  'window.__distURL laisse les chemins hors browser/games inchangés');
+
 console.log(`\n${passed} assertions OK — réécriture d'assets (dist externe) validée.`);
 process.exit(0);

@@ -8,6 +8,10 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 
+// Réécrit un chemin d'asset vers le dist externe si actif (window.__distURL
+// est fourni par asset-rewrite.js ; sinon chemin inchangé).
+function distURL(u) { return (window.__distURL ? window.__distURL(u) : u); }
+
 let store;
 let gameList = [], gamesMap = {};
 let allGameList = [], favGameList = [], templateList = [];
@@ -145,7 +149,7 @@ async function SelectGame(gameName, opts = {}) {
     document.querySelector('#game-detail .game-title').textContent = config.model['title-en'];
     document.querySelector('#game-detail .game-summary').textContent = config.model.summary;
     document.querySelector('#game-detail .game-thumbnail').style.backgroundImage =
-        `url(${config.view.fullPath}/${config.model.thumbnail})`;
+        `url(${distURL(config.view.fullPath + '/' + config.model.thumbnail)})`;
 
     SetupVisuals(config.view);
     await UpdateDetailFavorite();
@@ -162,7 +166,7 @@ function SetupVisuals(view) {
     container.innerHTML = '';
 
     if (!view.visuals?.['600x600']) return;
-    const visuals = [view.visuals['600x600']].flat().map(v => view.fullPath + '/' + v);
+    const visuals = [view.visuals['600x600']].flat().map(v => distURL(view.fullPath + '/' + v));
 
     visuals.forEach((url, index) => {
         const div = document.createElement('div');

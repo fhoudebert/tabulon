@@ -168,5 +168,12 @@ pub fn handle_request<R: Runtime>(app: &AppHandle<R>, req: Request<Vec<u8>>) -> 
             .unwrap();
     }
 
+    // Ni externe ni embarqué : tracer le fichier manquant (un fetch Jocly qui
+    // échoue ici fait rejeter createMatch avec "… not found").
+    log::warn!(
+        "tabulon-dist: introuvable '{}' (dist externe: {:?})",
+        rel,
+        external_dist().map(|d| d.display().to_string())
+    );
     not_found()
 }
