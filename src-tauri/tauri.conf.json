@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": [
       "../app",
-      "../dist"
+      "../dist-minimal"
     ]
   },
   "app": {
