@@ -120,7 +120,6 @@ await new Promise((resolve) => {
     'base du protocole correctement dérivée au format Linux (scheme://localhost/)');
 }
 
-<<<<<<< HEAD
 // Image().src assigné en JS (préchargement visuels/thumbnails) → redirigé
 {
   const img = new window.Image();
@@ -246,7 +245,5 @@ assert(window.__distURL('browser/games/chessbase/res/rules/capa10x8/capablanca-t
 assert(window.__distURL('content/tabulon.css') === 'content/tabulon.css',
   'window.__distURL laisse les chemins hors browser/games inchangés');
 
-=======
->>>>>>> 7a58994 (fin ajout dist externe minimal)
 console.log(`\n${passed} assertions OK — réécriture d'assets (dist externe) validée.`);
 process.exit(0);
