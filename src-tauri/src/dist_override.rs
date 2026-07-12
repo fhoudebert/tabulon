@@ -16,7 +16,8 @@
 // protocole tente d'abord le dist externe, puis retombe sur l'asset embarqué.
 //
 // Emplacement du dist externe (premier trouvé) :
-//   1. variable d'env TABULON_DIST (chemin absolu) — échappatoire/tests
+//   1. variable d'env TABULON_DIST : chemin absolu d'un dist, ou "embedded"/
+//      vide pour FORCER l'embarqué (tests du repli interne)
 //   2. <dossier de l'exécutable>/dist
 //   3. <dossier de l'exécutable>/../dist  (utile sous macos .app/AppImage)
 // Si aucun n'existe, tout retombe sur l'embarqué : comportement inchangé.
@@ -33,6 +34,14 @@ pub fn external_dist() -> Option<&'static Path> {
     EXTERNAL_DIST
         .get_or_init(|| {
             if let Ok(p) = std::env::var("TABULON_DIST") {
+                // Chaîne vide ou "embedded" : FORCER l'embarqué (désactive
+                // toute détection). Indispensable pour tester le repli interne
+                // sans déplacer de dossier — en dev, les remontées de
+                // répertoires retrouvent sinon le dist/ complet du repo.
+                if p.is_empty() || p == "embedded" {
+                    log::info!("dist externe désactivé (TABULON_DIST={p:?}) : embarqué forcé");
+                    return None;
+                }
                 let p = PathBuf::from(p);
                 if p.join("browser").is_dir() {
                     log::info!("dist externe (TABULON_DIST) : {}", p.display());
