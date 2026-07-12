@@ -222,13 +222,21 @@ function __applyDistRewrite() {
           function map(u) {
             var s = String(u);
             if (/^(blob|data):/.test(s)) return s;
-            // Absolu contenant browser/ ou games/ → dist externe.
-            var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*\/((?:browser|games)\/.*)$/);
-            if (m) return PROTO + m[1];
-            // Relatif : la base d'origine du worker était browser/ (le worker
-            // shim étant un blob:, un relatif ne se résoudrait pas du tout).
-            if (!/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(s)) return PROTO + 'browser/' + s.replace(/^\.\//, '');
-            return s;
+            // Absolu avec scheme → réduire au pathname pour traitement unifié.
+            var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*(\/.*)$/);
+            if (m) s = m[1];
+            else if (/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(s)) return String(u); // autre scheme (file:…)
+            // Racine-absolu : c'est la forme RÉELLE de config.baseURL — Jocly
+            // calcule sa baseURL via new URL(scriptDir).pathname ("/browser/"),
+            // donc le worker reçoit importScripts("/browser/jocly.core.js").
+            if (s.charAt(0) === '/') {
+              var p = s.replace(/^\/+/, '');
+              return /^(browser|games)\//.test(p) ? PROTO + p : String(u);
+            }
+            // Relatif ("jocly-allgames.js", "games/…-model.js") : la base
+            // d'origine du worker était browser/ (le worker shim étant un
+            // blob:, un relatif ne se résoudrait pas du tout).
+            return PROTO + 'browser/' + s.replace(/^\.\//, '');
           }
           self.importScripts = function () {
             var args = Array.prototype.map.call(arguments, map);

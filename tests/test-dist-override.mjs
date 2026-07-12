@@ -174,9 +174,19 @@ await new Promise((resolve) => {
   new Function('self', shimSrc)(fakeSelf);
   assert(imported[0] === PROTO + 'browser/jocly.aiworker.js',
     'shim : charge le vrai jocly.aiworker.js depuis le dist externe');
-  fakeSelf.importScripts('https://tauri.localhost/browser/jocly.core.js'); // Init: baseURL+"jocly.core.js"
+  // Forme RÉELLE de config.baseURL : Jocly la calcule via
+  // new URL(scriptDir).pathname (GetScriptPath, jocly.js) → "/browser/",
+  // RACINE-ABSOLU sans scheme. C'est le cas constaté en runtime (404 sur
+  // browser//browser/jocly.core.js avant correctif).
+  fakeSelf.importScripts('/browser/jocly.core.js'); // Init: baseURL+"jocly.core.js"
   assert(imported.at(-1) === PROTO + 'browser/jocly.core.js',
-    'shim : importScripts(baseURL+jocly.core.js) absolu → dist externe');
+    'shim : importScripts("/browser/jocly.core.js") racine-absolu (forme réelle de baseURL) → dist externe');
+  fakeSelf.importScripts('https://tauri.localhost/browser/jocly.core.js'); // variante absolue avec scheme
+  assert(imported.at(-1) === PROTO + 'browser/jocly.core.js',
+    'shim : importScripts(scheme://…/browser/jocly.core.js) absolu → dist externe');
+  fakeSelf.importScripts('/content/tauri-bridge.js'); // racine-absolu hors dist
+  assert(imported.at(-1) === '/content/tauri-bridge.js',
+    'shim : racine-absolu hors browser/games → inchangé');
   fakeSelf.importScripts('jocly-allgames.js'); // WorkerCreateGame, relatif
   assert(imported.at(-1) === PROTO + 'browser/jocly-allgames.js',
     'shim : importScripts relatif (jocly-allgames.js) → résolu sur browser/ du dist externe');
