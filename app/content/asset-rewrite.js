@@ -327,6 +327,9 @@ function __applyDistRewrite() {
             var s = String(u);
             if (/^(blob|data):/.test(s)) return s;
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> a435ea5 (externalisation du dist)
             // Absolu avec scheme → réduire au pathname pour traitement unifié.
             var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*(\/.*)$/);
             if (m) s = m[1];
@@ -342,6 +345,7 @@ function __applyDistRewrite() {
             // d'origine du worker était browser/ (le worker shim étant un
             // blob:, un relatif ne se résoudrait pas du tout).
             return PROTO + 'browser/' + s.replace(/^\.\//, '');
+<<<<<<< HEAD
 =======
             // Absolu contenant browser/ ou games/ → dist externe.
             var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*\/((?:browser|games)\/.*)$/);
@@ -351,6 +355,8 @@ function __applyDistRewrite() {
             if (!/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(s)) return PROTO + 'browser/' + s.replace(/^\.\//, '');
             return s;
 >>>>>>> 277ea75 (external dist, increm 1)
+=======
+>>>>>>> a435ea5 (externalisation du dist)
           }
           self.importScripts = function () {
             var args = Array.prototype.map.call(arguments, map);
