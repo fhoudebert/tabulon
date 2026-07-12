@@ -151,6 +151,12 @@ pub fn handle_request<R: Runtime>(app: &AppHandle<R>, req: Request<Vec<u8>>) -> 
                     .status(200)
                     .header("Content-Type", mime_for(&rel))
                     .header("Access-Control-Allow-Origin", "*")
+                    // COEP: require-corp est actif (tauri.conf.json, pour
+                    // SharedArrayBuffer/Fairy-Stockfish) : les chargements
+                    // no-cors CROSS-ORIGIN (importScripts du worker IA, <link>
+                    // CSS de module, images de fond) exigent ce header CORP
+                    // sur la réponse, sinon la webview les bloque.
+                    .header("Cross-Origin-Resource-Policy", "cross-origin")
                     .body(bytes)
                     .unwrap(),
                 Err(e) => { log::warn!("dist externe illisible {}: {e}", full.display()); }
@@ -164,6 +170,7 @@ pub fn handle_request<R: Runtime>(app: &AppHandle<R>, req: Request<Vec<u8>>) -> 
             .status(200)
             .header("Content-Type", mime_for(&rel))
             .header("Access-Control-Allow-Origin", "*")
+            .header("Cross-Origin-Resource-Policy", "cross-origin")
             .body(asset.bytes)
             .unwrap();
     }

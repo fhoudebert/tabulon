@@ -12,6 +12,14 @@
 // d'où la forme "fonction nommée + auto-appel" : SELF_SOURCE contient sa
 // propre source pour la ré-injection.
 function __applyDistRewrite() {
+  // Idempotence : depuis le passage à initialization_script_for_all_frames
+  // (lib.rs / window_manager.rs), ce script s'exécute nativement dans CHAQUE
+  // frame — y compris l'iframe Jocly — à document_start. La ré-injection
+  // manuelle dans l'iframe (injectIntoIframe, conservée en filet de sécurité)
+  // peut donc conduire à une double exécution dans le même contexte : on
+  // s'arrête si les hooks sont déjà posés, pour ne pas les ré-emballer.
+  if (window.__distRewriteApplied) return;
+  window.__distRewriteApplied = true;
   var SELF_SOURCE = __applyDistRewrite.toString();
   // Base absolue du protocole custom. Sur Windows, les protocoles custom sont
   // servis via https://<scheme>.localhost/ ; ailleurs via <scheme>://localhost/.
@@ -72,7 +80,11 @@ function __applyDistRewrite() {
     if (!v) return;
     if (el.tagName === 'SCRIPT' && /(^|\/)browser\/jocly\.js(\?|$)/.test(v)) return; // laisser tel quel
     var d = toDist(v);
-    if (d) el.setAttribute(attr, d);
+    if (d) {
+      // Images redirigées cross-origin → crossOrigin anonymous pour WebGL
+      if (el.tagName === 'IMG') { try { if (!el.crossOrigin) el.crossOrigin = 'anonymous'; } catch (e) {} }
+      el.setAttribute(attr, d);
+    }
   }
 
   // L'<iframe> de Jocly (attachElement → jocly.embed.html) est un contexte
@@ -131,7 +143,12 @@ function __applyDistRewrite() {
   };
 
   // 4. Image().src / <img>.src assignés en JS (préchargement des visuels et
-  //    thumbnails) : ces affectations ne déclenchent pas le MutationObserver.
+  //    thumbnails, et TEXTURES 3D three.js) : ces affectations ne déclenchent
+  //    pas le MutationObserver. En plus de rediriger vers le dist externe, on
+  //    pose crossOrigin='anonymous' AVANT le src : sans lui, une texture
+  //    servie depuis tabulon-dist:// (origine ≠ celle de l'iframe tauri://)
+  //    rend le canvas WebGL "tainted" → SecurityError sur texSubImage2D. Le
+  //    protocole renvoie déjà Access-Control-Allow-Origin: * (CORS OK).
   try {
     var iproto = window.HTMLImageElement && window.HTMLImageElement.prototype;
     var idesc = iproto && Object.getOwnPropertyDescriptor(iproto, 'src');
@@ -139,7 +156,14 @@ function __applyDistRewrite() {
       Object.defineProperty(iproto, 'src', {
         configurable: true, enumerable: idesc.enumerable,
         get: function () { return idesc.get.call(this); },
-        set: function (v) { var d = (typeof v === 'string') && toDist(v); idesc.set.call(this, d || v); },
+        set: function (v) {
+          var d = (typeof v === 'string') && toDist(v);
+          if (d) {
+            // crossOrigin doit être défini avant l'assignation de src
+            try { if (!this.crossOrigin) this.crossOrigin = 'anonymous'; } catch (e) {}
+          }
+          idesc.set.call(this, d || v);
+        },
       });
     }
   } catch (e) { /* non redéfinissable : ignore */ }
@@ -171,5 +195,108 @@ function __applyDistRewrite() {
       });
     }
   } catch (e) { /* CSSOM non redéfinissable : ignore */ }
+
+  // 6. Web Worker de l'IA. Après un coup, Jocly fait
+  //    new Worker(config.baseURL+'jocly.aiworker.js') (StartThreadedMachine),
+  //    puis DANS le worker : importScripts(baseURL+"jocly.core.js") (absolu)
+  //    et des importScripts RELATIFS — "jocly-allgames.js", "jocly.game.js",
+  //    "games/<module>/<jeu>-model.js" (WorkerCreateGame, jocly.core.js) —
+  //    résolus contre l'URL du worker. On ne peut PAS rediriger l'URL du
+  //    worker vers tabulon-dist:// : un Worker doit être SAME-ORIGIN avec sa
+  //    page (SecurityError sinon → l'IA reste sur "réflexion"). On crée donc
+  //    un worker "shim" same-origin (blob:) qui remappe ses importScripts
+  //    vers le dist externe puis charge le vrai jocly.aiworker.js depuis
+  //    celui-ci. importScripts cross-origin est permis pour les workers
+  //    classiques (no-cors) ; sous COEP require-corp, le protocole doit
+  //    renvoyer Cross-Origin-Resource-Policy: cross-origin (fait dans
+  //    dist_override.rs).
+  //    Portée volontairement limitée à jocly.aiworker.js : les workers
+  //    fairy/scan chargent du WASM par fetch relatif, incompatible avec une
+  //    base blob: — ils restent sur l'embarqué (comportement inchangé).
+  try {
+    var _Worker = window.Worker;
+    if (_Worker && window.Blob && window.URL && window.URL.createObjectURL) {
+      var makeAiWorkerShim = function (entry) {
+        var body = '(' + function (PROTO, ENTRY) {
+          var _is = self.importScripts;
+          function map(u) {
+            var s = String(u);
+            if (/^(blob|data):/.test(s)) return s;
+            // Absolu contenant browser/ ou games/ → dist externe.
+            var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*\/((?:browser|games)\/.*)$/);
+            if (m) return PROTO + m[1];
+            // Relatif : la base d'origine du worker était browser/ (le worker
+            // shim étant un blob:, un relatif ne se résoudrait pas du tout).
+            if (!/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(s)) return PROTO + 'browser/' + s.replace(/^\.\//, '');
+            return s;
+          }
+          self.importScripts = function () {
+            var args = Array.prototype.map.call(arguments, map);
+            return _is.apply(self, args);
+          };
+          _is.call(self, ENTRY);
+        }.toString() + ')(' + JSON.stringify(PROTO) + ',' + JSON.stringify(entry) + ');';
+        return URL.createObjectURL(new Blob([body], { type: 'text/javascript' }));
+      };
+      window.Worker = function (url, opts) {
+        var s = (typeof url === 'string') ? url : String(url || '');
+        if (/(^|\/)browser\/jocly\.aiworker\.js(\?|$)/.test(s)) {
+          var d = toDist(s);
+          if (d) return new _Worker(makeAiWorkerShim(d), opts);
+        }
+        return new _Worker(url, opts);
+      };
+      window.Worker.prototype = _Worker.prototype;
+    }
+  } catch (e) { /* Worker/Blob non disponibles : ignore */ }
+
+  // 7. <link>.href assigné en JS AVANT insertion (CSS de module, ex.
+  //    chessbase.css : Jocly crée le <link rel=stylesheet> dynamiquement).
+  //    Le MutationObserver ne voit le nœud qu'À l'insertion, et son callback
+  //    est asynchrone : la webview a déjà lancé la requête sur l'URL d'origine
+  //    (embarqué) → 500 si le fichier n'existe que dans le dist externe. En
+  //    réécrivant au setter, l'URL est déjà la bonne au moment de l'insertion.
+  try {
+    var lproto = window.HTMLLinkElement && window.HTMLLinkElement.prototype;
+    var ldesc = lproto && Object.getOwnPropertyDescriptor(lproto, 'href');
+    if (ldesc && ldesc.set) {
+      Object.defineProperty(lproto, 'href', {
+        configurable: true, enumerable: ldesc.enumerable,
+        get: function () { return ldesc.get.call(this); },
+        set: function (v) {
+          var d = (typeof v === 'string') && toDist(v);
+          ldesc.set.call(this, d || v);
+        },
+      });
+    }
+  } catch (e) { /* non redéfinissable : ignore */ }
+
+  // 8. setAttribute('href'/'src', …). C'est la voie RÉELLE des CSS de module :
+  //    JocGame.LoadCss (jocly.game.js) fait
+  //    style.setAttribute("href", fullPath+"/"+css) — ni le setter .href ni le
+  //    parse HTML ne sont impliqués, et le MutationObserver ne corrige qu'APRÈS
+  //    l'insertion, alors que la webview a déjà lancé la requête sur l'embarqué
+  //    (→ 500 en console sur chessbase.css avant le refetch corrigé). En
+  //    réécrivant dès setAttribute, l'URL est bonne AVANT l'insertion : plus
+  //    aucune requête ne part sur l'embarqué.
+  try {
+    var _setAttribute = window.Element.prototype.setAttribute;
+    window.Element.prototype.setAttribute = function (name, value) {
+      try {
+        var n = String(name).toLowerCase();
+        var t = this.tagName;
+        if ((n === 'href' && t === 'LINK') ||
+            (n === 'src' && (t === 'IMG' ||
+              (t === 'SCRIPT' && !/(^|\/)browser\/jocly\.js(\?|$)/.test(String(value)))))) {
+          var d = toDist(value);
+          if (d) {
+            if (t === 'IMG') { try { if (!this.crossOrigin) this.crossOrigin = 'anonymous'; } catch (e2) {} }
+            value = d;
+          }
+        }
+      } catch (e3) { /* valeur non-string, etc. : laisser passer */ }
+      return _setAttribute.call(this, name, value);
+    };
+  } catch (e) { /* non redéfinissable : ignore */ }
 }
 __applyDistRewrite();
