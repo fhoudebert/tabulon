@@ -17,6 +17,9 @@
 // propre source pour la ré-injection.
 function __applyDistRewrite() {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 277ea75 (external dist, increm 1)
   // Idempotence : depuis le passage à initialization_script_for_all_frames
   // (lib.rs / window_manager.rs), ce script s'exécute nativement dans CHAQUE
   // frame — y compris l'iframe Jocly — à document_start. La ré-injection
@@ -115,6 +118,7 @@ function __applyDistRewrite() {
       if (el.tagName === 'IMG') { try { if (!el.crossOrigin) el.crossOrigin = 'anonymous'; } catch (e) {} }
       el.setAttribute(attr, d);
     }
+<<<<<<< HEAD
   }
 
   // L'<iframe> de Jocly (attachElement → jocly.embed.html) est un contexte
@@ -142,6 +146,8 @@ function __applyDistRewrite() {
     var d = toDist(v);
     if (d) el.setAttribute(attr, d);
 >>>>>>> 20e98f0 (load external dist)
+=======
+>>>>>>> 277ea75 (external dist, increm 1)
   }
 
   // L'<iframe> de Jocly (attachElement → jocly.embed.html) est un contexte
@@ -222,8 +228,17 @@ function __applyDistRewrite() {
 =======
 
   // 4. Image().src / <img>.src assignés en JS (préchargement des visuels et
+<<<<<<< HEAD
   //    thumbnails) : ces affectations ne déclenchent pas le MutationObserver.
 >>>>>>> 6701aaa (fix embed iframe)
+=======
+  //    thumbnails, et TEXTURES 3D three.js) : ces affectations ne déclenchent
+  //    pas le MutationObserver. En plus de rediriger vers le dist externe, on
+  //    pose crossOrigin='anonymous' AVANT le src : sans lui, une texture
+  //    servie depuis tabulon-dist:// (origine ≠ celle de l'iframe tauri://)
+  //    rend le canvas WebGL "tainted" → SecurityError sur texSubImage2D. Le
+  //    protocole renvoie déjà Access-Control-Allow-Origin: * (CORS OK).
+>>>>>>> 277ea75 (external dist, increm 1)
   try {
     var iproto = window.HTMLImageElement && window.HTMLImageElement.prototype;
     var idesc = iproto && Object.getOwnPropertyDescriptor(iproto, 'src');
@@ -232,6 +247,9 @@ function __applyDistRewrite() {
         configurable: true, enumerable: idesc.enumerable,
         get: function () { return idesc.get.call(this); },
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 277ea75 (external dist, increm 1)
         set: function (v) {
           var d = (typeof v === 'string') && toDist(v);
           if (d) {
@@ -240,9 +258,12 @@ function __applyDistRewrite() {
           }
           idesc.set.call(this, d || v);
         },
+<<<<<<< HEAD
 =======
         set: function (v) { var d = (typeof v === 'string') && toDist(v); idesc.set.call(this, d || v); },
 >>>>>>> 6701aaa (fix embed iframe)
+=======
+>>>>>>> 277ea75 (external dist, increm 1)
       });
     }
   } catch (e) { /* non redéfinissable : ignore */ }
@@ -275,6 +296,9 @@ function __applyDistRewrite() {
     }
   } catch (e) { /* CSSOM non redéfinissable : ignore */ }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 277ea75 (external dist, increm 1)
 
   // 6. Web Worker de l'IA. Après un coup, Jocly fait
   //    new Worker(config.baseURL+'jocly.aiworker.js') (StartThreadedMachine),
@@ -302,6 +326,7 @@ function __applyDistRewrite() {
           function map(u) {
             var s = String(u);
             if (/^(blob|data):/.test(s)) return s;
+<<<<<<< HEAD
             // Absolu avec scheme → réduire au pathname pour traitement unifié.
             var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*(\/.*)$/);
             if (m) s = m[1];
@@ -317,6 +342,15 @@ function __applyDistRewrite() {
             // d'origine du worker était browser/ (le worker shim étant un
             // blob:, un relatif ne se résoudrait pas du tout).
             return PROTO + 'browser/' + s.replace(/^\.\//, '');
+=======
+            // Absolu contenant browser/ ou games/ → dist externe.
+            var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*\/((?:browser|games)\/.*)$/);
+            if (m) return PROTO + m[1];
+            // Relatif : la base d'origine du worker était browser/ (le worker
+            // shim étant un blob:, un relatif ne se résoudrait pas du tout).
+            if (!/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(s)) return PROTO + 'browser/' + s.replace(/^\.\//, '');
+            return s;
+>>>>>>> 277ea75 (external dist, increm 1)
           }
           self.importScripts = function () {
             var args = Array.prototype.map.call(arguments, map);
