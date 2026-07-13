@@ -148,6 +148,7 @@ double : Rust `commands/extension_cmds.rs` (commandes list/export/import/
 remove, index lu en json5 — clés non quotées du build jocly — réécrit en JSON
 strict avec `.bak`) et Node `scripts/make-extension.mjs` (outillage hors app,
 miroir testé par `tests/test-extensions.mjs`) — garder les deux synchronisés.
+<<<<<<< HEAD
 UI : `content/extensions.html` (fenêtre `open_extensions`, onglets Jeux /
 Modules), hub notifié par `relay_to_window('main','extensionsChanged')` →
 `ListGames()`.
@@ -164,3 +165,7 @@ n'est jamais embarqué ni supprimé. Source d'un module hors app : le dist
 complet OU un build `gulp --no-default-games --modules src/games/<module>
 build` (mêmes fichiers sous `games/<module>/`), empaqueté par
 `scripts/make-extension.mjs --module <module>`.
+=======
+UI : `content/extensions.html` (fenêtre `open_extensions`), hub notifié par
+`relay_to_window('main','extensionsChanged')` → `ListGames()`.
+>>>>>>> 84d9dc4 (export/import games)

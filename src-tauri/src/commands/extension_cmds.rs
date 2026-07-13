@@ -16,9 +16,13 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+<<<<<<< HEAD
 const FORMAT_VERSION: u64 = 2;
 // v1 (sans champ "type") reste accepté en lecture : c'était le format des
 // extensions de JEU avant l'ajout des extensions de MODULE.
+=======
+const FORMAT_VERSION: u64 = 1;
+>>>>>>> 84d9dc4 (export/import games)
 
 // ── Préconditions & gardes ────────────────────────────────────────────────────
 
@@ -207,7 +211,10 @@ pub fn export_extension(app: tauri::AppHandle, game_name: String, dest_path: Str
 
     let manifest = serde_json::json!({
         "formatVersion": FORMAT_VERSION,
+<<<<<<< HEAD
         "type": "game",
+=======
+>>>>>>> 84d9dc4 (export/import games)
         "game": game_name,
         "module": module,
         "title": declaration.get("title").and_then(|v| v.as_str()).unwrap_or(&game_name),
@@ -251,12 +258,17 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
         serde_json::from_str(&s).map_err(|e| format!("manifeste invalide : {e}"))?
     };
     let version = manifest.get("formatVersion").and_then(|v| v.as_u64()).unwrap_or(0);
+<<<<<<< HEAD
     if version == 0 || version > FORMAT_VERSION {
         return Err(format!("formatVersion {version} non supporté (max {FORMAT_VERSION})"));
     }
     // Extensions de MODULE (v2) : tout games/<module>/ + déclarations multiples.
     if manifest.get("type").and_then(|v| v.as_str()) == Some("module") {
         return import_module_extension(&dist, &mut zip, &manifest);
+=======
+    if version != FORMAT_VERSION {
+        return Err(format!("formatVersion {version} non supporté (attendu {FORMAT_VERSION})"));
+>>>>>>> 84d9dc4 (export/import games)
     }
     let game = manifest.get("game").and_then(|v| v.as_str())
         .ok_or("manifeste sans nom de jeu")?.to_string();
@@ -279,7 +291,11 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
     //    res/, moteurs). Une extension n'installe jamais un module.
     let module_dir = dist.join("browser").join("games").join(&module);
     if !module_dir.is_dir() {
+<<<<<<< HEAD
         return Err(format!("module '{module}' absent du dist externe — importer d'abord l'extension du module '{module}' (ou un dist le contenant)"));
+=======
+        return Err(format!("module '{module}' absent du dist externe — installer d'abord un dist contenant ce module"));
+>>>>>>> 84d9dc4 (export/import games)
     }
 
     // 3. Extraction, bornée aux fichiers du manifeste sous games/<module>/.
@@ -306,6 +322,7 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "game": game, "module": module, "files": files.len(), "updated": updated }))
 }
 
+<<<<<<< HEAD
 /// Import d'une extension de MODULE : fusion (jamais de suppression préalable —
 /// un jeu ajouté individuellement dans ce module survit, et un build
 /// mono-module contient de toute façon tous les jeux du module). Le socle
@@ -454,6 +471,8 @@ pub fn remove_module(module_name: String) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "module": module_name, "removed_games": names.len() }))
 }
 
+=======
+>>>>>>> 84d9dc4 (export/import games)
 /// Désinstalle <jeu> : retrait de l'index + suppression de SES fichiers
 /// déclarés. Les ressources partagées du module ne sont jamais touchées, et un
 /// fichier encore déclaré par un AUTRE jeu du module est conservé.

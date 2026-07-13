@@ -144,8 +144,11 @@ function buildPayload(method, args) {
     export_extension:    ([gameName, destPath])    => ({ gameName, destPath }),
     import_extension:    ([srcPath])               => ({ srcPath }),
     remove_extension:    ([gameName])              => ({ gameName }),
+<<<<<<< HEAD
     export_module:       ([moduleName, destPath])  => ({ moduleName, destPath }),
     remove_module:       ([moduleName])            => ({ moduleName }),
+=======
+>>>>>>> 84d9dc4 (export/import games)
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),

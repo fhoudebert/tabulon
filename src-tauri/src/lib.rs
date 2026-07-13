@@ -4,7 +4,11 @@ mod state;
 mod window_manager;
 mod dist_override;
 
+<<<<<<< HEAD
 use commands::{extension_cmds, fs_cmds, hub_cmds, match_cmds, peer_cmds, template_cmds, video_cmds, window_cmds};
+=======
+use commands::{extension_cmds, fs_cmds, hub_cmds, match_cmds, template_cmds, video_cmds, window_cmds};
+>>>>>>> 84d9dc4 (export/import games)
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -127,6 +131,7 @@ pub fn run() {
             extension_cmds::export_extension,
             extension_cmds::import_extension,
             extension_cmds::remove_extension,
+<<<<<<< HEAD
             extension_cmds::export_module,
             extension_cmds::remove_module,
             window_cmds::open_extensions,
@@ -137,6 +142,9 @@ pub fn run() {
             peer_cmds::peer_last_message,
             peer_cmds::peer_status,
             peer_cmds::peer_stop,
+=======
+            window_cmds::open_extensions,
+>>>>>>> 84d9dc4 (export/import games)
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tabulon");
