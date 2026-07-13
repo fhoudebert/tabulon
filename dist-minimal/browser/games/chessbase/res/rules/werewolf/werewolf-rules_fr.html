@@ -1,0 +1,80 @@
+<style>
+	table.psymbs {
+		text-align: center;
+	}
+	.psymb {
+		background-image: url({GAME}/res/images/wikipedia.png);
+		width: 100px;
+		height: 200px;
+	}
+	.psymbs td {
+		padding: 0 10px 0 10px;
+	}
+	.psymb-bold {
+		font-weight: bold;
+	}
+	.side {
+		float: right;
+		max-width: 100%;
+	}
+    .piece-graph {
+        height: auto;
+        max-width: 300px;
+        margin: 0 auto;
+        display: inline-flex;
+    }
+	@media screen and (max-width: 520px) {
+		.side {
+			float: none;
+			display: block;
+			max-width: 100%;
+			margin-right: auto;
+			margin-left: auto;
+		}		
+	}
+	h1,h2,h3,h4 {
+		clear: both;
+	}
+</style>
+<h1>Differences avec les échecs orthodoxes</h1>
+<p>Dans Werewolf Chess, Les reines sont remplacées par des loups garous, et le pions se promeuvent seulement en Tour, Fou et Cavalier.
+Toutes les autres règles sont les mêmes que celles du jeu d'échecs classique.
+Le loup garou est <i>contagieux</i>:
+une pièce qui capture un loup garou se tranforme instantanément en loup garou.
+Seul les rois y sont <i>immunisé</i>.
+</p>
+<img style="max-width:100%;" src="{GAME}/res/rules/fairy/wolf.png"/> 
+<p>Le loup-garou : 
+Se déplace et capture comme une reine, mais pas à plus de 3 cases.
+Il peut sauter sur la 2ème case dans n'importe quelle direction même si la 1ère case est occupée (mais il doit alors terminer son déplacement sur cette case).
+Si il fait un saut par-dessus une pièce ennemie,
+cette dernière peut éventuellement être retirée de l'échiquier,
+éventuellement en plus de ce qui a été capturé sur la case de destination.
+		
+</p>
+<img class='piece-graph' src="{GAME}/res/rules/graphs/werewolf.png"/>
+
+
+<h2>Inital setup</h2>
+
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/werewolf/werewolf-initial.jpg"/></p>
+
+<p>Chaque joueur démarre avec:
+<ul>
+<li>8 pions</li>	
+<li>2 tours</li>	
+<li>2 Cavaliers</li>	
+<li>2 Fous</li>
+<li>1 Loup garou</li>	
+<li>1 Roi</li>	
+</ul> 
+</p>
+
+
+
+<p>Roque : oui.</p>
+<p>Double pas initial des pions : oui.</p>
+<p>Prise "En passant" : oui.</p>
+<p>Promotion: only to the participating orthodox chess pieces (Knight, Bishop, Rook).</p>
+<p>Contagion: toute pièce non-royale qui capture un loup-garou se transforme en un loup-garou de sa couleur.</p>
+

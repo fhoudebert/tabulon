@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import {
   collectGameFiles, buildExtension, buildManifest,
+  collectModuleGames, listModuleFiles, buildModuleExtension,
   readIndex, addToIndex, removeFromIndex, isSafeRelPath, isSafeName,
 } from '../scripts/make-extension.mjs';
 
@@ -76,10 +77,10 @@ assert(expected.every(f => listing.includes(`games/chessbase/${f}`)),
   'archive : tous les fichiers collectés, sous games/<module>/');
 const manifest = JSON.parse(
   execFileSync('unzip', ['-p', built.out, 'extension.json'], { encoding: 'utf-8' }));
-assert(manifest.formatVersion === 1 && manifest.game === 'seireigi' &&
+assert(manifest.formatVersion === 2 && manifest.type === 'game' && manifest.game === 'seireigi' &&
        manifest.module === 'chessbase' && manifest.declaration.title === 'Seireigi' &&
        Array.isArray(manifest.files) && manifest.files.length === expected.length,
-  'manifeste : formatVersion, jeu, module, déclaration d\'index, liste de fichiers');
+  'manifeste jeu : v2 type game (v1 sans type reste accepté à l\'import), déclaration, liste de fichiers');
 
 // ── 5. Cycle import/désinstallation simulé sur un dist externe factice ──────
 // Dist cible : module chessbase présent (ressources partagées) mais SANS
@@ -125,7 +126,63 @@ assert(existsSync(path.join(target, 'browser', 'games', 'chessbase', 'classic-ch
        existsSync(path.join(target, 'browser', 'games', 'chessbase', 'chessbase.css')),
   'désinstallation simulée : autre jeu et ressources partagées du module INTACTS');
 
-// ── 6. Les clés i18n de l'écran existent en fr ET en ─────────────────────────
+// ── 6. Extensions de MODULE (manifeste v2, fusion, socle intact) ─────────────
+{
+  // Fabrication depuis le dist complet : mêmes fichiers qu'un build gulp
+  // mono-module (vérifié à l'analyse), tout le module-spécifique sous
+  // games/<module>/.
+  const mext = buildModuleExtension(dist, 'margo', tmp);
+  const mGames = Object.keys(mext.games);
+  assert(mGames.length === 7 && mGames.includes('shibumi-spline') && mGames.includes('margo5'),
+    'module margo : 7 jeux dans le manifeste (dont shibumi-* — un module ≠ ses seuls jeux éponymes)');
+  const mlist = execFileSync('unzip', ['-Z1', mext.out], { encoding: 'utf-8' }).trim().split('\n');
+  assert(mlist.filter(e => !e.endsWith('/')).length === mext.files.length + 1 &&
+         mlist.filter(e => !e.endsWith('/') && e !== 'extension.json')
+              .every(e => e.startsWith('games/margo/')),
+    `module margo : ${mext.files.length} fichiers, TOUS sous le préfixe games/margo/`);
+  assert(!mlist.some(e => e.includes('scan/') || e.includes('fairy-stockfish') || e.startsWith('res/')),
+    'module : le socle (scan/ — moteur des dames lié à checkers mais maintenu au niveau jocly —, fairy-stockfish, res/ racine) n\'est JAMAIS embarqué');
+  const mmanifest = JSON.parse(execFileSync('unzip', ['-p', mext.out, 'extension.json'], { encoding: 'utf-8' }));
+  assert(mmanifest.formatVersion === 2 && mmanifest.type === 'module' && !mmanifest.files,
+    'manifeste module : v2, type module, pas de liste files (extraction bornée par PRÉFIXE à l\'import)');
+
+  // Import par FUSION sur un dist cible SANS le module (aucune exigence
+  // « module présent » : le module est la charge utile), avec un jeu ajouté
+  // individuellement qui doit survivre à une ré-importation du module.
+  const target2 = path.join(tmp, 'dist-cible-module');
+  mkdirSync(path.join(target2, 'browser', 'games'), { recursive: true });
+  const idx2 = path.join(target2, 'browser', 'jocly-allgames.js');
+  writeFileSync(idx2, '"use strict";exports.games={};\n');
+  execFileSync('unzip', ['-o', '-q', mext.out, '-d', path.join(target2, 'browser'), 'games/*']);
+  for (const [n, d] of Object.entries(mmanifest.games)) addToIndex(idx2, n, d);
+  assert(Object.keys(readIndex(idx2)).length === 7 &&
+         existsSync(path.join(target2, 'browser', 'games', 'margo', 'margo5-model.js')),
+    'import module simulé : 7 jeux à l\'index, fichiers sous games/margo/, sans précondition de module');
+  // jeu « ajouté individuellement » : fichier étranger dans le dossier du module
+  writeFileSync(path.join(target2, 'browser', 'games', 'margo', 'jeu-perso-model.js'), '// perso');
+  execFileSync('unzip', ['-o', '-q', mext.out, '-d', path.join(target2, 'browser'), 'games/*']);
+  assert(existsSync(path.join(target2, 'browser', 'games', 'margo', 'jeu-perso-model.js')),
+    'ré-import module = FUSION : un jeu ajouté individuellement dans le module survit');
+
+  // Désinstallation module : dossier entier + entrées d'index, socle intact.
+  mkdirSync(path.join(target2, 'browser', 'res'), { recursive: true });
+  writeFileSync(path.join(target2, 'browser', 'res', 'socle.txt'), 'socle');
+  rmSync(path.join(target2, 'browser', 'games', 'margo'), { recursive: true });
+  for (const n of Object.keys(mmanifest.games)) removeFromIndex(idx2, n);
+  assert(Object.keys(readIndex(idx2)).length === 0 &&
+         !existsSync(path.join(target2, 'browser', 'games', 'margo')) &&
+         existsSync(path.join(target2, 'browser', 'res', 'socle.txt')),
+    'désinstallation module simulée : dossier et entrées d\'index retirés, socle intact');
+
+  // collectModuleGames refuse un module inconnu
+  let threw = false;
+  try { collectModuleGames(dist, 'module-inexistant'); } catch { threw = true; }
+  assert(threw, 'collectModuleGames : erreur explicite pour un module inconnu');
+  assert(listModuleFiles(dist, 'margo').length === mext.files.length,
+    'listModuleFiles : parcours récursif cohérent avec l\'archive');
+}
+
+// ── 7. Les clés i18n de l'écran existent en fr ET en ─────────────────────────
 const i18n = readFileSync(path.join(root, 'app', 'content', 'tabulon-i18n.js'), 'utf-8');
 const html = readFileSync(path.join(root, 'app', 'content', 'extensions.html'), 'utf-8');
 const keys = [...html.matchAll(/data-i18n(?:-placeholder)?="([^"]+)"/g)].map(m => m[1]);

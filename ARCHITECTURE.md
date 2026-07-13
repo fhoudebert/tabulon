@@ -148,5 +148,19 @@ double : Rust `commands/extension_cmds.rs` (commandes list/export/import/
 remove, index lu en json5 — clés non quotées du build jocly — réécrit en JSON
 strict avec `.bak`) et Node `scripts/make-extension.mjs` (outillage hors app,
 miroir testé par `tests/test-extensions.mjs`) — garder les deux synchronisés.
-UI : `content/extensions.html` (fenêtre `open_extensions`), hub notifié par
-`relay_to_window('main','extensionsChanged')` → `ListGames()`.
+UI : `content/extensions.html` (fenêtre `open_extensions`, onglets Jeux /
+Modules), hub notifié par `relay_to_window('main','extensionsChanged')` →
+`ListGames()`.
+
+Extensions de MODULE (manifeste v2, `type: "module"`, v1 accepté en lecture) :
+contenu = TOUT `games/<module>/` + les déclarations d'index de ses jeux (champ
+`games`), sans liste `files` — l'extraction est bornée au PRÉFIXE
+`games/<module>/` avec garde anti-traversée par entrée. Import par FUSION
+(jamais de suppression préalable : un jeu importé individuellement survit),
+aucune exigence « module présent » ; désinstallation = dossier entier + entrées
+d'index. Le socle (moteur, `res/` racine, fairy-stockfish, `scan/` — moteur
+Scan des dames, utile au seul module checkers mais maintenu au niveau jocly)
+n'est jamais embarqué ni supprimé. Source d'un module hors app : le dist
+complet OU un build `gulp --no-default-games --modules src/games/<module>
+build` (mêmes fichiers sous `games/<module>/`), empaqueté par
+`scripts/make-extension.mjs --module <module>`.

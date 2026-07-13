@@ -99,9 +99,18 @@ Shared module resources (css, sounds, `res/` sprites/textures, rules graphs,
 fairy-stockfish engines) always stay with the module: importing a game
 requires its module to already exist in the target external dist, and
 uninstalling never removes shared files (nor files still declared by another
-game of the module). Extensions can also be built without the app:
-`node scripts/make-extension.mjs <game> [outdir]` — the packaging tool for a
-future downloadable extension list.
+game of the module). Whole **modules** can also be exported/imported (Modules tab): a module
+extension contains the full `games/<module>/` tree plus the index declarations
+of its games; importing it has no prerequisite (the module is the payload) and
+merges over an existing module, uninstalling removes the whole module folder
+and its games. The engine baseline (root `res/`, fairy-stockfish, `scan/` —
+the draughts engine, only useful with checkers but kept at the jocly level)
+never travels in extensions. Extensions can also be built without the app:
+`node scripts/make-extension.mjs <game> [outdir]` or
+`node scripts/make-extension.mjs --module <module> [outdir]` — with a full
+dist or a single-module gulp build
+(`gulp --no-default-games --modules src/games/<module> build`) as source —
+the packaging tool for a future downloadable extension list.
 
 At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the

@@ -143,6 +143,8 @@ function buildPayload(method, args) {
     export_extension:    ([gameName, destPath])    => ({ gameName, destPath }),
     import_extension:    ([srcPath])               => ({ srcPath }),
     remove_extension:    ([gameName])              => ({ gameName }),
+    export_module:       ([moduleName, destPath])  => ({ moduleName, destPath }),
+    remove_module:       ([moduleName])            => ({ moduleName }),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),

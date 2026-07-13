@@ -228,6 +228,7 @@ html, body {
 .icon-home::before          { content: '\e821'; }
 .icon-info::before          { content: '\e81e'; }
 .icon-plus::before          { content: '\e816'; }
+.icon-box::before           { content: '\e852'; }  /* Extensions (glyphe 'box', vérifié dans la cmap photon-entypo) */
 
 /* ── Formulaires ────────────────────────────────────────────────────────────── */
 .form-group {
@@ -946,3 +947,4 @@ strong { font-weight: 600; }
 .ext-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .ext-dist-label { color: #737475; margin-right: 6px; }
 #ext-status { line-height: 22px; }
+.ext-readonly { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 4px; color: #6b5200; }

@@ -16,7 +16,9 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const FORMAT_VERSION: u64 = 1;
+const FORMAT_VERSION: u64 = 2;
+// v1 (sans champ "type") reste accepté en lecture : c'était le format des
+// extensions de JEU avant l'ajout des extensions de MODULE.
 
 // ── Préconditions & gardes ────────────────────────────────────────────────────
 
@@ -205,6 +207,7 @@ pub fn export_extension(app: tauri::AppHandle, game_name: String, dest_path: Str
 
     let manifest = serde_json::json!({
         "formatVersion": FORMAT_VERSION,
+        "type": "game",
         "game": game_name,
         "module": module,
         "title": declaration.get("title").and_then(|v| v.as_str()).unwrap_or(&game_name),
@@ -248,8 +251,12 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
         serde_json::from_str(&s).map_err(|e| format!("manifeste invalide : {e}"))?
     };
     let version = manifest.get("formatVersion").and_then(|v| v.as_u64()).unwrap_or(0);
-    if version != FORMAT_VERSION {
-        return Err(format!("formatVersion {version} non supporté (attendu {FORMAT_VERSION})"));
+    if version == 0 || version > FORMAT_VERSION {
+        return Err(format!("formatVersion {version} non supporté (max {FORMAT_VERSION})"));
+    }
+    // Extensions de MODULE (v2) : tout games/<module>/ + déclarations multiples.
+    if manifest.get("type").and_then(|v| v.as_str()) == Some("module") {
+        return import_module_extension(&dist, &mut zip, &manifest);
     }
     let game = manifest.get("game").and_then(|v| v.as_str())
         .ok_or("manifeste sans nom de jeu")?.to_string();
@@ -272,7 +279,7 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
     //    res/, moteurs). Une extension n'installe jamais un module.
     let module_dir = dist.join("browser").join("games").join(&module);
     if !module_dir.is_dir() {
-        return Err(format!("module '{module}' absent du dist externe — installer d'abord un dist contenant ce module"));
+        return Err(format!("module '{module}' absent du dist externe — importer d'abord l'extension du module '{module}' (ou un dist le contenant)"));
     }
 
     // 3. Extraction, bornée aux fichiers du manifeste sous games/<module>/.
@@ -297,6 +304,154 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
     log::info!("extension importée : {game} (module {module}, {} fichiers, {})",
         files.len(), if updated { "mise à jour" } else { "ajout" });
     Ok(serde_json::json!({ "game": game, "module": module, "files": files.len(), "updated": updated }))
+}
+
+/// Import d'une extension de MODULE : fusion (jamais de suppression préalable —
+/// un jeu ajouté individuellement dans ce module survit, et un build
+/// mono-module contient de toute façon tous les jeux du module). Le socle
+/// (moteur, res/ racine, fairy-stockfish, scan/ — utile au seul checkers mais
+/// maintenu au niveau jocly) n'est jamais concerné : extraction bornée au
+/// PRÉFIXE games/<module>/, garde anti-traversée par entrée. Aucune exigence
+/// « module présent » : le module EST la charge utile.
+fn import_module_extension(
+    dist: &Path,
+    zip: &mut zip::ZipArchive<fs::File>,
+    manifest: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let module = manifest.get("module").and_then(|v| v.as_str())
+        .ok_or("manifeste module sans nom de module")?.to_string();
+    if !is_safe_name(&module) {
+        return Err(format!("nom de module invalide : {module}"));
+    }
+    let decls = manifest.get("games").and_then(|v| v.as_object())
+        .ok_or("manifeste module sans table 'games'")?.clone();
+    if decls.is_empty() { return Err("manifeste module : table 'games' vide".into()); }
+    for (name, decl) in &decls {
+        if !is_safe_name(name) { return Err(format!("nom de jeu invalide : {name}")); }
+        if decl.get("module").and_then(|v| v.as_str()) != Some(module.as_str()) {
+            return Err(format!("déclaration incohérente : le jeu {name} n'appartient pas au module {module}"));
+        }
+    }
+
+    let prefix = format!("games/{module}/");
+    let browser = dist.join("browser");
+    let mut extracted = 0usize;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        let Some(rel) = name.strip_prefix(&prefix) else { continue };
+        if rel.is_empty() || name.ends_with('/') { continue }
+        if !is_safe_rel_path(rel) {
+            return Err(format!("chemin non sûr dans l'archive : {name}"));
+        }
+        let dst = browser.join("games").join(&module).join(rel);
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        fs::write(&dst, bytes).map_err(|e| format!("écriture {}: {e}", dst.display()))?;
+        extracted += 1;
+    }
+    if extracted == 0 {
+        return Err(format!("archive sans aucun fichier sous {prefix}"));
+    }
+
+    let mut games = read_index(dist)?;
+    let mut added = 0usize;
+    let mut updated = 0usize;
+    for (name, decl) in decls {
+        if games.insert(name, decl).is_some() { updated += 1; } else { added += 1; }
+    }
+    write_index(dist, &games)?;
+    log::info!("module importé : {module} ({extracted} fichiers, {added} jeux ajoutés, {updated} mis à jour)");
+    Ok(serde_json::json!({
+        "type": "module", "module": module,
+        "files": extracted, "added": added, "updated": updated,
+    }))
+}
+
+/// Exporte le MODULE <module> entier vers destPath (.tabulon-ext).
+#[tauri::command]
+pub fn export_module(app: tauri::AppHandle, module_name: String, dest_path: String) -> Result<serde_json::Value, String> {
+    let dist = external_dist_required()?;
+    if !is_safe_name(&module_name) {
+        return Err(format!("nom de module invalide : {module_name}"));
+    }
+    let index = read_index(&dist)?;
+    let mut decls = serde_json::Map::new();
+    for (name, decl) in &index {
+        if decl.get("module").and_then(|v| v.as_str()) == Some(module_name.as_str()) {
+            decls.insert(name.clone(), decl.clone());
+        }
+    }
+    if decls.is_empty() {
+        return Err(format!("aucun jeu du module '{module_name}' dans l'index externe"));
+    }
+    let module_dir = dist.join("browser").join("games").join(&module_name);
+    if !module_dir.is_dir() {
+        return Err(format!("dossier du module absent : {}", module_dir.display()));
+    }
+
+    let manifest = serde_json::json!({
+        "formatVersion": FORMAT_VERSION,
+        "type": "module",
+        "module": module_name,
+        "title": module_name,
+        "games": decls,
+        "exportedBy": format!("tabulon {}", app.package_info().version),
+    });
+
+    let out = fs::File::create(&dest_path).map_err(|e| format!("création {dest_path}: {e}"))?;
+    let mut zip = zip::ZipWriter::new(out);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("extension.json", opts).map_err(|e| e.to_string())?;
+    zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    // Parcours récursif de games/<module>/ (tout le module-spécifique y vit).
+    let mut count = 0usize;
+    let mut stack = vec![module_dir.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).map_err(|e| format!("lecture {}: {e}", dir.display()))? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.is_dir() { stack.push(path); continue; }
+            let rel = path.strip_prefix(&module_dir).unwrap().to_string_lossy().replace('\\', "/");
+            zip.start_file(format!("games/{module_name}/{rel}"), opts).map_err(|e| e.to_string())?;
+            let bytes = fs::read(&path).map_err(|e| format!("lecture {}: {e}", path.display()))?;
+            zip.write_all(&bytes).map_err(|e| e.to_string())?;
+            count += 1;
+        }
+    }
+    zip.finish().map_err(|e| e.to_string())?;
+    log::info!("module exporté : {module_name} → {dest_path} ({count} fichiers, {} jeux)", decls.len());
+    Ok(serde_json::json!({ "module": module_name, "files": count, "games": decls.len(), "path": dest_path }))
+}
+
+/// Désinstalle le MODULE entier : dossier games/<module>/ + toutes les entrées
+/// d'index de ses jeux. Le socle n'est jamais touché ; pas de préservation
+/// croisée à calculer (tout le module-spécifique vit sous le dossier).
+#[tauri::command]
+pub fn remove_module(module_name: String) -> Result<serde_json::Value, String> {
+    let dist = writable_dist_required()?;
+    if !is_safe_name(&module_name) {
+        return Err(format!("nom de module invalide : {module_name}"));
+    }
+    let mut games = read_index(&dist)?;
+    let names: Vec<String> = games.iter()
+        .filter(|(_, d)| d.get("module").and_then(|v| v.as_str()) == Some(module_name.as_str()))
+        .map(|(n, _)| n.clone()).collect();
+    if names.is_empty() {
+        return Err(format!("aucun jeu du module '{module_name}' dans l'index externe"));
+    }
+    let module_dir = dist.join("browser").join("games").join(&module_name);
+    fs::remove_dir_all(&module_dir)
+        .map_err(|e| format!("suppression {}: {e}", module_dir.display()))?;
+    for n in &names { games.remove(n); }
+    write_index(&dist, &games)?;
+    log::info!("module désinstallé : {module_name} ({} jeux)", names.len());
+    Ok(serde_json::json!({ "module": module_name, "removed_games": names.len() }))
 }
 
 /// Désinstalle <jeu> : retrait de l'index + suppression de SES fichiers

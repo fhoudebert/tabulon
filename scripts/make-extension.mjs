@@ -15,14 +15,23 @@
 //
 // Usage : node scripts/make-extension.mjs <jeu> [dossier-sortie] [--dist chemin]
 //   ex.  node scripts/make-extension.mjs seireigi /tmp
+// Deux types d'extensions (manifeste v2, le type "game" restant lisible en v1) :
+//   - jeu    : node scripts/make-extension.mjs <jeu> [sortie]
+//   - module : node scripts/make-extension.mjs --module <module> [sortie]
+//     → TOUT games/<module>/ + les déclarations d'index de ses jeux. Le socle
+//     (moteur, res/ racine, fairy-stockfish, scan/ — moteur de dames utile au
+//     seul module checkers mais maintenu au niveau jocly) n'est JAMAIS
+//     embarqué. La source peut être le dist complet ou un build gulp
+//     mono-module (gulp --no-default-games --modules src/games/<module> build),
+//     qui produisent les mêmes fichiers sous games/<module>/.
 // La logique (collecte, réécriture d'index) est exportée pour les tests et
 // MIROIR de l'implémentation Rust (src-tauri/src/commands/extension_cmds.rs).
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, copyFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, copyFileSync, readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 // ── Lecture d'index (jocly-allgames.js : littéral JS, clés non quotées) ──────
 export function readIndex(indexPath) {
@@ -116,6 +125,7 @@ export function collectGameFiles(distDir, gameName) {
 export function buildManifest(gameName, collected, exportedBy = 'make-extension.mjs') {
   return {
     formatVersion: FORMAT_VERSION,
+    type: 'game',
     game: gameName,
     module: collected.module,
     title: collected.declaration.title || gameName,
@@ -149,15 +159,83 @@ export function buildExtension(distDir, gameName, outDir) {
   return { out, ...collected };
 }
 
+// ── Extensions de MODULE ─────────────────────────────────────────────────────
+// Contenu = l'intégralité de games/<module>/ (tout le module-spécifique y vit,
+// css et ressources comprises — vérifié sur un build gulp mono-module) + les
+// déclarations d'index des jeux du module. Pas de liste de fichiers dans le
+// manifeste (2040 fichiers pour chessbase) : à l'import, l'extraction est
+// bornée au PRÉFIXE games/<module>/ avec garde anti-traversée par entrée.
+export function collectModuleGames(distDir, moduleName) {
+  if (!isSafeName(moduleName)) throw new Error(`nom de module invalide : ${moduleName}`);
+  const index = readIndex(path.join(distDir, 'browser', 'jocly-allgames.js'));
+  const games = {};
+  for (const [name, decl] of Object.entries(index))
+    if (decl.module === moduleName) games[name] = decl;
+  if (Object.keys(games).length === 0)
+    throw new Error(`aucun jeu du module '${moduleName}' dans l'index`);
+  return games;
+}
+
+export function listModuleFiles(distDir, moduleName) {
+  const moduleDir = path.join(distDir, 'browser', 'games', moduleName);
+  const files = [];
+  (function walk(rel) {
+    for (const e of readdirSync(path.join(moduleDir, rel), { withFileTypes: true })) {
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) walk(r);
+      else files.push(r);
+    }
+  })('');
+  return files.sort();
+}
+
+export function buildModuleManifest(moduleName, games, exportedBy = 'make-extension.mjs') {
+  return {
+    formatVersion: FORMAT_VERSION,
+    type: 'module',
+    module: moduleName,
+    title: moduleName,
+    games,
+    exportedBy,
+  };
+}
+
+export function buildModuleExtension(distDir, moduleName, outDir) {
+  const games = collectModuleGames(distDir, moduleName);
+  const files = listModuleFiles(distDir, moduleName);
+  const staging = path.join(outDir, `.ext-${moduleName}-staging`);
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  cpSync(path.join(distDir, 'browser', 'games', moduleName),
+         path.join(staging, 'games', moduleName), { recursive: true });
+  writeFileSync(path.join(staging, 'extension.json'),
+    JSON.stringify(buildModuleManifest(moduleName, games), null, 1));
+  const out = path.join(outDir, `${moduleName}.tabulon-ext`);
+  rmSync(out, { force: true });
+  execFileSync('zip', ['-q', '-r', path.resolve(out), 'extension.json', 'games'], { cwd: staging });
+  rmSync(staging, { recursive: true, force: true });
+  return { out, module: moduleName, games, files };
+}
+
 // ── CLI ───────────────────────────────────────────────────────────────────────
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const args = process.argv.slice(2);
   const di = args.indexOf('--dist');
   const distDir = di >= 0 ? args.splice(di, 2)[1]
     : path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'dist');
-  const [gameName, outDir = '.'] = args;
-  if (!gameName) { console.error('Usage : node scripts/make-extension.mjs <jeu> [sortie] [--dist chemin]'); process.exit(1); }
-  const r = buildExtension(distDir, gameName, outDir);
-  console.log(`✓ ${r.out} — module ${r.module}, ${r.files.length} fichiers`);
-  if (r.missing.length) console.warn(`  ⚠ déclarés mais absents du dist : ${r.missing.join(', ')}`);
+  const mi = args.indexOf('--module');
+  const moduleName = mi >= 0 ? args.splice(mi, 2)[1] : null;
+  const [gameName, outDir = '.'] = moduleName ? [null, ...args] : args;
+  if (moduleName) {
+    const r = buildModuleExtension(distDir, moduleName, outDir || '.');
+    console.log(`✓ ${r.out} — module ${r.module} : ${Object.keys(r.games).length} jeux, ${r.files.length} fichiers`);
+  } else if (gameName) {
+    const r = buildExtension(distDir, gameName, outDir);
+    console.log(`✓ ${r.out} — module ${r.module}, ${r.files.length} fichiers`);
+    if (r.missing.length) console.warn(`  ⚠ déclarés mais absents du dist : ${r.missing.join(', ')}`);
+  } else {
+    console.error('Usage : node scripts/make-extension.mjs <jeu> [sortie] [--dist chemin]');
+    console.error('        node scripts/make-extension.mjs --module <module> [sortie] [--dist chemin]');
+    process.exit(1);
+  }
 }

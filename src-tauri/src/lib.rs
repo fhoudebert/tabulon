@@ -124,6 +124,8 @@ pub fn run() {
             extension_cmds::export_extension,
             extension_cmds::import_extension,
             extension_cmds::remove_extension,
+            extension_cmds::export_module,
+            extension_cmds::remove_module,
             window_cmds::open_extensions,
         ])
         .run(tauri::generate_context!())

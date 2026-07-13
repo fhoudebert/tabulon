@@ -1,0 +1,92 @@
+<style>
+	table.psymbs {
+		text-align: center;
+	}
+	.psymb {
+		background-image: url({GAME}/res/images/wikipedia.png);
+		width: 100px;
+		height: 200px;
+	}
+	.psymbs td {
+		padding: 0 10px 0 10px;
+	}
+	.psymb-bold {
+		font-weight: bold;
+	}
+	.side {
+		float: right;
+		max-width: 100%;
+	}
+	@media screen and (max-width: 520px) {
+		.side {
+			float: none;
+			display: block;
+			max-width: 100%;
+			margin-right: auto;
+			margin-left: auto;
+		}		
+	}
+	h1,h2,h3,h4 {
+		clear: both;
+	}
+</style>
+<h1>Les échecs spartiates sur un champ de bataille en 3D</h1>
+<h2>Position initiale</h2>
+<p>La partie se joue sur 3 plateaux de 6×8 cases. Chaque joueur commence avec 18 Pions, 2 Tours, 4 Fous, 4 Cavaliers, 1 Dame et 1 Roi.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/space-spartan2-setup.png"/></p>
+
+<h2>Pièces FIDE</h2>
+
+<h3>Pion</h3>
+<p>Les pions se déplacent comme les pions orthodoxes sur leur niveau actuel, mais ne peuvent changer de niveau que pour effectuer une prise (voir la figure).</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/pawn.png"/></p>
+
+<h3>Cavalier</h3>
+<p>Les cavaliers se déplacent en forme de L dans les trois dimensions. Ils arrivent toujours sur une case de couleur opposée à celle de leur case de départ.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/knight.png"/></p>
+
+<h3>Fou</h3>
+<p>Les fous se déplacent le long des diagonales en 3D en restant toujours sur des cases de même couleur.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/bishop.png"/></p>
+
+<h3>Tour</h3>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/rook.png"/></p>
+
+<h3>Dame</h3>
+<p>La Dame combine les déplacements de la Tour, du Fou et de la Licorne.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/queen.png"/></p>
+
+<h3>Roi</h3>
+<p>Le Roi se déplace comme le roi orthodoxe sur son niveau actuel, mais ne peut changer de niveau que pour effectuer une prise (voir la figure).</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/king.png"/></p>
+
+<h2>Pièces spartiates</h2>
+
+<h3>Hoplite</h3>
+<p>Se déplace d'une case en diagonale vers l'avant et capture d'une case tout droit devant lui (également au-dessus ou au-dessous). Depuis sa position initiale, il peut également sauter de deux cases en diagonale vers l'avant si la case d'arrivée est libre.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/hoplit.png"/></p>
+
+<h3>Capitaine</h3>
+<p>Se déplace et capture d'une ou deux cases (en sautant) orthogonalement ou verticalement entre les niveaux.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/captain.png"/></p>
+
+<h3>Lieutenant</h3>
+<p>Se déplace et capture d'une ou deux cases (en sautant) orthogonalement, ou en diagonale par les coins supérieurs ou inférieurs, ce qui lui permet de changer simultanément de niveau et de couleur de case.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/lieutenant.png"/></p>
+
+<h3>Cardinal</h3>
+<p>Combine les déplacements du Fou et du Cavalier.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/cardinal.png"/></p>
+
+<h3>Tour couronnée</h3>
+<p>Combine les déplacements et les prises de la Tour et du Roi.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/crowned-rook.png"/></p>
+
+<h3>Roi</h3>
+<p>Le Roi se déplace comme le roi orthodoxe sur son niveau actuel, mais ne peut changer de niveau que pour effectuer une prise (voir la figure).</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/king.png"/></p>
+
+<h2>Caractéristiques</h2>
+<p>Double déplacement initial des Pions : oui.</p>
+<p>Roque : oui.</p>
+<p>Prise « en passant » : oui.</p>

@@ -25,9 +25,19 @@
 		</div>
 
 		<div id="ext-main" style="display:none">
+			<!-- Dist externe présent mais en lecture seule (droits insuffisants). -->
+			<div id="ext-readonly" class="padded-more ext-readonly" style="display:none">
+				<p data-i18n="ext.readOnly">The external dist is read-only (insufficient permissions):
+				games can be exported, but importing or uninstalling extensions is disabled.
+				Move the dist to a writable folder or adjust its permissions.</p>
+			</div>
 			<div class="padded-more">
 				<span class="ext-dist-label" data-i18n="ext.distPath">External dist:</span>
 				<code id="ext-dist-path"></code>
+			</div>
+			<div class="tab-group">
+				<div class="tab-item active" data-tab="games"><span data-i18n="ext.tabGames">Games</span></div>
+				<div class="tab-item" data-tab="modules"><span data-i18n="ext.tabModules">Modules</span></div>
 			</div>
 			<div class="padded-more">
 				<input id="ext-filter" class="form-control" type="text"

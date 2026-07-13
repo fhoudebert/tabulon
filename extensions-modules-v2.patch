@@ -1,0 +1,743 @@
+diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
+index cd7f697..9aa1cfc 100644
+--- a/ARCHITECTURE.md
++++ b/ARCHITECTURE.md
+@@ -148,5 +148,19 @@ double : Rust `commands/extension_cmds.rs` (commandes list/export/import/
+ remove, index lu en json5 — clés non quotées du build jocly — réécrit en JSON
+ strict avec `.bak`) et Node `scripts/make-extension.mjs` (outillage hors app,
+ miroir testé par `tests/test-extensions.mjs`) — garder les deux synchronisés.
+-UI : `content/extensions.html` (fenêtre `open_extensions`), hub notifié par
+-`relay_to_window('main','extensionsChanged')` → `ListGames()`.
++UI : `content/extensions.html` (fenêtre `open_extensions`, onglets Jeux /
++Modules), hub notifié par `relay_to_window('main','extensionsChanged')` →
++`ListGames()`.
++
++Extensions de MODULE (manifeste v2, `type: "module"`, v1 accepté en lecture) :
++contenu = TOUT `games/<module>/` + les déclarations d'index de ses jeux (champ
++`games`), sans liste `files` — l'extraction est bornée au PRÉFIXE
++`games/<module>/` avec garde anti-traversée par entrée. Import par FUSION
++(jamais de suppression préalable : un jeu importé individuellement survit),
++aucune exigence « module présent » ; désinstallation = dossier entier + entrées
++d'index. Le socle (moteur, `res/` racine, fairy-stockfish, `scan/` — moteur
++Scan des dames, utile au seul module checkers mais maintenu au niveau jocly)
++n'est jamais embarqué ni supprimé. Source d'un module hors app : le dist
++complet OU un build `gulp --no-default-games --modules src/games/<module>
++build` (mêmes fichiers sous `games/<module>/`), empaqueté par
++`scripts/make-extension.mjs --module <module>`.
+diff --git a/README.md b/README.md
+index 72beb3e..218ee3a 100644
+--- a/README.md
++++ b/README.md
+@@ -99,9 +99,18 @@ Shared module resources (css, sounds, `res/` sprites/textures, rules graphs,
+ fairy-stockfish engines) always stay with the module: importing a game
+ requires its module to already exist in the target external dist, and
+ uninstalling never removes shared files (nor files still declared by another
+-game of the module). Extensions can also be built without the app:
+-`node scripts/make-extension.mjs <game> [outdir]` — the packaging tool for a
+-future downloadable extension list.
++game of the module). Whole **modules** can also be exported/imported (Modules tab): a module
++extension contains the full `games/<module>/` tree plus the index declarations
++of its games; importing it has no prerequisite (the module is the payload) and
++merges over an existing module, uninstalling removes the whole module folder
++and its games. The engine baseline (root `res/`, fairy-stockfish, `scan/` —
++the draughts engine, only useful with checkers but kept at the jocly level)
++never travels in extensions. Extensions can also be built without the app:
++`node scripts/make-extension.mjs <game> [outdir]` or
++`node scripts/make-extension.mjs --module <module> [outdir]` — with a full
++dist or a single-module gulp build
++(`gulp --no-default-games --modules src/games/<module> build`) as source —
++the packaging tool for a future downloadable extension list.
+ 
+ At startup Tabulon looks for a usable external dist in this order: the
+ `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
+diff --git a/app/content/extensions.html b/app/content/extensions.html
+index ee0286b..98e6ec2 100644
+--- a/app/content/extensions.html
++++ b/app/content/extensions.html
+@@ -25,10 +25,20 @@
+ 		</div>
+ 
+ 		<div id="ext-main" style="display:none">
++			<!-- Dist externe présent mais en lecture seule (droits insuffisants). -->
++			<div id="ext-readonly" class="padded-more ext-readonly" style="display:none">
++				<p data-i18n="ext.readOnly">The external dist is read-only (insufficient permissions):
++				games can be exported, but importing or uninstalling extensions is disabled.
++				Move the dist to a writable folder or adjust its permissions.</p>
++			</div>
+ 			<div class="padded-more">
+ 				<span class="ext-dist-label" data-i18n="ext.distPath">External dist:</span>
+ 				<code id="ext-dist-path"></code>
+ 			</div>
++			<div class="tab-group">
++				<div class="tab-item active" data-tab="games"><span data-i18n="ext.tabGames">Games</span></div>
++				<div class="tab-item" data-tab="modules"><span data-i18n="ext.tabModules">Modules</span></div>
++			</div>
+ 			<div class="padded-more">
+ 				<input id="ext-filter" class="form-control" type="text"
+ 				       placeholder="Search game" data-i18n-placeholder="ext.search">
+diff --git a/app/content/extensions.js b/app/content/extensions.js
+index bf2ce8b..11f7762 100755
+--- a/app/content/extensions.js
++++ b/app/content/extensions.js
+@@ -15,6 +15,7 @@ import { initI18n, t } from './tabulon-i18n.js';
+ import twu from './tabulon-winutils.js';
+ 
+ let allGames = [];   // [{name, title, summary, module}]
++let currentTab = 'games';   // 'games' | 'modules'
+ let distWritable = true;   // faux : dist externe en lecture seule (droits)
+ 
+ function status(msg, isError = false) {
+@@ -28,7 +29,52 @@ function notifyHub() {
+     tRpc.call('relay_to_window', 'main', 'extensionsChanged', {}).catch(() => {});
+ }
+ 
++// Vue Modules : regroupement des jeux de l'index par module, avec export et
++// désinstallation AU NIVEAU MODULE (dossier games/<module>/ entier + toutes
++// ses entrées d'index). L'import reste unique : le manifeste décide du type.
++function renderModules() {
++    const filter = document.getElementById('ext-filter').value.trim().toLowerCase();
++    const ul = document.getElementById('ext-list');
++    ul.textContent = '';
++    const byModule = new Map();
++    for (const g of allGames) {
++        if (!byModule.has(g.module)) byModule.set(g.module, []);
++        byModule.get(g.module).push(g);
++    }
++    for (const [mod, games] of [...byModule.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
++        if (filter && !mod.toLowerCase().includes(filter)) continue;
++        const li = document.createElement('li');
++        li.className = 'list-group-item ext-item';
++
++        const info = document.createElement('div');
++        info.className = 'ext-item-info';
++        const title = document.createElement('strong');
++        title.textContent = mod;
++        const meta = document.createElement('div');
++        meta.className = 'ext-item-meta';
++        meta.textContent = t('ext.moduleGames', { count: games.length });
++        info.append(title, meta);
++
++        const actions = document.createElement('div');
++        actions.className = 'ext-item-actions';
++        const btnExport = document.createElement('button');
++        btnExport.className = 'btn btn-default';
++        btnExport.textContent = t('ext.export');
++        btnExport.addEventListener('click', () => exportModule(mod));
++        const btnRemove = document.createElement('button');
++        btnRemove.className = 'btn btn-negative';
++        btnRemove.textContent = t('ext.remove');
++        btnRemove.disabled = !distWritable;
++        btnRemove.addEventListener('click', () => removeModule(mod, games.length));
++        actions.append(btnExport, btnRemove);
++
++        li.append(info, actions);
++        ul.append(li);
++    }
++}
++
+ function render() {
++    if (currentTab === 'modules') return renderModules();
+     const filter = document.getElementById('ext-filter').value.trim().toLowerCase();
+     const ul = document.getElementById('ext-list');
+     ul.textContent = '';
+@@ -86,6 +132,33 @@ async function exportGame(g) {
+     }
+ }
+ 
++async function exportModule(mod) {
++    try {
++        const dest = await saveDialog({
++            defaultPath: `${mod}.tabulon-ext`,
++            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
++        });
++        if (!dest) return;
++        const r = await tRpc.call('export_module', mod, dest);
++        status(t('ext.moduleExported', { module: mod, files: r.files, count: r.games }));
++    } catch (e) {
++        status(t('ext.error', { msg: String(e) }), true);
++    }
++}
++
++async function removeModule(mod, count) {
++    try {
++        const yes = await ask(t('ext.moduleRemoveConfirm', { module: mod, count }), { kind: 'warning' });
++        if (!yes) return;
++        const r = await tRpc.call('remove_module', mod);
++        status(t('ext.moduleRemoved', { module: mod, count: r.removed_games }));
++        await reload();
++        notifyHub();
++    } catch (e) {
++        status(t('ext.error', { msg: String(e) }), true);
++    }
++}
++
+ async function importExtension() {
+     try {
+         const src = await openDialog({
+@@ -94,7 +167,10 @@ async function importExtension() {
+         });
+         if (!src) return;
+         const r = await tRpc.call('import_extension', src);
+-        status(t(r.updated ? 'ext.updated' : 'ext.imported', { game: r.game }));
++        if (r.type === 'module')
++            status(t('ext.moduleImported', { module: r.module, count: (r.added || 0) + (r.updated || 0) }));
++        else
++            status(t(r.updated ? 'ext.updated' : 'ext.imported', { game: r.game }));
+         await reload();
+         notifyHub();
+     } catch (e) {
+@@ -121,6 +197,16 @@ window.addEventListener('DOMContentLoaded', async () => {
+ 
+     document.getElementById('ext-import').addEventListener('click', importExtension);
+     document.getElementById('ext-filter').addEventListener('input', render);
++    for (const tab of document.querySelectorAll('.tab-item')) {
++        tab.addEventListener('click', () => {
++            document.querySelectorAll('.tab-item').forEach(x => x.classList.remove('active'));
++            tab.classList.add('active');
++            currentTab = tab.dataset.tab;
++            document.getElementById('ext-filter').placeholder =
++                t(currentTab === 'modules' ? 'ext.searchModule' : 'ext.search');
++            render();
++        });
++    }
+ 
+     const info = await tRpc.call('get_dist_info').catch(() => ({ external: false }));
+     if (!info || !info.external) {
+diff --git a/app/content/tabulon-i18n.js b/app/content/tabulon-i18n.js
+index 320740a..9e8cf1d 100644
+--- a/app/content/tabulon-i18n.js
++++ b/app/content/tabulon-i18n.js
+@@ -47,6 +47,14 @@ const DICT = {
+         'ext.updated': '"{game}" updated.',
+         'ext.removed': '"{game}" uninstalled.',
+         'ext.error': 'Error: {msg}',
++        'ext.tabGames': 'Games', 'ext.tabModules': 'Modules',
++        'ext.searchModule': 'Search module',
++        'ext.moduleGames': '{count} game(s)',
++        'ext.moduleExported': 'Module "{module}" exported ({count} games, {files} files).',
++        'ext.moduleImported': 'Module "{module}" imported ({count} games).',
++        'ext.moduleRemoved': 'Module "{module}" uninstalled ({count} games).',
++        'ext.moduleRemoveConfirm': 'Uninstall the whole "{module}" module? Its {count} games (including any imported individually) will be removed from the external dist.',
++        'ext.readOnly': 'The external dist is read-only (insufficient permissions): games can be exported, but importing or uninstalling extensions is disabled. Move the dist to a writable folder or adjust its permissions.',
+         'btn.quickPlay': 'Quick play', 'btn.clockedPlay': 'Clocked play',
+         'btn.openBook': 'Open book', 'btn.boardState': 'Board state',
+         'btn.favorite': 'Favorite', 'btn.notFavorite': 'Not favorite',
+@@ -154,6 +162,14 @@ const DICT = {
+         'ext.updated': '« {game} » mis à jour.',
+         'ext.removed': '« {game} » désinstallé.',
+         'ext.error': 'Erreur : {msg}',
++        'ext.tabGames': 'Jeux', 'ext.tabModules': 'Modules',
++        'ext.searchModule': 'Rechercher un module',
++        'ext.moduleGames': '{count} jeu(x)',
++        'ext.moduleExported': 'Module « {module} » exporté ({count} jeux, {files} fichiers).',
++        'ext.moduleImported': 'Module « {module} » importé ({count} jeux).',
++        'ext.moduleRemoved': 'Module « {module} » désinstallé ({count} jeux).',
++        'ext.moduleRemoveConfirm': 'Désinstaller le module « {module} » entier ? Ses {count} jeux (y compris importés individuellement) seront retirés du dist externe.',
++        'ext.readOnly': 'Le dist externe est en lecture seule (droits insuffisants) : l\'export des jeux reste possible, mais l\'import et la désinstallation d\'extensions sont désactivés. Déplacez le dist dans un dossier accessible en écriture ou ajustez ses permissions.',
+         'hub.joclyMissing': 'Moteur de jeu introuvable (jocly.js)',
+         'hub.joclyMissingHint': 'dist/ manquait au moment du build, ou src-tauri/target est périmé — supprimer target/ et rebuilder.', 'hub.selectGame': 'Sélectionnez un jeu',
+         'hub.back': 'Jeux', 'hub.templates': 'Modèles',
+diff --git a/app/content/tabulon-rpc.js b/app/content/tabulon-rpc.js
+index 0a9b6a6..89e53a8 100644
+--- a/app/content/tabulon-rpc.js
++++ b/app/content/tabulon-rpc.js
+@@ -143,6 +143,8 @@ function buildPayload(method, args) {
+     export_extension:    ([gameName, destPath])    => ({ gameName, destPath }),
+     import_extension:    ([srcPath])               => ({ srcPath }),
+     remove_extension:    ([gameName])              => ({ gameName }),
++    export_module:       ([moduleName, destPath])  => ({ moduleName, destPath }),
++    remove_module:       ([moduleName])            => ({ moduleName }),
+     // fs
+     read_text_file:      ([path])                  => ({ path }),
+     save_text_file:      ([path, contents])        => ({ path, contents }),
+diff --git a/app/content/tabulon.css b/app/content/tabulon.css
+index 06591cd..2600bac 100644
+--- a/app/content/tabulon.css
++++ b/app/content/tabulon.css
+@@ -228,6 +228,7 @@ html, body {
+ .icon-home::before          { content: '\e821'; }
+ .icon-info::before          { content: '\e81e'; }
+ .icon-plus::before          { content: '\e816'; }
++.icon-box::before           { content: '\e852'; }  /* Extensions (glyphe 'box', vérifié dans la cmap photon-entypo) */
+ 
+ /* ── Formulaires ────────────────────────────────────────────────────────────── */
+ .form-group {
+@@ -946,3 +947,4 @@ strong { font-weight: 600; }
+ .ext-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
+ .ext-dist-label { color: #737475; margin-right: 6px; }
+ #ext-status { line-height: 22px; }
++.ext-readonly { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 4px; color: #6b5200; }
+diff --git a/scripts/make-extension.mjs b/scripts/make-extension.mjs
+index cfcada4..fab1d38 100755
+--- a/scripts/make-extension.mjs
++++ b/scripts/make-extension.mjs
+@@ -15,14 +15,23 @@
+ //
+ // Usage : node scripts/make-extension.mjs <jeu> [dossier-sortie] [--dist chemin]
+ //   ex.  node scripts/make-extension.mjs seireigi /tmp
++// Deux types d'extensions (manifeste v2, le type "game" restant lisible en v1) :
++//   - jeu    : node scripts/make-extension.mjs <jeu> [sortie]
++//   - module : node scripts/make-extension.mjs --module <module> [sortie]
++//     → TOUT games/<module>/ + les déclarations d'index de ses jeux. Le socle
++//     (moteur, res/ racine, fairy-stockfish, scan/ — moteur de dames utile au
++//     seul module checkers mais maintenu au niveau jocly) n'est JAMAIS
++//     embarqué. La source peut être le dist complet ou un build gulp
++//     mono-module (gulp --no-default-games --modules src/games/<module> build),
++//     qui produisent les mêmes fichiers sous games/<module>/.
+ // La logique (collecte, réécriture d'index) est exportée pour les tests et
+ // MIROIR de l'implémentation Rust (src-tauri/src/commands/extension_cmds.rs).
+-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, copyFileSync } from 'fs';
++import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, copyFileSync, readdirSync } from 'fs';
+ import { execFileSync } from 'child_process';
+ import { fileURLToPath } from 'url';
+ import path from 'path';
+ 
+-export const FORMAT_VERSION = 1;
++export const FORMAT_VERSION = 2;
+ 
+ // ── Lecture d'index (jocly-allgames.js : littéral JS, clés non quotées) ──────
+ export function readIndex(indexPath) {
+@@ -116,6 +125,7 @@ export function collectGameFiles(distDir, gameName) {
+ export function buildManifest(gameName, collected, exportedBy = 'make-extension.mjs') {
+   return {
+     formatVersion: FORMAT_VERSION,
++    type: 'game',
+     game: gameName,
+     module: collected.module,
+     title: collected.declaration.title || gameName,
+@@ -149,15 +159,83 @@ export function buildExtension(distDir, gameName, outDir) {
+   return { out, ...collected };
+ }
+ 
++// ── Extensions de MODULE ─────────────────────────────────────────────────────
++// Contenu = l'intégralité de games/<module>/ (tout le module-spécifique y vit,
++// css et ressources comprises — vérifié sur un build gulp mono-module) + les
++// déclarations d'index des jeux du module. Pas de liste de fichiers dans le
++// manifeste (2040 fichiers pour chessbase) : à l'import, l'extraction est
++// bornée au PRÉFIXE games/<module>/ avec garde anti-traversée par entrée.
++export function collectModuleGames(distDir, moduleName) {
++  if (!isSafeName(moduleName)) throw new Error(`nom de module invalide : ${moduleName}`);
++  const index = readIndex(path.join(distDir, 'browser', 'jocly-allgames.js'));
++  const games = {};
++  for (const [name, decl] of Object.entries(index))
++    if (decl.module === moduleName) games[name] = decl;
++  if (Object.keys(games).length === 0)
++    throw new Error(`aucun jeu du module '${moduleName}' dans l'index`);
++  return games;
++}
++
++export function listModuleFiles(distDir, moduleName) {
++  const moduleDir = path.join(distDir, 'browser', 'games', moduleName);
++  const files = [];
++  (function walk(rel) {
++    for (const e of readdirSync(path.join(moduleDir, rel), { withFileTypes: true })) {
++      const r = rel ? rel + '/' + e.name : e.name;
++      if (e.isDirectory()) walk(r);
++      else files.push(r);
++    }
++  })('');
++  return files.sort();
++}
++
++export function buildModuleManifest(moduleName, games, exportedBy = 'make-extension.mjs') {
++  return {
++    formatVersion: FORMAT_VERSION,
++    type: 'module',
++    module: moduleName,
++    title: moduleName,
++    games,
++    exportedBy,
++  };
++}
++
++export function buildModuleExtension(distDir, moduleName, outDir) {
++  const games = collectModuleGames(distDir, moduleName);
++  const files = listModuleFiles(distDir, moduleName);
++  const staging = path.join(outDir, `.ext-${moduleName}-staging`);
++  rmSync(staging, { recursive: true, force: true });
++  mkdirSync(staging, { recursive: true });
++  cpSync(path.join(distDir, 'browser', 'games', moduleName),
++         path.join(staging, 'games', moduleName), { recursive: true });
++  writeFileSync(path.join(staging, 'extension.json'),
++    JSON.stringify(buildModuleManifest(moduleName, games), null, 1));
++  const out = path.join(outDir, `${moduleName}.tabulon-ext`);
++  rmSync(out, { force: true });
++  execFileSync('zip', ['-q', '-r', path.resolve(out), 'extension.json', 'games'], { cwd: staging });
++  rmSync(staging, { recursive: true, force: true });
++  return { out, module: moduleName, games, files };
++}
++
+ // ── CLI ───────────────────────────────────────────────────────────────────────
+ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+   const args = process.argv.slice(2);
+   const di = args.indexOf('--dist');
+   const distDir = di >= 0 ? args.splice(di, 2)[1]
+     : path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'dist');
+-  const [gameName, outDir = '.'] = args;
+-  if (!gameName) { console.error('Usage : node scripts/make-extension.mjs <jeu> [sortie] [--dist chemin]'); process.exit(1); }
+-  const r = buildExtension(distDir, gameName, outDir);
+-  console.log(`✓ ${r.out} — module ${r.module}, ${r.files.length} fichiers`);
+-  if (r.missing.length) console.warn(`  ⚠ déclarés mais absents du dist : ${r.missing.join(', ')}`);
++  const mi = args.indexOf('--module');
++  const moduleName = mi >= 0 ? args.splice(mi, 2)[1] : null;
++  const [gameName, outDir = '.'] = moduleName ? [null, ...args] : args;
++  if (moduleName) {
++    const r = buildModuleExtension(distDir, moduleName, outDir || '.');
++    console.log(`✓ ${r.out} — module ${r.module} : ${Object.keys(r.games).length} jeux, ${r.files.length} fichiers`);
++  } else if (gameName) {
++    const r = buildExtension(distDir, gameName, outDir);
++    console.log(`✓ ${r.out} — module ${r.module}, ${r.files.length} fichiers`);
++    if (r.missing.length) console.warn(`  ⚠ déclarés mais absents du dist : ${r.missing.join(', ')}`);
++  } else {
++    console.error('Usage : node scripts/make-extension.mjs <jeu> [sortie] [--dist chemin]');
++    console.error('        node scripts/make-extension.mjs --module <module> [sortie] [--dist chemin]');
++    process.exit(1);
++  }
+ }
+diff --git a/scripts/make-minimal-dist.mjs b/scripts/make-minimal-dist.mjs
+index 04ad40e..0e175bd 100644
+--- a/scripts/make-minimal-dist.mjs
++++ b/scripts/make-minimal-dist.mjs
+@@ -15,7 +15,11 @@ import path from 'path';
+ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+ const src  = path.join(root, 'dist');
+ const out  = path.join(root, 'dist-minimal');
+-const KEEP_MODULES = ['fourinarow'];   // modules embarqués (autonomes, légers)
++// Le CHOIX des modules embarqués appartient à qui compile : fourinarow (défaut)
++// pour une app minimale, mais chessbase, checkers, ou toute sélection.
++//   node scripts/make-minimal-dist.mjs [module …]   ou   TABULON_MODULES="a,b"
++const KEEP_MODULES = process.argv.slice(2).length ? process.argv.slice(2)
++  : (process.env.TABULON_MODULES || 'fourinarow').split(',').map(s => s.trim()).filter(Boolean);
+ 
+ if (!existsSync(path.join(src, 'browser', 'jocly.js'))) {
+   console.error('✗ dist/ complet absent — construire jocly2 d\'abord (voir README).');
+@@ -48,6 +52,24 @@ const games = (0, eval)('(' + m[1] + ')');
+ const kept = {};
+ for (const [name, g] of Object.entries(games))
+   if (KEEP_MODULES.includes(g.module)) kept[name] = g;
++
++// Garde-fous : un index vide ou des fichiers de jeu manquants produiraient une
++// app embarquée qui démarre SANS ERREUR avec une liste de jeux vide (constaté
++// en runtime sur une AppImage) — mieux vaut échouer ici, bruyamment, et ne pas
++// laisser traîner un minimal invalide.
++if (Object.keys(kept).length === 0) {
++  console.error(`✗ index réduit VIDE : aucun jeu des modules [${KEEP_MODULES.join(', ')}] dans dist/browser/jocly-allgames.js — nom de module inconnu ou dist/ incomplet ?`);
++  rmSync(out, { recursive: true, force: true });
++  process.exit(1);
++}
++for (const [name, g] of Object.entries(kept)) {
++  const model = path.join(out, 'browser', 'games', g.module, name + '-model.js');
++  if (!existsSync(model)) {
++    console.error(`✗ fichier manquant dans le minimal : ${path.relative(root, model)} — dist/ source incomplet ?`);
++    rmSync(out, { recursive: true, force: true });
++    process.exit(1);
++  }
++}
+ writeFileSync(idxPath, '"use strict";exports.games=' + JSON.stringify(kept) + ';\n');
+ 
+ console.log(`✓ dist-minimal/ créé : moteur + [${KEEP_MODULES.join(', ')}] + index réduit (${Object.keys(kept).length} jeux).`);
+diff --git a/src-tauri/src/commands/extension_cmds.rs b/src-tauri/src/commands/extension_cmds.rs
+index 3d5a9e6..4da79a7 100755
+--- a/src-tauri/src/commands/extension_cmds.rs
++++ b/src-tauri/src/commands/extension_cmds.rs
+@@ -16,7 +16,9 @@ use std::fs;
+ use std::io::{Read, Write};
+ use std::path::{Path, PathBuf};
+ 
+-const FORMAT_VERSION: u64 = 1;
++const FORMAT_VERSION: u64 = 2;
++// v1 (sans champ "type") reste accepté en lecture : c'était le format des
++// extensions de JEU avant l'ajout des extensions de MODULE.
+ 
+ // ── Préconditions & gardes ────────────────────────────────────────────────────
+ 
+@@ -205,6 +207,7 @@ pub fn export_extension(app: tauri::AppHandle, game_name: String, dest_path: Str
+ 
+     let manifest = serde_json::json!({
+         "formatVersion": FORMAT_VERSION,
++        "type": "game",
+         "game": game_name,
+         "module": module,
+         "title": declaration.get("title").and_then(|v| v.as_str()).unwrap_or(&game_name),
+@@ -248,8 +251,12 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
+         serde_json::from_str(&s).map_err(|e| format!("manifeste invalide : {e}"))?
+     };
+     let version = manifest.get("formatVersion").and_then(|v| v.as_u64()).unwrap_or(0);
+-    if version != FORMAT_VERSION {
+-        return Err(format!("formatVersion {version} non supporté (attendu {FORMAT_VERSION})"));
++    if version == 0 || version > FORMAT_VERSION {
++        return Err(format!("formatVersion {version} non supporté (max {FORMAT_VERSION})"));
++    }
++    // Extensions de MODULE (v2) : tout games/<module>/ + déclarations multiples.
++    if manifest.get("type").and_then(|v| v.as_str()) == Some("module") {
++        return import_module_extension(&dist, &mut zip, &manifest);
+     }
+     let game = manifest.get("game").and_then(|v| v.as_str())
+         .ok_or("manifeste sans nom de jeu")?.to_string();
+@@ -272,7 +279,7 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
+     //    res/, moteurs). Une extension n'installe jamais un module.
+     let module_dir = dist.join("browser").join("games").join(&module);
+     if !module_dir.is_dir() {
+-        return Err(format!("module '{module}' absent du dist externe — installer d'abord un dist contenant ce module"));
++        return Err(format!("module '{module}' absent du dist externe — importer d'abord l'extension du module '{module}' (ou un dist le contenant)"));
+     }
+ 
+     // 3. Extraction, bornée aux fichiers du manifeste sous games/<module>/.
+@@ -299,6 +306,154 @@ pub fn import_extension(src_path: String) -> Result<serde_json::Value, String> {
+     Ok(serde_json::json!({ "game": game, "module": module, "files": files.len(), "updated": updated }))
+ }
+ 
++/// Import d'une extension de MODULE : fusion (jamais de suppression préalable —
++/// un jeu ajouté individuellement dans ce module survit, et un build
++/// mono-module contient de toute façon tous les jeux du module). Le socle
++/// (moteur, res/ racine, fairy-stockfish, scan/ — utile au seul checkers mais
++/// maintenu au niveau jocly) n'est jamais concerné : extraction bornée au
++/// PRÉFIXE games/<module>/, garde anti-traversée par entrée. Aucune exigence
++/// « module présent » : le module EST la charge utile.
++fn import_module_extension(
++    dist: &Path,
++    zip: &mut zip::ZipArchive<fs::File>,
++    manifest: &serde_json::Value,
++) -> Result<serde_json::Value, String> {
++    let module = manifest.get("module").and_then(|v| v.as_str())
++        .ok_or("manifeste module sans nom de module")?.to_string();
++    if !is_safe_name(&module) {
++        return Err(format!("nom de module invalide : {module}"));
++    }
++    let decls = manifest.get("games").and_then(|v| v.as_object())
++        .ok_or("manifeste module sans table 'games'")?.clone();
++    if decls.is_empty() { return Err("manifeste module : table 'games' vide".into()); }
++    for (name, decl) in &decls {
++        if !is_safe_name(name) { return Err(format!("nom de jeu invalide : {name}")); }
++        if decl.get("module").and_then(|v| v.as_str()) != Some(module.as_str()) {
++            return Err(format!("déclaration incohérente : le jeu {name} n'appartient pas au module {module}"));
++        }
++    }
++
++    let prefix = format!("games/{module}/");
++    let browser = dist.join("browser");
++    let mut extracted = 0usize;
++    for i in 0..zip.len() {
++        let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
++        let name = entry.name().to_string();
++        let Some(rel) = name.strip_prefix(&prefix) else { continue };
++        if rel.is_empty() || name.ends_with('/') { continue }
++        if !is_safe_rel_path(rel) {
++            return Err(format!("chemin non sûr dans l'archive : {name}"));
++        }
++        let dst = browser.join("games").join(&module).join(rel);
++        if let Some(parent) = dst.parent() {
++            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
++        }
++        let mut bytes = Vec::new();
++        entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
++        fs::write(&dst, bytes).map_err(|e| format!("écriture {}: {e}", dst.display()))?;
++        extracted += 1;
++    }
++    if extracted == 0 {
++        return Err(format!("archive sans aucun fichier sous {prefix}"));
++    }
++
++    let mut games = read_index(dist)?;
++    let mut added = 0usize;
++    let mut updated = 0usize;
++    for (name, decl) in decls {
++        if games.insert(name, decl).is_some() { updated += 1; } else { added += 1; }
++    }
++    write_index(dist, &games)?;
++    log::info!("module importé : {module} ({extracted} fichiers, {added} jeux ajoutés, {updated} mis à jour)");
++    Ok(serde_json::json!({
++        "type": "module", "module": module,
++        "files": extracted, "added": added, "updated": updated,
++    }))
++}
++
++/// Exporte le MODULE <module> entier vers destPath (.tabulon-ext).
++#[tauri::command]
++pub fn export_module(app: tauri::AppHandle, module_name: String, dest_path: String) -> Result<serde_json::Value, String> {
++    let dist = external_dist_required()?;
++    if !is_safe_name(&module_name) {
++        return Err(format!("nom de module invalide : {module_name}"));
++    }
++    let index = read_index(&dist)?;
++    let mut decls = serde_json::Map::new();
++    for (name, decl) in &index {
++        if decl.get("module").and_then(|v| v.as_str()) == Some(module_name.as_str()) {
++            decls.insert(name.clone(), decl.clone());
++        }
++    }
++    if decls.is_empty() {
++        return Err(format!("aucun jeu du module '{module_name}' dans l'index externe"));
++    }
++    let module_dir = dist.join("browser").join("games").join(&module_name);
++    if !module_dir.is_dir() {
++        return Err(format!("dossier du module absent : {}", module_dir.display()));
++    }
++
++    let manifest = serde_json::json!({
++        "formatVersion": FORMAT_VERSION,
++        "type": "module",
++        "module": module_name,
++        "title": module_name,
++        "games": decls,
++        "exportedBy": format!("tabulon {}", app.package_info().version),
++    });
++
++    let out = fs::File::create(&dest_path).map_err(|e| format!("création {dest_path}: {e}"))?;
++    let mut zip = zip::ZipWriter::new(out);
++    let opts = zip::write::SimpleFileOptions::default()
++        .compression_method(zip::CompressionMethod::Deflated);
++    zip.start_file("extension.json", opts).map_err(|e| e.to_string())?;
++    zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
++        .map_err(|e| e.to_string())?;
++
++    // Parcours récursif de games/<module>/ (tout le module-spécifique y vit).
++    let mut count = 0usize;
++    let mut stack = vec![module_dir.clone()];
++    while let Some(dir) = stack.pop() {
++        for entry in fs::read_dir(&dir).map_err(|e| format!("lecture {}: {e}", dir.display()))? {
++            let path = entry.map_err(|e| e.to_string())?.path();
++            if path.is_dir() { stack.push(path); continue; }
++            let rel = path.strip_prefix(&module_dir).unwrap().to_string_lossy().replace('\\', "/");
++            zip.start_file(format!("games/{module_name}/{rel}"), opts).map_err(|e| e.to_string())?;
++            let bytes = fs::read(&path).map_err(|e| format!("lecture {}: {e}", path.display()))?;
++            zip.write_all(&bytes).map_err(|e| e.to_string())?;
++            count += 1;
++        }
++    }
++    zip.finish().map_err(|e| e.to_string())?;
++    log::info!("module exporté : {module_name} → {dest_path} ({count} fichiers, {} jeux)", decls.len());
++    Ok(serde_json::json!({ "module": module_name, "files": count, "games": decls.len(), "path": dest_path }))
++}
++
++/// Désinstalle le MODULE entier : dossier games/<module>/ + toutes les entrées
++/// d'index de ses jeux. Le socle n'est jamais touché ; pas de préservation
++/// croisée à calculer (tout le module-spécifique vit sous le dossier).
++#[tauri::command]
++pub fn remove_module(module_name: String) -> Result<serde_json::Value, String> {
++    let dist = writable_dist_required()?;
++    if !is_safe_name(&module_name) {
++        return Err(format!("nom de module invalide : {module_name}"));
++    }
++    let mut games = read_index(&dist)?;
++    let names: Vec<String> = games.iter()
++        .filter(|(_, d)| d.get("module").and_then(|v| v.as_str()) == Some(module_name.as_str()))
++        .map(|(n, _)| n.clone()).collect();
++    if names.is_empty() {
++        return Err(format!("aucun jeu du module '{module_name}' dans l'index externe"));
++    }
++    let module_dir = dist.join("browser").join("games").join(&module_name);
++    fs::remove_dir_all(&module_dir)
++        .map_err(|e| format!("suppression {}: {e}", module_dir.display()))?;
++    for n in &names { games.remove(n); }
++    write_index(&dist, &games)?;
++    log::info!("module désinstallé : {module_name} ({} jeux)", names.len());
++    Ok(serde_json::json!({ "module": module_name, "removed_games": names.len() }))
++}
++
+ /// Désinstalle <jeu> : retrait de l'index + suppression de SES fichiers
+ /// déclarés. Les ressources partagées du module ne sont jamais touchées, et un
+ /// fichier encore déclaré par un AUTRE jeu du module est conservé.
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 422337d..35cb6da 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -124,6 +124,8 @@ pub fn run() {
+             extension_cmds::export_extension,
+             extension_cmds::import_extension,
+             extension_cmds::remove_extension,
++            extension_cmds::export_module,
++            extension_cmds::remove_module,
+             window_cmds::open_extensions,
+         ])
+         .run(tauri::generate_context!())
+diff --git a/tests/test-extensions.mjs b/tests/test-extensions.mjs
+index 5446287..f42a4a0 100755
+--- a/tests/test-extensions.mjs
++++ b/tests/test-extensions.mjs
+@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
+ import path from 'path';
+ import {
+   collectGameFiles, buildExtension, buildManifest,
++  collectModuleGames, listModuleFiles, buildModuleExtension,
+   readIndex, addToIndex, removeFromIndex, isSafeRelPath, isSafeName,
+ } from '../scripts/make-extension.mjs';
+ 
+@@ -76,10 +77,10 @@ assert(expected.every(f => listing.includes(`games/chessbase/${f}`)),
+   'archive : tous les fichiers collectés, sous games/<module>/');
+ const manifest = JSON.parse(
+   execFileSync('unzip', ['-p', built.out, 'extension.json'], { encoding: 'utf-8' }));
+-assert(manifest.formatVersion === 1 && manifest.game === 'seireigi' &&
++assert(manifest.formatVersion === 2 && manifest.type === 'game' && manifest.game === 'seireigi' &&
+        manifest.module === 'chessbase' && manifest.declaration.title === 'Seireigi' &&
+        Array.isArray(manifest.files) && manifest.files.length === expected.length,
+-  'manifeste : formatVersion, jeu, module, déclaration d\'index, liste de fichiers');
++  'manifeste jeu : v2 type game (v1 sans type reste accepté à l\'import), déclaration, liste de fichiers');
+ 
+ // ── 5. Cycle import/désinstallation simulé sur un dist externe factice ──────
+ // Dist cible : module chessbase présent (ressources partagées) mais SANS
+@@ -125,7 +126,63 @@ assert(existsSync(path.join(target, 'browser', 'games', 'chessbase', 'classic-ch
+        existsSync(path.join(target, 'browser', 'games', 'chessbase', 'chessbase.css')),
+   'désinstallation simulée : autre jeu et ressources partagées du module INTACTS');
+ 
+-// ── 6. Les clés i18n de l'écran existent en fr ET en ─────────────────────────
++// ── 6. Extensions de MODULE (manifeste v2, fusion, socle intact) ─────────────
++{
++  // Fabrication depuis le dist complet : mêmes fichiers qu'un build gulp
++  // mono-module (vérifié à l'analyse), tout le module-spécifique sous
++  // games/<module>/.
++  const mext = buildModuleExtension(dist, 'margo', tmp);
++  const mGames = Object.keys(mext.games);
++  assert(mGames.length === 7 && mGames.includes('shibumi-spline') && mGames.includes('margo5'),
++    'module margo : 7 jeux dans le manifeste (dont shibumi-* — un module ≠ ses seuls jeux éponymes)');
++  const mlist = execFileSync('unzip', ['-Z1', mext.out], { encoding: 'utf-8' }).trim().split('\n');
++  assert(mlist.filter(e => !e.endsWith('/')).length === mext.files.length + 1 &&
++         mlist.filter(e => !e.endsWith('/') && e !== 'extension.json')
++              .every(e => e.startsWith('games/margo/')),
++    `module margo : ${mext.files.length} fichiers, TOUS sous le préfixe games/margo/`);
++  assert(!mlist.some(e => e.includes('scan/') || e.includes('fairy-stockfish') || e.startsWith('res/')),
++    'module : le socle (scan/ — moteur des dames lié à checkers mais maintenu au niveau jocly —, fairy-stockfish, res/ racine) n\'est JAMAIS embarqué');
++  const mmanifest = JSON.parse(execFileSync('unzip', ['-p', mext.out, 'extension.json'], { encoding: 'utf-8' }));
++  assert(mmanifest.formatVersion === 2 && mmanifest.type === 'module' && !mmanifest.files,
++    'manifeste module : v2, type module, pas de liste files (extraction bornée par PRÉFIXE à l\'import)');
++
++  // Import par FUSION sur un dist cible SANS le module (aucune exigence
++  // « module présent » : le module est la charge utile), avec un jeu ajouté
++  // individuellement qui doit survivre à une ré-importation du module.
++  const target2 = path.join(tmp, 'dist-cible-module');
++  mkdirSync(path.join(target2, 'browser', 'games'), { recursive: true });
++  const idx2 = path.join(target2, 'browser', 'jocly-allgames.js');
++  writeFileSync(idx2, '"use strict";exports.games={};\n');
++  execFileSync('unzip', ['-o', '-q', mext.out, '-d', path.join(target2, 'browser'), 'games/*']);
++  for (const [n, d] of Object.entries(mmanifest.games)) addToIndex(idx2, n, d);
++  assert(Object.keys(readIndex(idx2)).length === 7 &&
++         existsSync(path.join(target2, 'browser', 'games', 'margo', 'margo5-model.js')),
++    'import module simulé : 7 jeux à l\'index, fichiers sous games/margo/, sans précondition de module');
++  // jeu « ajouté individuellement » : fichier étranger dans le dossier du module
++  writeFileSync(path.join(target2, 'browser', 'games', 'margo', 'jeu-perso-model.js'), '// perso');
++  execFileSync('unzip', ['-o', '-q', mext.out, '-d', path.join(target2, 'browser'), 'games/*']);
++  assert(existsSync(path.join(target2, 'browser', 'games', 'margo', 'jeu-perso-model.js')),
++    'ré-import module = FUSION : un jeu ajouté individuellement dans le module survit');
++
++  // Désinstallation module : dossier entier + entrées d'index, socle intact.
++  mkdirSync(path.join(target2, 'browser', 'res'), { recursive: true });
++  writeFileSync(path.join(target2, 'browser', 'res', 'socle.txt'), 'socle');
++  rmSync(path.join(target2, 'browser', 'games', 'margo'), { recursive: true });
++  for (const n of Object.keys(mmanifest.games)) removeFromIndex(idx2, n);
++  assert(Object.keys(readIndex(idx2)).length === 0 &&
++         !existsSync(path.join(target2, 'browser', 'games', 'margo')) &&
++         existsSync(path.join(target2, 'browser', 'res', 'socle.txt')),
++    'désinstallation module simulée : dossier et entrées d\'index retirés, socle intact');
++
++  // collectModuleGames refuse un module inconnu
++  let threw = false;
++  try { collectModuleGames(dist, 'module-inexistant'); } catch { threw = true; }
++  assert(threw, 'collectModuleGames : erreur explicite pour un module inconnu');
++  assert(listModuleFiles(dist, 'margo').length === mext.files.length,
++    'listModuleFiles : parcours récursif cohérent avec l\'archive');
++}
++
++// ── 7. Les clés i18n de l'écran existent en fr ET en ─────────────────────────
+ const i18n = readFileSync(path.join(root, 'app', 'content', 'tabulon-i18n.js'), 'utf-8');
+ const html = readFileSync(path.join(root, 'app', 'content', 'extensions.html'), 'utf-8');
+ const keys = [...html.matchAll(/data-i18n(?:-placeholder)?="([^"]+)"/g)].map(m => m[1]);
