@@ -9,17 +9,10 @@
 // Ce fichier n'est PAS un module ES : il est injecté tel quel via
 // initialization_script et doit s'exécuter en contexte global, sans import.
 <<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6701aaa (fix embed iframe)
 // Il est aussi ré-injecté à l'identique dans l'<iframe> Jocly (voir plus bas),
 // d'où la forme "fonction nommée + auto-appel" : SELF_SOURCE contient sa
 // propre source pour la ré-injection.
 function __applyDistRewrite() {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 277ea75 (external dist, increm 1)
   // Idempotence : depuis le passage à initialization_script_for_all_frames
   // (lib.rs / window_manager.rs), ce script s'exécute nativement dans CHAQUE
   // frame — y compris l'iframe Jocly — à document_start. La ré-injection
@@ -32,9 +25,6 @@ function __applyDistRewrite() {
 =======
 (function () {
 >>>>>>> 20e98f0 (load external dist)
-=======
-  var SELF_SOURCE = __applyDistRewrite.toString();
->>>>>>> 6701aaa (fix embed iframe)
   // Base absolue du protocole custom. Sur Windows, les protocoles custom sont
   // servis via https://<scheme>.localhost/ ; ailleurs via <scheme>://localhost/.
   // On laisse la webview résoudre le host : une URL relative au protocole
@@ -80,9 +70,6 @@ function __applyDistRewrite() {
   }
 
 <<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6701aaa (fix embed iframe)
   // Exposés globalement (window.*) : distURL pour la réécriture explicite des
   // backgrounds CSS par le code de page (hub.js), et applyDistRewrite pour la
   // ré-injection dans l'iframe Jocly.
@@ -118,7 +105,6 @@ function __applyDistRewrite() {
       if (el.tagName === 'IMG') { try { if (!el.crossOrigin) el.crossOrigin = 'anonymous'; } catch (e) {} }
       el.setAttribute(attr, d);
     }
-<<<<<<< HEAD
   }
 
   // L'<iframe> de Jocly (attachElement → jocly.embed.html) est un contexte
@@ -146,31 +132,6 @@ function __applyDistRewrite() {
     var d = toDist(v);
     if (d) el.setAttribute(attr, d);
 >>>>>>> 20e98f0 (load external dist)
-=======
->>>>>>> 277ea75 (external dist, increm 1)
-  }
-
-  // L'<iframe> de Jocly (attachElement → jocly.embed.html) est un contexte
-  // séparé où ce script n'est pas ré-injecté et où Jocly RECHARGE le jeu
-  // (createMatch) — d'où "Game … not found" quand le jeu est seulement dans le
-  // dist externe. On garde l'iframe sur NOTRE origine (pour préserver le
-  // postMessage parent↔iframe, qui vérifie l'origine) et on injecte ce même
-  // script à l'intérieur dès que son document est accessible : les fetch de
-  // jeux de l'iframe passent alors aussi par le dist externe.
-  function injectIntoIframe(iframe) {
-    function inject() {
-      try {
-        var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
-        if (!doc || doc.__distRewriteInjected) return;
-        doc.__distRewriteInjected = true;
-        var s = doc.createElement('script');
-        // Ré-injecte CE script (fonction + auto-appel) dans l'iframe.
-        s.textContent = SELF_SOURCE + '\n__applyDistRewrite();';
-        (doc.head || doc.documentElement).insertBefore(s, (doc.head || doc.documentElement).firstChild);
-      } catch (e) { /* pas encore prêt / cross-origin : onload réessaiera */ }
-    }
-    inject();
-    iframe.addEventListener('load', inject);
   }
   try {
     new MutationObserver(function (muts) {
@@ -178,20 +139,14 @@ function __applyDistRewrite() {
         mu.addedNodes && mu.addedNodes.forEach(function (n) {
           if (n.nodeType !== 1) return;
 <<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6701aaa (fix embed iframe)
           if (n.tagName === 'IFRAME') injectIntoIframe(n);
           if (/^(SCRIPT|IMG|LINK)$/.test(n.tagName)) rewriteEl(n);
           n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href]').forEach(rewriteEl);
           n.querySelectorAll && n.querySelectorAll('iframe').forEach(injectIntoIframe);
-<<<<<<< HEAD
 =======
           if (/^(SCRIPT|IMG|LINK)$/.test(n.tagName)) rewriteEl(n);
           n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href]').forEach(rewriteEl);
 >>>>>>> 20e98f0 (load external dist)
-=======
->>>>>>> 6701aaa (fix embed iframe)
         });
       });
     }).observe(document.documentElement, { childList: true, subtree: true });
@@ -216,7 +171,6 @@ function __applyDistRewrite() {
     return _open.apply(this, arguments);
   };
 <<<<<<< HEAD
-<<<<<<< HEAD
 
   // 4. Image().src / <img>.src assignés en JS (préchargement des visuels et
   //    thumbnails, et TEXTURES 3D three.js) : ces affectations ne déclenchent
@@ -225,20 +179,6 @@ function __applyDistRewrite() {
   //    servie depuis tabulon-dist:// (origine ≠ celle de l'iframe tauri://)
   //    rend le canvas WebGL "tainted" → SecurityError sur texSubImage2D. Le
   //    protocole renvoie déjà Access-Control-Allow-Origin: * (CORS OK).
-=======
-
-  // 4. Image().src / <img>.src assignés en JS (préchargement des visuels et
-<<<<<<< HEAD
-  //    thumbnails) : ces affectations ne déclenchent pas le MutationObserver.
->>>>>>> 6701aaa (fix embed iframe)
-=======
-  //    thumbnails, et TEXTURES 3D three.js) : ces affectations ne déclenchent
-  //    pas le MutationObserver. En plus de rediriger vers le dist externe, on
-  //    pose crossOrigin='anonymous' AVANT le src : sans lui, une texture
-  //    servie depuis tabulon-dist:// (origine ≠ celle de l'iframe tauri://)
-  //    rend le canvas WebGL "tainted" → SecurityError sur texSubImage2D. Le
-  //    protocole renvoie déjà Access-Control-Allow-Origin: * (CORS OK).
->>>>>>> 277ea75 (external dist, increm 1)
   try {
     var iproto = window.HTMLImageElement && window.HTMLImageElement.prototype;
     var idesc = iproto && Object.getOwnPropertyDescriptor(iproto, 'src');
@@ -246,10 +186,6 @@ function __applyDistRewrite() {
       Object.defineProperty(iproto, 'src', {
         configurable: true, enumerable: idesc.enumerable,
         get: function () { return idesc.get.call(this); },
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 277ea75 (external dist, increm 1)
         set: function (v) {
           var d = (typeof v === 'string') && toDist(v);
           if (d) {
@@ -258,12 +194,6 @@ function __applyDistRewrite() {
           }
           idesc.set.call(this, d || v);
         },
-<<<<<<< HEAD
-=======
-        set: function (v) { var d = (typeof v === 'string') && toDist(v); idesc.set.call(this, d || v); },
->>>>>>> 6701aaa (fix embed iframe)
-=======
->>>>>>> 277ea75 (external dist, increm 1)
       });
     }
   } catch (e) { /* non redéfinissable : ignore */ }
@@ -295,10 +225,6 @@ function __applyDistRewrite() {
       });
     }
   } catch (e) { /* CSSOM non redéfinissable : ignore */ }
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 277ea75 (external dist, increm 1)
 
   // 6. Web Worker de l'IA. Après un coup, Jocly fait
   //    new Worker(config.baseURL+'jocly.aiworker.js') (StartThreadedMachine),
@@ -326,10 +252,6 @@ function __applyDistRewrite() {
           function map(u) {
             var s = String(u);
             if (/^(blob|data):/.test(s)) return s;
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> a435ea5 (externalisation du dist)
             // Absolu avec scheme → réduire au pathname pour traitement unifié.
             var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*(\/.*)$/);
             if (m) s = m[1];
@@ -345,18 +267,6 @@ function __applyDistRewrite() {
             // d'origine du worker était browser/ (le worker shim étant un
             // blob:, un relatif ne se résoudrait pas du tout).
             return PROTO + 'browser/' + s.replace(/^\.\//, '');
-<<<<<<< HEAD
-=======
-            // Absolu contenant browser/ ou games/ → dist externe.
-            var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*\/((?:browser|games)\/.*)$/);
-            if (m) return PROTO + m[1];
-            // Relatif : la base d'origine du worker était browser/ (le worker
-            // shim étant un blob:, un relatif ne se résoudrait pas du tout).
-            if (!/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(s)) return PROTO + 'browser/' + s.replace(/^\.\//, '');
-            return s;
->>>>>>> 277ea75 (external dist, increm 1)
-=======
->>>>>>> a435ea5 (externalisation du dist)
           }
           self.importScripts = function () {
             var args = Array.prototype.map.call(arguments, map);
@@ -431,7 +341,3 @@ __applyDistRewrite();
 =======
 })();
 >>>>>>> 20e98f0 (load external dist)
-=======
-}
-__applyDistRewrite();
->>>>>>> 6701aaa (fix embed iframe)

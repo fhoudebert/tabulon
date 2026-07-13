@@ -47,13 +47,8 @@ const DICT = {
         'ext.updated': '"{game}" updated.',
         'ext.removed': '"{game}" uninstalled.',
         'ext.error': 'Error: {msg}',
-<<<<<<< HEAD
-<<<<<<< HEAD
         'ext.tabGames': 'Games', 'ext.tabModules': 'Modules',
         'ext.site': 'Get extensions…',
-=======
-        'ext.tabGames': 'Games', 'ext.tabModules': 'Modules',
->>>>>>> cfb5b73 (export import module)
         'ext.searchModule': 'Search module',
         'ext.moduleGames': '{count} game(s)',
         'ext.moduleExported': 'Module "{module}" exported ({count} games, {files} files).',
@@ -61,11 +56,6 @@ const DICT = {
         'ext.moduleRemoved': 'Module "{module}" uninstalled ({count} games).',
         'ext.moduleRemoveConfirm': 'Uninstall the whole "{module}" module? Its {count} games (including any imported individually) will be removed from the external dist.',
         'ext.readOnly': 'The external dist is read-only (insufficient permissions): games can be exported, but importing or uninstalling extensions is disabled. Move the dist to a writable folder or adjust its permissions.',
-<<<<<<< HEAD
-=======
->>>>>>> 84d9dc4 (export/import games)
-=======
->>>>>>> cfb5b73 (export import module)
         'btn.quickPlay': 'Quick play', 'btn.clockedPlay': 'Clocked play',
         'btn.openBook': 'Open book', 'btn.boardState': 'Board state',
         'btn.favorite': 'Favorite', 'btn.notFavorite': 'Not favorite',
@@ -208,13 +198,8 @@ const DICT = {
         'ext.updated': '« {game} » mis à jour.',
         'ext.removed': '« {game} » désinstallé.',
         'ext.error': 'Erreur : {msg}',
-<<<<<<< HEAD
-<<<<<<< HEAD
         'ext.tabGames': 'Jeux', 'ext.tabModules': 'Modules',
         'ext.site': 'Obtenir des extensions…',
-=======
-        'ext.tabGames': 'Jeux', 'ext.tabModules': 'Modules',
->>>>>>> cfb5b73 (export import module)
         'ext.searchModule': 'Rechercher un module',
         'ext.moduleGames': '{count} jeu(x)',
         'ext.moduleExported': 'Module « {module} » exporté ({count} jeux, {files} fichiers).',
@@ -222,11 +207,6 @@ const DICT = {
         'ext.moduleRemoved': 'Module « {module} » désinstallé ({count} jeux).',
         'ext.moduleRemoveConfirm': 'Désinstaller le module « {module} » entier ? Ses {count} jeux (y compris importés individuellement) seront retirés du dist externe.',
         'ext.readOnly': 'Le dist externe est en lecture seule (droits insuffisants) : l\'export des jeux reste possible, mais l\'import et la désinstallation d\'extensions sont désactivés. Déplacez le dist dans un dossier accessible en écriture ou ajustez ses permissions.',
-<<<<<<< HEAD
-=======
->>>>>>> 84d9dc4 (export/import games)
-=======
->>>>>>> cfb5b73 (export import module)
         'hub.joclyMissing': 'Moteur de jeu introuvable (jocly.js)',
         'hub.joclyMissingHint': 'dist/ manquait au moment du build, ou src-tauri/target est périmé — supprimer target/ et rebuilder.', 'hub.selectGame': 'Sélectionnez un jeu',
         'hub.back': 'Jeux', 'hub.templates': 'Modèles',

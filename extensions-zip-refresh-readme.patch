@@ -1,0 +1,162 @@
+diff --git a/README.md b/README.md
+index 218ee3a..ec65eb2 100644
+--- a/README.md
++++ b/README.md
+@@ -110,7 +110,20 @@ never travels in extensions. Extensions can also be built without the app:
+ `node scripts/make-extension.mjs --module <module> [outdir]` — with a full
+ dist or a single-module gulp build
+ (`gulp --no-default-games --modules src/games/<module> build`) as source —
+-the packaging tool for a future downloadable extension list.
++the packaging tool that feeds the downloadable extension catalogue.
++
++A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
++import dialog accepts both `.tabulon-ext` and `.zip`. Published extensions
++are (or will be) downloadable from:
++
++- <https://fhoudebert.github.io/tabulon/ext/> — catalogue
++- <https://fhoudebert.github.io/tabulon/ext/games> — game extensions
++- <https://fhoudebert.github.io/tabulon/ext/modules> — module extensions
++
++The "Get extensions…" link in the Extensions screen opens the page matching
++the active tab. After an import or uninstall, the hub reloads its game list
++automatically (the Jocly script loader caches the games index for the page
++lifetime, so the hub performs a full reload).
+ 
+ At startup Tabulon looks for a usable external dist in this order: the
+ `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
+@@ -124,6 +137,21 @@ reported by the `get_dist_info` command (About panel / Extensions screen). The
+ app shell (`content/**`) always comes from the embedded build, so a stale
+ external dist cannot break the UI itself.
+ 
++## Scripts
++
++All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
++
++| Script | Role |
++|---|---|
++| `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
++| `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
++| `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
++
++Environment variables understood by the app itself: `TABULON_DIST`
++(absolute path to an external dist, or `embedded`/empty to force the
++embedded library — handy for testing the fallback), and at build time
++`TABULON_MODULES` (default selection for `make-minimal-dist.mjs`).
++
+ ## Running the tests
+ 
+ Integration test suites live in [`tests/`](./tests). They exercise the real
+diff --git a/app/content/extensions.html b/app/content/extensions.html
+index 98e6ec2..2aaee1c 100644
+--- a/app/content/extensions.html
++++ b/app/content/extensions.html
+@@ -49,6 +49,8 @@
+ 
+ 	<footer class="toolbar toolbar-footer">
+ 		<div id="ext-status" class="pull-left padded-horizontally"></div>
++		<a id="ext-site" href="#" class="pull-right padded-horizontally"
++		   data-i18n="ext.site">Get extensions…</a>
+ 	</footer>
+ </div>
+ </body>
+diff --git a/app/content/extensions.js b/app/content/extensions.js
+index 11f7762..f68bdd1 100755
+--- a/app/content/extensions.js
++++ b/app/content/extensions.js
+@@ -10,10 +10,13 @@
+ // Après import/désinstallation, le hub est notifié (relay_to_window →
+ // extensionsChanged) pour recharger sa liste de jeux.
+ import tRpc from './tabulon-rpc.js';
+-import { save as saveDialog, openDialog, ask } from './tauri-bridge.js';
++import { save as saveDialog, openDialog, ask, open as openExternal } from './tauri-bridge.js';
+ import { initI18n, t } from './tabulon-i18n.js';
+ import twu from './tabulon-winutils.js';
+ 
++// Site où les extensions publiées seront téléchargeables (README « Extensions »).
++const EXT_SITE = 'https://fhoudebert.github.io/tabulon/ext/';
++
+ let allGames = [];   // [{name, title, summary, module}]
+ let currentTab = 'games';   // 'games' | 'modules'
+ let distWritable = true;   // faux : dist externe en lecture seule (droits)
+@@ -122,7 +125,10 @@ async function exportGame(g) {
+     try {
+         const dest = await saveDialog({
+             defaultPath: `${g.name}.tabulon-ext`,
+-            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
++            // .tabulon-ext par défaut (identité claire, filtres nets), .zip
++            // proposé : le format EST un zip standard, seul le nom change.
++            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] },
++                      { name: 'Zip', extensions: ['zip'] }],
+         });
+         if (!dest) return;
+         const r = await tRpc.call('export_extension', g.name, dest);
+@@ -136,7 +142,8 @@ async function exportModule(mod) {
+     try {
+         const dest = await saveDialog({
+             defaultPath: `${mod}.tabulon-ext`,
+-            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
++            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] },
++                      { name: 'Zip', extensions: ['zip'] }],
+         });
+         if (!dest) return;
+         const r = await tRpc.call('export_module', mod, dest);
+@@ -163,7 +170,7 @@ async function importExtension() {
+     try {
+         const src = await openDialog({
+             multiple: false,
+-            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
++            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext', 'zip'] }],
+         });
+         if (!src) return;
+         const r = await tRpc.call('import_extension', src);
+@@ -197,6 +204,10 @@ window.addEventListener('DOMContentLoaded', async () => {
+ 
+     document.getElementById('ext-import').addEventListener('click', importExtension);
+     document.getElementById('ext-filter').addEventListener('input', render);
++    document.getElementById('ext-site').addEventListener('click', (e) => {
++        e.preventDefault();
++        openExternal(EXT_SITE + (currentTab === 'modules' ? 'modules' : 'games'));
++    });
+     for (const tab of document.querySelectorAll('.tab-item')) {
+         tab.addEventListener('click', () => {
+             document.querySelectorAll('.tab-item').forEach(x => x.classList.remove('active'));
+diff --git a/app/content/hub.js b/app/content/hub.js
+index 1bccdc9..33ac66d 100644
+--- a/app/content/hub.js
++++ b/app/content/hub.js
+@@ -382,8 +382,13 @@ tRpc.listen({
+     // Import/désinstallation d'une extension : l'index du dist externe a
+     // changé → relister les jeux (ListGames se termine par un clic sur la nav
+     // courante, qui re-rend la liste).
+-    extensionsChanged: async () => {
+-        await ListGames();
++    // Import/désinstallation d'extension : l'index du dist a changé, mais le
++    // BrowserScriptLoader de Jocly CACHE jocly-allgames.js pour la durée de
++    // vie de la page (cache[url] fermé sur le module) — relancer ListGames()
++    // relirait l'index périmé. Seul un rechargement de la page repart d'un
++    // cache vierge ; le hub restaure ensuite sa navigation depuis le store.
++    extensionsChanged: () => {
++        location.reload();
+     },
+     updateTemplates: async (templates) => {
+         await UpdateTemplates(templates);
+diff --git a/app/content/tabulon-i18n.js b/app/content/tabulon-i18n.js
+index 9e8cf1d..8280c8d 100644
+--- a/app/content/tabulon-i18n.js
++++ b/app/content/tabulon-i18n.js
+@@ -48,6 +48,7 @@ const DICT = {
+         'ext.removed': '"{game}" uninstalled.',
+         'ext.error': 'Error: {msg}',
+         'ext.tabGames': 'Games', 'ext.tabModules': 'Modules',
++        'ext.site': 'Get extensions…',
+         'ext.searchModule': 'Search module',
+         'ext.moduleGames': '{count} game(s)',
+         'ext.moduleExported': 'Module "{module}" exported ({count} games, {files} files).',
+@@ -163,6 +164,7 @@ const DICT = {
+         'ext.removed': '« {game} » désinstallé.',
+         'ext.error': 'Erreur : {msg}',
+         'ext.tabGames': 'Jeux', 'ext.tabModules': 'Modules',
++        'ext.site': 'Obtenir des extensions…',
+         'ext.searchModule': 'Rechercher un module',
+         'ext.moduleGames': '{count} jeu(x)',
+         'ext.moduleExported': 'Module « {module} » exporté ({count} jeux, {files} fichiers).',

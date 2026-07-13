@@ -115,6 +115,7 @@ never travels in extensions. Extensions can also be built without the app:
 dist or a single-module gulp build
 (`gulp --no-default-games --modules src/games/<module> build`) as source —
 <<<<<<< HEAD
+<<<<<<< HEAD
 the packaging tool that feeds the downloadable extension catalogue.
 
 A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
@@ -125,6 +126,13 @@ it packages **every module** into `outdir/modules/` and **every game** into
 then alphabetically) plus a small landing page — the `outdir` content is
 published as-is under `ext/`. Published extensions are (or will be)
 downloadable from:
+=======
+the packaging tool that feeds the downloadable extension catalogue.
+
+A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
+import dialog accepts both `.tabulon-ext` and `.zip`. Published extensions
+are (or will be) downloadable from:
+>>>>>>> 5778b04 (fin gestion modules)
 
 - <https://fhoudebert.github.io/tabulon/ext/> — catalogue
 - <https://fhoudebert.github.io/tabulon/ext/games> — game extensions
@@ -134,6 +142,7 @@ The "Get extensions…" link in the Extensions screen opens the page matching
 the active tab. After an import or uninstall, the hub reloads its game list
 automatically (the Jocly script loader caches the games index for the page
 lifetime, so the hub performs a full reload).
+<<<<<<< HEAD
 =======
 game of the module). Extensions can also be built without the app:
 `node scripts/make-extension.mjs <game> [outdir]` — the packaging tool for a
@@ -142,6 +151,8 @@ future downloadable extension list.
 =======
 the packaging tool for a future downloadable extension list.
 >>>>>>> cfb5b73 (export import module)
+=======
+>>>>>>> 5778b04 (fin gestion modules)
 
 At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
@@ -155,6 +166,7 @@ reported by the `get_dist_info` command (About panel / Extensions screen). The
 app shell (`content/**`) always comes from the embedded build, so a stale
 external dist cannot break the UI itself.
 
+<<<<<<< HEAD
 ## Remote play (experimental, `remoteplay` branch)
 
 Playing a Jocly game against a remote human is being built incrementally on
@@ -600,6 +612,8 @@ engine source, not guessed), translating the base word and leaving any
 unchanged rather than left blank — no dictionary entry means no visible gap,
 just English where French would be nicer to have.
 
+=======
+>>>>>>> 5778b04 (fin gestion modules)
 ## Scripts
 
 All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
@@ -609,9 +623,12 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
+<<<<<<< HEAD
 | `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
+=======
+>>>>>>> 5778b04 (fin gestion modules)
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the
