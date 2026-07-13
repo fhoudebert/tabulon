@@ -87,6 +87,22 @@ tabulon/
 └── dist/                a full jocly2 build (browser/ + games/)
 ```
 
+## Extensions (import/export games)
+
+When an external dist is active, the **Extensions** screen (hub sidebar,
+Configuration group) lets you export any installed game as a single
+`<game>.tabulon-ext` file, import one, or uninstall it. An extension contains
+strictly what the game's config declares: the code bundles
+(`<game>-config/-model/-view.js`), the rules/credits/description pages, the
+thumbnail and the visuals — plus the index declaration in `extension.json`.
+Shared module resources (css, sounds, `res/` sprites/textures, rules graphs,
+fairy-stockfish engines) always stay with the module: importing a game
+requires its module to already exist in the target external dist, and
+uninstalling never removes shared files (nor files still declared by another
+game of the module). Extensions can also be built without the app:
+`node scripts/make-extension.mjs <game> [outdir]` — the packaging tool for a
+future downloadable extension list.
+
 At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
 program. For an **AppImage**, "next to the program" means next to the

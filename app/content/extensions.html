@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="icon" href="data:,">
+	<title>Extensions</title>
+	<link rel="stylesheet" href="tabulon.css">
+	<script type="module" src="extensions.js"></script>
+</head>
+<body>
+<div class="window">
+	<header class="toolbar toolbar-header">
+		<h1 class="title" data-i18n="ext.title">Extensions</h1>
+		<div class="toolbar-actions">
+			<button id="ext-import" class="btn btn-primary">
+				<span class="icon icon-download"></span> <span data-i18n="ext.import">Import an extension…</span>
+			</button>
+		</div>
+	</header>
+
+	<div class="window-content">
+		<!-- Dist externe absent : la fonctionnalité est indisponible. -->
+		<div id="ext-nodist" class="padded-more" style="display:none">
+			<p data-i18n="ext.noDist">Extensions require an external dist/ folder next to the executable.
+			The embedded games library is read-only.</p>
+		</div>
+
+		<div id="ext-main" style="display:none">
+			<div class="padded-more">
+				<span class="ext-dist-label" data-i18n="ext.distPath">External dist:</span>
+				<code id="ext-dist-path"></code>
+			</div>
+			<div class="padded-more">
+				<input id="ext-filter" class="form-control" type="text"
+				       placeholder="Search game" data-i18n-placeholder="ext.search">
+			</div>
+			<ul class="pane list-group" id="ext-list"></ul>
+		</div>
+	</div>
+
+	<footer class="toolbar toolbar-footer">
+		<div id="ext-status" class="pull-left padded-horizontally"></div>
+	</footer>
+</div>
+</body>
+</html>

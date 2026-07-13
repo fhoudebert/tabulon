@@ -116,6 +116,19 @@ pub fn open_info(app: AppHandle, game_name: String) -> Result<(), String> {
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// rpc.call("open_extensions") — écran de gestion des extensions (dist externe)
+#[tauri::command]
+pub fn open_extensions(app: AppHandle) -> Result<(), String> {
+    open_window(&app, WindowOptions {
+        label: "extensions",
+        url:   "content/extensions.html",
+        title: "Extensions",
+        width: 720.0, height: 560.0,
+        min_width: 480.0, min_height: 360.0,
+        persist_key: Some("window:extensions".into()),
+    }).map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// rpc.call("openBoardState", gameName, matchId?)
 #[tauri::command]
 pub fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>) -> Result<(), String> {

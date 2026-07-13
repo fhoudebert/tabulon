@@ -379,6 +379,12 @@ tRpc.listen({
         UpdateGameList();           // re-rendre : les étoiles changent aussi dans All
         UpdateDetailFavorite();     // synchroniser le bouton Favorite du détail
     },
+    // Import/désinstallation d'une extension : l'index du dist externe a
+    // changé → relister les jeux (ListGames se termine par un clic sur la nav
+    // courante, qui re-rend la liste).
+    extensionsChanged: async () => {
+        await ListGames();
+    },
     updateTemplates: async (templates) => {
         await UpdateTemplates(templates);
         if (await store.get('nav-last') === 'templates') UpdateTemplateList();
@@ -409,6 +415,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         SetNav('templates'); document.getElementById('template-list').style.display = '';
         await UpdateTemplates(); UpdateTemplateList();
     });
+    // Écran Extensions : fenêtre dédiée, pas un panneau du hub (la nav
+    // courante ne change pas).
+    document.getElementById('nav-extensions').addEventListener('click', () => {
+        tRpc.call('open_extensions');
+    });
+
     document.getElementById('nav-about').addEventListener('click', () => {
         SetNav('about'); document.getElementById('about').style.display = '';
         RenderAbout();

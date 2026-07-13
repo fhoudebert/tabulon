@@ -4,7 +4,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{fs_cmds, hub_cmds, match_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{extension_cmds, fs_cmds, hub_cmds, match_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -119,6 +119,12 @@ pub fn run() {
             fs_cmds::save_text_file,
             fs_cmds::save_data_uri_file,
             fs_cmds::parse_pjn,
+            // ── Extensions (dist externe requis) ─────────────────────────────
+            extension_cmds::list_extension_games,
+            extension_cmds::export_extension,
+            extension_cmds::import_extension,
+            extension_cmds::remove_extension,
+            window_cmds::open_extensions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tabulon");

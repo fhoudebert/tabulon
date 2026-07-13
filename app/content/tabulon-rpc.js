@@ -136,6 +136,13 @@ function buildPayload(method, args) {
     notify_user_response:([token, result])             => ({ token, result }),
     // windows — hub actions
     open_position:       ([gameName, matchId])         => ({ gameName, matchId }),
+    // extensions
+    open_extensions:     ()                        => ({}),
+    get_dist_info:       ()                        => ({}),
+    list_extension_games:()                        => ({}),
+    export_extension:    ([gameName, destPath])    => ({ gameName, destPath }),
+    import_extension:    ([srcPath])               => ({ srcPath }),
+    remove_extension:    ([gameName])              => ({ gameName }),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),

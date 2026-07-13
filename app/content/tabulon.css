@@ -938,3 +938,11 @@ strong { font-weight: 600; }
   background-color: #000;
   color: #fff;
 }
+
+/* ── Fenêtre extensions.html (gestion des extensions, dist externe) ────────── */
+.ext-item { display: flex; align-items: center; justify-content: space-between; }
+.ext-item-info { min-width: 0; }
+.ext-item-meta { color: #737475; font-size: 12px; }
+.ext-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.ext-dist-label { color: #737475; margin-right: 6px; }
+#ext-status { line-height: 22px; }
