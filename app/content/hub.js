@@ -382,8 +382,13 @@ tRpc.listen({
     // Import/désinstallation d'une extension : l'index du dist externe a
     // changé → relister les jeux (ListGames se termine par un clic sur la nav
     // courante, qui re-rend la liste).
-    extensionsChanged: async () => {
-        await ListGames();
+    // Import/désinstallation d'extension : l'index du dist a changé, mais le
+    // BrowserScriptLoader de Jocly CACHE jocly-allgames.js pour la durée de
+    // vie de la page (cache[url] fermé sur le module) — relancer ListGames()
+    // relirait l'index périmé. Seul un rechargement de la page repart d'un
+    // cache vierge ; le hub restaure ensuite sa navigation depuis le store.
+    extensionsChanged: () => {
+        location.reload();
     },
     updateTemplates: async (templates) => {
         await UpdateTemplates(templates);

@@ -110,7 +110,20 @@ never travels in extensions. Extensions can also be built without the app:
 `node scripts/make-extension.mjs --module <module> [outdir]` — with a full
 dist or a single-module gulp build
 (`gulp --no-default-games --modules src/games/<module> build`) as source —
-the packaging tool for a future downloadable extension list.
+the packaging tool that feeds the downloadable extension catalogue.
+
+A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
+import dialog accepts both `.tabulon-ext` and `.zip`. Published extensions
+are (or will be) downloadable from:
+
+- <https://fhoudebert.github.io/tabulon/ext/> — catalogue
+- <https://fhoudebert.github.io/tabulon/ext/games> — game extensions
+- <https://fhoudebert.github.io/tabulon/ext/modules> — module extensions
+
+The "Get extensions…" link in the Extensions screen opens the page matching
+the active tab. After an import or uninstall, the hub reloads its game list
+automatically (the Jocly script loader caches the games index for the page
+lifetime, so the hub performs a full reload).
 
 At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
@@ -123,6 +136,21 @@ missing); otherwise only the bundled games are available. The active source is
 reported by the `get_dist_info` command (About panel / Extensions screen). The
 app shell (`content/**`) always comes from the embedded build, so a stale
 external dist cannot break the UI itself.
+
+## Scripts
+
+All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
+
+| Script | Role |
+|---|---|
+| `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
+| `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
+| `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
+
+Environment variables understood by the app itself: `TABULON_DIST`
+(absolute path to an external dist, or `embedded`/empty to force the
+embedded library — handy for testing the fallback), and at build time
+`TABULON_MODULES` (default selection for `make-minimal-dist.mjs`).
 
 ## Running the tests
 

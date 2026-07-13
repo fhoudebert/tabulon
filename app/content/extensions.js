@@ -10,9 +10,12 @@
 // Après import/désinstallation, le hub est notifié (relay_to_window →
 // extensionsChanged) pour recharger sa liste de jeux.
 import tRpc from './tabulon-rpc.js';
-import { save as saveDialog, openDialog, ask } from './tauri-bridge.js';
+import { save as saveDialog, openDialog, ask, open as openExternal } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu from './tabulon-winutils.js';
+
+// Site où les extensions publiées seront téléchargeables (README « Extensions »).
+const EXT_SITE = 'https://fhoudebert.github.io/tabulon/ext/';
 
 let allGames = [];   // [{name, title, summary, module}]
 let currentTab = 'games';   // 'games' | 'modules'
@@ -122,7 +125,10 @@ async function exportGame(g) {
     try {
         const dest = await saveDialog({
             defaultPath: `${g.name}.tabulon-ext`,
-            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
+            // .tabulon-ext par défaut (identité claire, filtres nets), .zip
+            // proposé : le format EST un zip standard, seul le nom change.
+            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] },
+                      { name: 'Zip', extensions: ['zip'] }],
         });
         if (!dest) return;
         const r = await tRpc.call('export_extension', g.name, dest);
@@ -136,7 +142,8 @@ async function exportModule(mod) {
     try {
         const dest = await saveDialog({
             defaultPath: `${mod}.tabulon-ext`,
-            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
+            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] },
+                      { name: 'Zip', extensions: ['zip'] }],
         });
         if (!dest) return;
         const r = await tRpc.call('export_module', mod, dest);
@@ -163,7 +170,7 @@ async function importExtension() {
     try {
         const src = await openDialog({
             multiple: false,
-            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
+            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext', 'zip'] }],
         });
         if (!src) return;
         const r = await tRpc.call('import_extension', src);
@@ -197,6 +204,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('ext-import').addEventListener('click', importExtension);
     document.getElementById('ext-filter').addEventListener('input', render);
+    document.getElementById('ext-site').addEventListener('click', (e) => {
+        e.preventDefault();
+        openExternal(EXT_SITE + (currentTab === 'modules' ? 'modules' : 'games'));
+    });
     for (const tab of document.querySelectorAll('.tab-item')) {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab-item').forEach(x => x.classList.remove('active'));
