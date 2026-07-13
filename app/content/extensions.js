@@ -26,7 +26,11 @@ import { initI18n, t } from './tabulon-i18n.js';
 import twu from './tabulon-winutils.js';
 
 let allGames = [];   // [{name, title, summary, module}]
+<<<<<<< HEAD
 >>>>>>> 84d9dc4 (export/import games)
+=======
+let currentTab = 'games';   // 'games' | 'modules'
+>>>>>>> cfb5b73 (export import module)
 let distWritable = true;   // faux : dist externe en lecture seule (droits)
 
 function status(msg, isError = false) {
@@ -41,6 +45,9 @@ function notifyHub() {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> cfb5b73 (export import module)
 // Vue Modules : regroupement des jeux de l'index par module, avec export et
 // désinstallation AU NIVEAU MODULE (dossier games/<module>/ entier + toutes
 // ses entrées d'index). L'import reste unique : le manifeste décide du type.
@@ -87,9 +94,12 @@ function renderModules() {
 
 function render() {
     if (currentTab === 'modules') return renderModules();
+<<<<<<< HEAD
 =======
 function render() {
 >>>>>>> 84d9dc4 (export/import games)
+=======
+>>>>>>> cfb5b73 (export import module)
     const filter = document.getElementById('ext-filter').value.trim().toLowerCase();
     const ul = document.getElementById('ext-list');
     ul.textContent = '';
@@ -155,12 +165,19 @@ async function exportGame(g) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> cfb5b73 (export import module)
 async function exportModule(mod) {
     try {
         const dest = await saveDialog({
             defaultPath: `${mod}.tabulon-ext`,
+<<<<<<< HEAD
             filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] },
                       { name: 'Zip', extensions: ['zip'] }],
+=======
+            filters: [{ name: 'Tabulon extension', extensions: ['tabulon-ext'] }],
+>>>>>>> cfb5b73 (export import module)
         });
         if (!dest) return;
         const r = await tRpc.call('export_module', mod, dest);
@@ -183,8 +200,11 @@ async function removeModule(mod, count) {
     }
 }
 
+<<<<<<< HEAD
 =======
 >>>>>>> 84d9dc4 (export/import games)
+=======
+>>>>>>> cfb5b73 (export import module)
 async function importExtension() {
     try {
         const src = await openDialog({
@@ -203,8 +223,15 @@ async function importExtension() {
         });
         if (!src) return;
         const r = await tRpc.call('import_extension', src);
+<<<<<<< HEAD
         status(t(r.updated ? 'ext.updated' : 'ext.imported', { game: r.game }));
 >>>>>>> 84d9dc4 (export/import games)
+=======
+        if (r.type === 'module')
+            status(t('ext.moduleImported', { module: r.module, count: (r.added || 0) + (r.updated || 0) }));
+        else
+            status(t(r.updated ? 'ext.updated' : 'ext.imported', { game: r.game }));
+>>>>>>> cfb5b73 (export import module)
         await reload();
         notifyHub();
     } catch (e) {
@@ -232,10 +259,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('ext-import').addEventListener('click', importExtension);
     document.getElementById('ext-filter').addEventListener('input', render);
 <<<<<<< HEAD
+<<<<<<< HEAD
     document.getElementById('ext-site').addEventListener('click', (e) => {
         e.preventDefault();
         openExternal(EXT_SITE + (currentTab === 'modules' ? 'modules' : 'games'));
     });
+=======
+>>>>>>> cfb5b73 (export import module)
     for (const tab of document.querySelectorAll('.tab-item')) {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab-item').forEach(x => x.classList.remove('active'));
@@ -246,8 +276,11 @@ window.addEventListener('DOMContentLoaded', async () => {
             render();
         });
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 84d9dc4 (export/import games)
+=======
+>>>>>>> cfb5b73 (export import module)
 
     const info = await tRpc.call('get_dist_info').catch(() => ({ external: false }));
     if (!info || !info.external) {

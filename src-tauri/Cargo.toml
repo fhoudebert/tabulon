@@ -23,10 +23,7 @@ tauri-plugin-os      = "2"   # détection plateforme (remplace os.platform())
 tauri-plugin-fs      = "2"   # accès fichiers locaux (remplace XHR file://)
 tauri-plugin-updater = "2"   # mises à jour auto (remplace electron-updater)
 tauri-plugin-cli     = "2"   # arguments CLI (remplace process.argv)
-<<<<<<< HEAD
 tauri-plugin-http    = "2"   # client HTTP cote Rust (relai jeu a distance) -- pas de CORS navigateur
-=======
->>>>>>> 84d9dc4 (export/import games)
 zip                  = { version = "2", default-features = false, features = ["deflate"] }  # extensions .tabulon-ext
 json5                = "0.4" # lecture de jocly-allgames.js (clés non quotées)
 

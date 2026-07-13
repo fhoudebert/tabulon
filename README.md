@@ -100,6 +100,9 @@ fairy-stockfish engines) always stay with the module: importing a game
 requires its module to already exist in the target external dist, and
 uninstalling never removes shared files (nor files still declared by another
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> cfb5b73 (export import module)
 game of the module). Whole **modules** can also be exported/imported (Modules tab): a module
 extension contains the full `games/<module>/` tree plus the index declarations
 of its games; importing it has no prerequisite (the module is the payload) and
@@ -111,6 +114,7 @@ never travels in extensions. Extensions can also be built without the app:
 `node scripts/make-extension.mjs --module <module> [outdir]` — with a full
 dist or a single-module gulp build
 (`gulp --no-default-games --modules src/games/<module> build`) as source —
+<<<<<<< HEAD
 the packaging tool that feeds the downloadable extension catalogue.
 
 A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
@@ -135,6 +139,9 @@ game of the module). Extensions can also be built without the app:
 `node scripts/make-extension.mjs <game> [outdir]` — the packaging tool for a
 future downloadable extension list.
 >>>>>>> 84d9dc4 (export/import games)
+=======
+the packaging tool for a future downloadable extension list.
+>>>>>>> cfb5b73 (export import module)
 
 At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the

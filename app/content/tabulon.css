@@ -974,6 +974,7 @@ strong { font-weight: 600; }
 .ext-dist-label { color: #737475; margin-right: 6px; }
 #ext-status { line-height: 22px; }
 <<<<<<< HEAD
+<<<<<<< HEAD
 .ext-readonly { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 4px; color: #6b5200; }
 
 /* -- invitation.html --------------------------------------------------------- */
@@ -1020,3 +1021,6 @@ strong { font-weight: 600; }
 }
 =======
 >>>>>>> 84d9dc4 (export/import games)
+=======
+.ext-readonly { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 4px; color: #6b5200; }
+>>>>>>> cfb5b73 (export import module)

@@ -1,0 +1,192 @@
+<style>
+	table.psymbs {
+		text-align: center;
+	}
+	.psymb {
+		background-image: url({GAME}/res/images/wikipedia.png);
+		width: 100px;
+		height: 200px;
+	}
+	.psymbs td {
+		padding: 0 10px 0 10px;
+	}
+	.psymb-bold {
+		font-weight: bold;
+	}
+	.side {
+		float: right;
+		max-width: 100%;
+	}
+    .piece-graph {
+        height: auto;
+        max-width: 300px;
+        margin: 0 auto;
+        display: block;
+    }
+	@media screen and (max-width: 520px) {
+		.side {
+			float: none;
+			display: block;
+			max-width: 100%;
+			margin-right: auto;
+			margin-left: auto;
+		}		
+	}
+	h1,h2,h3,h4 {
+		clear: both;
+	}
+</style>
+<h1>Differences de Minjuki shogi avec les échecs orthodoxes</h1>
+<p> 
+La premiére différence la plus frappante est le déplacement du pion qui se déplace et prend en avant, de plus les autres pièces peuvent être promues même avant d’atteindre le dernier rang.
+</p><p>
+Minjiku Shogi se joue sur un tablier de 10x10, avec 4 cases supplémentaires qui disparaissent quand elles ne sont plus occupées.
+Contrairement au shogi, les pièces prises ne peuvent pas être remises en jeu mais demeurent hors-jeu.
+Cette variante ne conserve des échecs classiques que Roi, Pion, Tour, Fou et Queen. Kirin et Phénix sont connus apr de nombreuses variantes du shogi,
+et les pièces volantes viennent de la variante historique le tenjiku shogi.
+La plupart des autres pièces sont des nouveautés conçues spéciallement pour ce jeu.
+De Même la plupart des pièces de Shogi orthodoxes ont des promotions différentes de celles qui sont habituelles.
+</p>
+<h2>Déplacements</h2>
+<p>
+Dans le Minjiku Shogi, il existe plusieurs types de coups spéciaux.
+Par exemple, il y a des pièces "volantes" qui peuvent sauter au-dessus d'un nombre arbitraire d'autres pièces à capturer.
+Mais elles ne peuvent pas toujours sauter les unes par-dessus les autres.
+Ensuite, il y a le "mouvement de zone", qui consiste en un ou deux pas de roi, pas nécessairement dans la même direction.
+Le deuxième pas ne peut être effectué que si le premier est allé sur une case vide.
+Certaines pièces ont la capacité de capturer une pièce adjacente sans se déplacer : la pièce adjacente est simplement retirée de l'échiquier ("prise au fusil").
+Enfin, il existe un mode de capture appelé "brûlage", qui élimine tous les ennemis diagonalement adjacents à la case où le mouvement se termine.
+</p>
+<h2>Les pièces</h2>
+<table><tr>
+		<td><img style="" src="{GAME}/res/rules/fairy/terror.png"/></td>
+	<td>Le Dragon de Feu : il se déplace et capture comme la Reine, et dispose d'un "mouvement de zone" (voir ci-dessus).
+		Mais il capture aussi automatiquement ("brûle") tous les ennemis diagonalement adjacents à une case sur laquelle il termine son mouvement.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/flying-queen.png"/></td>
+	<td>Le général bondissant (alias grand général) : se déplace et capture comme une reine, mais pour capturer, il peut sauter par-dessus un nombre arbitraire de pièces (amies ou ennemies).
+		Les pièces sautées ne sont pas affectées. Il ne peut cependant pas sauter par-dessus un autre général bondissant ou un roi.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/flying-saint.png"/></td>
+	<td>Le sauteur de zone (alias vice général) : se déplace et capture comme un fou, mais pour capturer, il peut sauter par-dessus un nombre arbitraire de pièces (amies ou ennemies).
+		Les pièces sautées ne sont pas affectées. Il ne peut cependant pas sauter par-dessus un général bondissant, un roi ou un autre sauteur de zone.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/flying-rook.png"/></td>
+	<td>Le sauteur orthogonal (alias Tour générale) : il se déplace et capture comme une Tour, mais pour capturer, il peut sauter par-dessus un nombre arbitraire de pièces (amies ou ennemies).
+		Les pièces sautées ne sont pas affectées. Il ne peut cependant pas sauter par-dessus un général bondissant, un sauteur de zone, un sauteur diagonal, un roi ou un autre sauteur orthogonal.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/lion.png"/></td>
+	<td>Le Lion : se déplace ou capture comme un Roi, mais si la case ainsi atteinte est vide, il peut éventuellement se déplacer ou capturer sur une case adjacente à celle-ci ("déplacement de zone").
+		Il ne peut cependant pas revenir sur la case d'où il est parti.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/samurai.png"/></td>
+	<td>Le Samouraï : se déplace et capture comme un cavalier classique, et peut capturer des ennemis adjacents dans les 8 directions sans se déplacer.
+</tr><tr><td/><td><img class='piece-graph' src="{GAME}/res/rules/graphs/samurai.png"/></td>
+		
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/gate.png"/></td>
+	<td>Le Ninja : se déplace et capture latéralement comme une Tour, mais en sautant la case adjacente (qu'elle soit vide ou occupée).
+		Il peut également se déplacer ou capturer sur des cases adjacentes en diagonale, ou capturer des ennemis adjacents en orthogonale sans se déplacer.
+</tr><tr><td/><td><img class='piece-graph' src="{GAME}/res/rules/graphs/ninja.png"/></td>
+		
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/queen.png"/></td>
+	<td>La reine : se déplace et capture comme une reine classique.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/flying-bishop.png"/></td>
+	<td>Le sauteur diagonal (alias Fou général) : se déplace et capture comme un fou, mais pour capturer, il peut sauter par-dessus un nombre arbitraire de pièces (amies ou ennemies).
+		Les pièces sautées ne sont pas affectées. Il ne peut pas sauter par-dessus un général bondissant, un sauteur de zone, un sauteur orthogonal, un roi ou un autre sauteur en diagonale.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/proper-crowned-rook.png"/></td>
+	<td>Le Cobra : se déplace et capture comme une Tour, et peut capturer des ennemis adjacents en diagonale sans se déplacer.
+</tr><tr><td><img class='piece-graph' src="{GAME}/res/rules/graphs/cobra.png"/></td>
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/saint.png"/></td>
+	<td>La vipère : se déplace et capture comme un fou, et peut capturer des ennemis adjacents orthogonalement sans se déplacer.
+		</td>
+</tr><tr><td><img class='piece-graph' src="{GAME}/res/rules/graphs/viper.png"/></td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/rook.png"/></td>
+	<td>La Tour : se déplace et capture comme une Tour classique..
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/bishop.png"/></td>
+	<td>Le Fou : se déplace et capture comme un Fou classique.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/machine.png"/></td>
+	<td>Le Déplaceur latéral : il se déplace et capture en glissant latéralement comme une Tour, ou sur des cases orthogonalement adjacentes.
+		S'il n'a pas encore bougé, il peut aussi se déplacer et capturer en glissant de 2 cases vers l'avant (sans sauter !). 
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/phoenix.png"/></td>
+	<td>Le Phénix : se déplace et capture sur des cases adjacentes orthogonalement, ou en sautant sur la deuxième case en diagonale.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/giraffe.png"/></td>
+	<td>Le Kirin : se déplace et capture sur des cases adjacentes en diagonale, ou en sautant sur la deuxième case en orthogonale.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/man.png"/></td>
+	<td>Le ministre : se déplace et capture comme un roi orthodoxe. La case sur laquelle le ministre commence disparaît dès qu'elle est évacuée.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/gold.png"/></td>
+	<td>Le général d'or : se déplace et capture sur les cases adjacentes dans n'importe quelle direction orthogonale ou dans la diagonale avant.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/silver.png"/></td>
+	<td>Le général d'argent : se déplace et capture sur les cases adjacentes dans n'importe quelle diagonale ou dans la direction orthogonale vers l'avant.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/pawn.png"/></td>
+	<td>Le pion : se déplace et capture sur la case directement devant lui.
+		</td>
+</tr><tr>
+		<td><img style="max-width:100%;" src="{GAME}/res/rules/fairy/king.png"/></td>
+	<td>Le Roi : se déplace et capture sur n'importe laquelle des huit cases adjacentes. La case sur laquelle le roi commence disparaît dès qu'elle est évacuée.
+		</td>
+</tr></table>
+
+<h2>Inital setup</h2>
+
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/minjiku-shogi/minjiku-shogi-initial.jpg"/></p>
+
+<p>Chaque joueur commence avec :
+<ul>
+<li>10 pions, qui peuvent être promus au rang de général d'or</li>
+<li>2 généraux d'argent, qui peuvent être promus en fou</li>
+<li>2 généraux d'or, qui peuvent être promus en tour</li>
+<li>2 Déplaceurs latéraux, qui peuvent être promus en Ninja</li>
+<li>2 Fous, qui peuvent être promus en vipère</li>
+<li>2 Tours, qui peuvent être promus en Cobra</li>
+<li>2 Diagonal Jumpers, qui peuvent être promus en  Lion</li>
+<li>1 Minister, qui peut être promus en sauteur orthogonal</li>
+<li>1 Kirin, qui peut être promus en Samurai</li>
+<li>1 Phoenix, qui peut être promus en Reine</li>
+<li>1 Queen, qui peut être promus en Dragon de feu</li>
+<li>1 Vipère, qui peut être promus en Sauteur de zone</li>
+<li>1 Cobra, qui peut être promus en général bondissant</li>
+<li>1 Sauteur de zone</li>
+<li>1 Général bondissant</li>
+<li>1 Dragon de feu</li>
+<li>1 Roi</li>
+</ul> 
+</p>
+
+<p>Roque: non.</p>
+<p>Double déplacement initial du pion : non.</p>
+<p>Prise "En passant" : non.</p>
+<p>Parachutage de Pieces : non.</p>
+<p>Promotion : la plupart des pièces peuvent être promues, vers un type promu spécifique, lorsqu'elles <i>entrent</i> dans la zone de promotion constituée des trois derniers rangs, ou qu'elles capturent une pièce qui s'y trouve.
+Cette option est facultative.
+Une fois promues, les pièces ne peuvent plus être promues à nouveau, </p>
+

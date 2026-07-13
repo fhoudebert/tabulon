@@ -1,0 +1,66 @@
+<style>
+	table.psymbs {
+		text-align: center;
+	}
+	.psymb {
+		background-image: url({GAME}/res/images/wikipedia.png);
+		width: 100px;
+		height: 200px;
+	}
+	.psymbs td {
+		padding: 0 10px 0 10px;
+	}
+	.psymb-bold {
+		font-weight: bold;
+	}
+	.side {
+		float: right;
+	}
+	h1,h2,h3,h4 {
+		clear: both;
+	}
+</style>
+<h2>Fiche mémo des échecs Courier de Jocly</h2>
+<img style='max-width:100%' src="{GAME}/res/rules/courierchess/doc-cc-pieces-moves.jpg"/>
+<h2>Pièces</h2>
+<p>Pièces blanches et noires pour les versions 2D et 3D (de gauche à droite) :
+<ul>
+<li>Pion (12 par joueur)</li>
+<li>Cavalier (2 par joueur)</li>
+<li>Archer (2 par joueur)</li>
+<li>Tour (2 par joueur)</li>
+<li>Dame (1 par joueur)</li>
+<li>Roi (1 par joueur)</li>
+<li>Schleicher (1 par joueur)</li>
+<li>Courier (2 par joueur)</li>
+<li>Man (1 par joueur)</li>
+</ul>
+</p>
+<img style='max-width:100%' src="{GAME}/res/rules/courierchess/doc-cc-piece.jpg"/>
+<p>Il peut exister des discussions d'experts concernant les règles des échecs Courier, et nous sommes ouverts aux retours des joueurs. Pour commencer, nous avons choisi d'implémenter la version des règles issue de Wikipédia.</p>
+
+<p>Le texte suivant est extrait de Wikipédia, sous licence <a href="http://creativecommons.org/licenses/by-sa/3.0/" target="_blank">Creative Commons Attribution-ShareAlike 3.0 License</a>.
+Pour plus de détails et de références, veuillez consulter <a href="http://en.wikipedia.org/wiki/Courier_chess" target="_blank">l'article original</a>.</p>
+
+<p>Les échecs Courier (ou jeu Courier) sont un jeu de stratégie de plateau appartenant à la famille des échecs. La forme originale est probablement apparue au XIIe siècle et est connue pour avoir été pratiquée pendant au moins six cents ans. Le jeu fut ensuite remplacé par une forme plus moderne. Il a introduit le fou des échecs modernes (appelé « courier ») et a probablement joué un rôle dans l'évolution des échecs modernes à partir des échecs médiévaux.</p>
+
+<h2>Position initiale</h2>
+<p>Échecs Courier, position après les coups de départ obligatoires</p>
+<img class="side" src="{GAME}/res/rules/courierchess/initial.png"/>
+
+
+<p>Les échecs Courier se jouent sur un échiquier de huit rangées et douze colonnes. Les preuves littéraires et artistiques indiquent que l'échiquier était quadrillé dès l'origine, mais qu'il n'existait pas de règle uniforme concernant la couleur des cases. La pratique la plus courante semble être que la case située à droite de chaque joueur soit blanche.</p>
+<p>L'objectif de victoire est le même qu'aux échecs modernes : faire échec et mat au roi adverse. Les pièces sont les suivantes :
+<ul>
+	<li>Les rois commencent sur des cases de leur propre couleur, en f1 et f8. Comme aux échecs modernes, un roi se déplace d'une case dans n'importe quelle direction, et un joueur ne peut pas placer son propre roi en échec. Il n'y a pas de roque.</li>
+	<li>À côté du roi, en e1 et e8, se trouve le Rath ou Mann (également appelé conseiller ou homme de main), qui se déplace comme le roi, mais peut être placé ou laissé en prise (attaqué par une pièce adverse).</li>
+	<li>Sur l'autre colonne centrale, en g1 et g8, se trouve la dame, qui possède le déplacement du fers (ou firzan) : une case en diagonale dans n'importe quelle direction.</li>
+	<li>De l'autre côté de la dame, en h1 et h8, se trouve une pièce appelée Schleich (ou espion, contrebandier, fou ou Trülle), parfois représentée sous la forme d'un bouffon. Elle se déplace d'une case orthogonalement le long d'une rangée ou d'une colonne.</li>
+	<li>En d1, i1, d8 et i8 se trouve la pièce qui a donné son nom au jeu : le Courier (ou Läufer, le coureur). Il se déplace comme le fou des échecs modernes, d'un nombre quelconque de cases en diagonale.</li>
+	<li>Ensuite, en c1, j1, c8 et j8, se trouve le Bischof ou évêque (également appelé « vieil homme » ou archer). Il se déplace comme l'alfil (ou fil), de deux cases en diagonale, en sautant la première case.</li>
+	<li>En b1, k1, b8 et k8 se trouve le cavalier, et dans les coins la tour. Ils se déplacent comme leurs équivalents aux échecs modernes.</li>
+	<li>La deuxième rangée de chaque joueur est remplie de pions qui, comme aux échecs modernes, avancent d'une case en ligne droite et capturent d'une case en diagonale vers l'avant. Il n'existe pas de possibilité de double pas initial. La règle originale concernant la promotion des pions est inconnue. La règle médiévale standard voulait qu'un pion atteignant la rangée la plus éloignée soit immédiatement promu en dame (fers).</li>
+</ul>
+</p>
+<p>Au début de la partie, chaque joueur doit avancer ses pions de tour, son pion de dame et sa dame de deux cases vers l'avant (voir le diagramme supérieur). Un tel saut de deux cases le long d'une colonne était appelé un Freudensprung — en anglais : « joy-leap » (saut de joie).</p>
+</p>

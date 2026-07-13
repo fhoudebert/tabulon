@@ -1,0 +1,42 @@
+<style>
+	table.psymbs {
+		text-align: center;
+	}
+	.psymb {
+		background-image: url({GAME}/res/images/wikipedia.png);
+		width: 100px;
+		height: 200px;
+	}
+	.psymbs td {
+		padding: 0 10px 0 10px;
+	}
+	.psymb-bold {
+		font-weight: bold;
+	}
+	.side {
+		float: right;
+		max-width: 100%;
+	}
+	@media screen and (max-width: 520px) {
+		.side {
+			float: none;
+			display: block;
+			max-width: 100%;
+			margin-right: auto;
+			margin-left: auto;
+		}		
+	}
+	h1,h2,h3,h4 {
+		clear: both;
+	}
+</style>
+<h2>Randomized Initial Setup</h2>
+<p>Chess 960 is played with Orthodox Chess rules, but the starting position is randomized for all pieces except pawns.</p>
+<p>Randomization restrictions:</p>
+<ul>
+	<li>The 2 Rooks can't be on the same side of the King</li>
+	<li>The 2 Bishops must stand on different colors</li>
+	<li>The final board must be symetrical (black and white diagrams are mirror images)</li>
+</ul>
+<p>Casting is possible and always leads to Orthodox castling final positions, no matter the starting position.</p>
+

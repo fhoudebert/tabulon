@@ -1,0 +1,72 @@
+<html>
+	<head>
+		<title>Règles du Kyoto shogi</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+<style>
+    .piece-graph {
+        height: auto;
+        max-width: 300px;
+        margin: 0 auto;
+        display: inline-flex;
+    }
+</style>
+	</head>
+	<body class="is-preload">
+<h2>Le shogi de Kyoto</h2>
+<p>Kyoto shogi est une variante moderne du shogi. Sa particularité est qu’après chaque coup la piece est soit rétrogradée soit promue.</p>
+
+<p>Pour gagner, vous devez mettre le roi de votre adversaire échec et mat.</p>
+
+<h2>Shogiban</h2>
+
+<p>Le tablier est de 5x5</p>
+
+<h2>Pièces</h2>
+<p>Pour chaque joueur :
+<ul>
+<li>1 Roi</li>
+<li>1 Général d’or</li>
+<li>1 Général d’argent</li>
+<li>1 Tokin (Pion promu avec le déplacement du général d’or)</li>
+<li>1 Pion</li>
+</ul>
+</p>
+
+<h2>Disposition Initiale</h2>
+
+<p style="text-align:center"><img style='max-width:100%' src="{GAME}/res/rules/shogi/kyoto-shogi-initial-2d.png"/></p>
+<p>Il existe un jeu de pièces 2d occidentales(2d Western) pour les joueurs qui ne sont pas familier avec la représentation traditionnelle (kanjis). </p>
+<p style="text-align:center"><img style='max-width:100%' src="{GAME}/res/rules/shogi/kyoto-shogi-initial-2d-western.png"/></p>
+
+<h2>Pièces</h2>
+
+
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/gold.png"/><b>Général d’or</b>: se déplace et capture sur les cases adjacentes dans n'importe quelle direction orthogonale ou diagonale avant.</p>
+<p><img class='piece-graph'  src="{GAME}/res/rules/graphs/gold.png"/></p>
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/silver.png"/><b>Général d’argent</b>: se déplace et capture sur les cases adjacentes dans n'importe quelle diagonale ou dans la direction orthogonale vers l'avant.</p>
+<p><img class='piece-graph'  src="{GAME}/res/rules/graphs/silver.png"/></p>
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/pawn.png"/><b>Pion</b> : se déplace <strong>et</strong> capture en avant.</p>
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/rook.png"/><b>Tour</b> : comme aux échecs classiques.</p>
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/bishop.png"/><b>Fou</b> : comme aux échecs classiques.</p>
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/king.png"/><b>Roi</b> : comme aux échecs classiques.</p>
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/horse.png"/><b>Cheval</b> : Le cheval se déplace comme le cavalier mais uniquement vers l’avant.</p>
+<p><img class='piece-graph'  src="{GAME}/res/rules/shogi/graphs/shogi-horse.png"/></p>
+<p><img style="max-width:100%;" src="{GAME}/res/rules/shogi/lance.png"/><b>Lance</b> : La Lance se déplace comme une Tour mais seulement vers l'avant dans la même colonne, jamais latéralement ou vers l'arrière.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/shogi-lance.png"/></p>
+<h2>Promotion</h2>
+
+<ul>
+<li><b>Le Général d’argent</b> se promeut en Fou</li>
+<li><b>Le Général d’or</b> se promeut en Cheval</li>
+<li><b>Le Pion</b> se promeut en Tour</li>
+<li><b>Le Tokin</b> est rétrogradé en Lance</li>
+</ul>
+
+
+<h2>Parachutage</h2>
+<p>Les pièces capturées deviennent des prisonniers et perdent leur promotion, elles sont conservées sur votre droite. Vous pouvez les utiliser à votre tour pour les remettre en jeu au lieu de déplacer une pièce. Dans ce cas on peut choisir la promotion au parachutage. </p>
+
+<body />
