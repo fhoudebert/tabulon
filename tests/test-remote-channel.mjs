@@ -114,6 +114,9 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> b4517b4 (robustesse)
 // ── 6. resetBaseline() évite un faux positif après une action locale
 //     qui n'a rien poussé au relai (takeback/restart/load) ────────────────────
 {
@@ -136,6 +139,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     assert(calls === 0, 'aucun faux "coup adverse" après resetBaseline() alignée sur le relai');
 }
 
+<<<<<<< HEAD
 // ── 7. Codec 'jocly-simple-match' : interop avec un VRAI client
 //     jocly-simple-match (pas une autre instance de Tabulon) ────────────────────
 {
@@ -181,4 +185,6 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 =======
 >>>>>>> 2d01ed4 (remotechannel)
+=======
+>>>>>>> b4517b4 (robustesse)
 console.log(`\n${passed} assertions passées.`);

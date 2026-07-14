@@ -124,6 +124,7 @@ const DICT = {
         // players
         'players.heading': 'Players', 'players.name': 'Player name',
         'players.matchId': 'Match ID', 'players.relayUrl': 'Relay URL',
+<<<<<<< HEAD
         'players.copy': 'Copy', 'players.copied': 'Copied!',
         'players.test': 'Test', 'players.testChecking': 'Checking…',
         'players.testOk': 'Relay reachable', 'players.testFail': 'Unreachable (network/CORS?)',
@@ -151,6 +152,11 @@ const DICT = {
         'invitation.peerHostFail': 'Could not start listening: {error}',
         'invitation.peerInvalidCode': 'Not a valid peer-to-peer invitation code.',
         'invitation.peerConnectFail': 'Could not reach the host (are you on the same network? firewall?).',
+=======
+        'players.generate': 'Generate', 'players.copy': 'Copy', 'players.copied': 'Copied!',
+        'players.test': 'Test', 'players.testChecking': 'Checking…',
+        'players.testOk': 'Relay reachable', 'players.testFail': 'Unreachable (network/CORS?)',
+>>>>>>> b4517b4 (robustesse)
         // history
         'tip.start': 'Start', 'tip.stepBack': 'Step back',
         'tip.stepForward': 'Step forward', 'tip.playMoves': 'Play',
@@ -273,6 +279,7 @@ const DICT = {
         'showPosition.hint': 'Le format de l\u2019état du plateau dépend du jeu',
         'players.heading': 'Joueurs', 'players.name': 'Nom du joueur',
         'players.matchId': 'Identifiant de partie', 'players.relayUrl': 'URL du relai',
+<<<<<<< HEAD
         'players.copy': 'Copier', 'players.copied': 'Copié !',
         'players.test': 'Tester', 'players.testChecking': 'Vérification…',
         'players.testOk': 'Relai joignable', 'players.testFail': 'Injoignable (réseau/CORS ?)',
@@ -300,6 +307,11 @@ const DICT = {
         'invitation.peerHostFail': 'Impossible de démarrer l\u2019écoute : {error}',
         'invitation.peerInvalidCode': 'Ce n’est pas un code d’invitation pair à pair valide.',
         'invitation.peerConnectFail': 'Impossible de joindre l’hôte (même réseau ? pare-feu ?).',
+=======
+        'players.generate': 'Générer', 'players.copy': 'Copier', 'players.copied': 'Copié !',
+        'players.test': 'Tester', 'players.testChecking': 'Vérification…',
+        'players.testOk': 'Relai joignable', 'players.testFail': 'Injoignable (réseau/CORS ?)',
+>>>>>>> b4517b4 (robustesse)
         'tip.start': 'Début', 'tip.stepBack': 'Coup précédent',
         'tip.stepForward': 'Coup suivant', 'tip.playMoves': 'Lecture',
         'tip.pauseMoves': 'Pause', 'tip.end': 'Fin',
