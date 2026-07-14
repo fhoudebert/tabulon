@@ -175,16 +175,22 @@ external dist cannot break the UI itself.
 Playing a Jocly game against a remote human is being built incrementally on
 the `remoteplay` branch — see `ANALYSE-JEU-DISTANCE.md` for the full design
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> beeed87 (players)
 (transport options compared: HTTP relay, WebRTC/direct P2P, other).
 
 Step 1 landed the transport building block, developed and validated in
 isolation:
+<<<<<<< HEAD
 =======
 (transport options compared: HTTP relay, WebRTC/direct P2P, other). It is
 **not wired into the game window yet** (`play.js`'s `gameLoop()` still only
 knows local human / local AI) — this first step only lands the transport
 building block, developed and validated in isolation:
 >>>>>>> 2d01ed4 (remotechannel)
+=======
+>>>>>>> beeed87 (players)
 
 - `app/content/remote-relay-protocol.js` — pure encode/decode logic for the
   relay's wire format (no fetch, no DOM — plain functions, unit-tested).
@@ -209,6 +215,9 @@ building block, developed and validated in isolation:
   it into the app.
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> beeed87 (players)
 Step 2 wires it into the game window:
 
 - `players[key]` in `play.js` now accepts a third shape alongside `null`
@@ -240,6 +249,7 @@ Step 2 wires it into the game window:
   proper fix would mean periodically pushing a full state snapshot for
   resync, the way jocly-simple-match falls back to a full reload.
 
+<<<<<<< HEAD
 Still open: match resume after the window is closed and reopened (the
 remote config isn't persisted anywhere yet — reopening `play.html` for a
 fork/template/store-based resume loses it, same as it does for the players'
@@ -630,6 +640,14 @@ Still to decide before the next step (wiring into `play.js`): a third player
 type (`{remote: true}` alongside `null`/human and a level object/AI) in
 `gameLoop()`, the invitation screen (match id generation/sharing), and match
 resume after the window is closed and reopened.
+=======
+Still open: an actual invitation *screen* (currently just the match id/relay
+url fields — good enough to test with a friend, copy-paste over chat, but no
+dedicated "create/join a remote game" flow from the hub), and match resume
+after the window is closed and reopened (the remote config isn't persisted
+anywhere yet — reopening `play.html` for a fork/template/store-based resume
+loses it, same as it does for the players' human/AI configuration today).
+>>>>>>> beeed87 (players)
 
 >>>>>>> 2d01ed4 (remotechannel)
 ## Scripts
