@@ -1055,6 +1055,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const remoteSide = invite.player === 'b' ? Jocly.PLAYER_A : Jocly.PLAYER_B;
             const localSide  = invite.player === 'b' ? Jocly.PLAYER_B : Jocly.PLAYER_A;
             players[localSide] = null;
+<<<<<<< HEAD
             await activateRemoteSide(remoteSide, invite.peer ? {
                 // Pair-a-pair : la session est deja etablie (voir
                 // invitation.js) ; les deux cotes sont forcement Tabulon,
@@ -1062,6 +1063,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 remote: true, peer: true, matchId: invite.matchId,
                 gameName: invite.gameName || gameName,
             } : {
+=======
+            await activateRemoteSide(remoteSide, {
+>>>>>>> 484acdb (create match)
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
             });

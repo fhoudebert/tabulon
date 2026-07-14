@@ -343,6 +343,7 @@ Step 6, a real bug found by testing the Create flow against `biscandine.fr`:
   established icon for multiplayer/player configuration elsewhere
   (`play.html`'s Players button).
 
+<<<<<<< HEAD
 Step 8, peer-to-peer play **without any server** (no game relay, no
 signalling server) — starting with the transport building block, validated
 in isolation like step 1 was:
@@ -548,6 +549,8 @@ manual case. Peer-to-peer sides are unaffected (they never had a relay).
 No Rust change; validation is the usual suites plus `node --check` on a
 fresh patched checkout.
 
+=======
+>>>>>>> 484acdb (create match)
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling for the relay transport, and a saved-contact
 address book for peer-to-peer.

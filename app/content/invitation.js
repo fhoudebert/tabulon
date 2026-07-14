@@ -49,9 +49,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // A appeler une fois qu'on a {gameName, matchId, relayUrl, player} valides,
     // qu'ils viennent d'un lien collé (Join) ou d'une partie qu'on vient de
     // créer ici (Create + Start).
+<<<<<<< HEAD
     async function startMatch({ gameName, matchId, relayUrl, player, creator, peer }) {
         const inviteId = 'inv-' + Date.now();
         await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: !!creator, peer: !!peer });
+=======
+    async function startMatch({ gameName, matchId, relayUrl, player, creator }) {
+        const inviteId = 'inv-' + Date.now();
+        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: !!creator });
+>>>>>>> 484acdb (create match)
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
         tRpc.close();
     }
