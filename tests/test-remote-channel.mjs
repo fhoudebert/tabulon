@@ -113,6 +113,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     globalThis.window.__TAURI__.http.fetch = mockFetch; // restaure pour la suite éventuelle
 }
 
+<<<<<<< HEAD
 // ── 6. resetBaseline() évite un faux positif après une action locale
 //     qui n'a rien poussé au relai (takeback/restart/load) ────────────────────
 {
@@ -178,4 +179,6 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     assert(Array.isArray(raw.matchdata.playedMoves), 'ce que nous écrivons expose matchdata.playedMoves (lu par control.js/loadMatchFromID)');
 }
 
+=======
+>>>>>>> 2d01ed4 (remotechannel)
 console.log(`\n${passed} assertions passées.`);

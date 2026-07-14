@@ -18,6 +18,7 @@
 
 export const PROTOCOL_VERSION = 1;
 
+<<<<<<< HEAD
 // Relai HTTP par defaut (etape 1/2 : instance de test jocly-simple-match
 // utilisee pour valider le protocole -- voir README.md § Remote play et
 // ANALYSE-JEU-DISTANCE.md). A rendre choisissable par l'utilisateur dans une
@@ -25,6 +26,8 @@ export const PROTOCOL_VERSION = 1;
 // deja de le remplacer manuellement partie par partie.
 export const DEFAULT_RELAY_URL = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
 
+=======
+>>>>>>> 2d01ed4 (remotechannel)
 /**
  * Construit l'enveloppe JSON poussée après un coup local.
  * @param {{nbTurns:number, lastMove:*, state:*}} data
@@ -131,6 +134,7 @@ export function generateMatchId() {
     for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
     return 'tb-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
+<<<<<<< HEAD
 
 // -- Codec compatible jocly-simple-match ---------------------------------------
 // Contrairement a encodeEnvelope/decodeEnvelope ci-dessus (notre propre
@@ -230,3 +234,5 @@ export function buildInvitationUrl({ relayUrl, gameName, matchId, player }) {
     url.searchParams.set('player', player);
     return url.toString();
 }
+=======
+>>>>>>> 2d01ed4 (remotechannel)

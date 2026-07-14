@@ -4,8 +4,11 @@
 import {
     encodeEnvelope, decodeEnvelope, hasOpponentMoved,
     buildSaveBody, buildLoadBody, generateMatchId,
+<<<<<<< HEAD
     encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope,
     parseInvitationUrl, buildInvitationUrl,
+=======
+>>>>>>> 2d01ed4 (remotechannel)
 } from '../app/content/remote-relay-protocol.js';
 
 let passed = 0;
@@ -81,6 +84,7 @@ assert(hasOpponentMoved(0, null) === false, 'hasOpponentMoved : rien côté rela
     assert(a.length >= 16, 'generateMatchId : longueur suffisante pour ne pas être devinable');
 }
 
+<<<<<<< HEAD
 // ── 8. Codec compatible jocly-simple-match (interop réelle) ─────────────────
 {
     const matchdata = { playedMoves: [{ from: 'e2', to: 'e4' }, { from: 'e7', to: 'e5' }], board: 'xyz' };
@@ -155,4 +159,6 @@ assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/index.php?
 assert(buildInvitationUrl({ relayUrl: 'pas une url', gameName: 'go', matchId: 'x', player: 'a' }) === null,
     'buildInvitationUrl : relayUrl invalide -> null');
 
+=======
+>>>>>>> 2d01ed4 (remotechannel)
 console.log(`\n${passed} assertions passées.`);

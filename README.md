@@ -167,14 +167,24 @@ app shell (`content/**`) always comes from the embedded build, so a stale
 external dist cannot break the UI itself.
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 2d01ed4 (remotechannel)
 ## Remote play (experimental, `remoteplay` branch)
 
 Playing a Jocly game against a remote human is being built incrementally on
 the `remoteplay` branch — see `ANALYSE-JEU-DISTANCE.md` for the full design
+<<<<<<< HEAD
 (transport options compared: HTTP relay, WebRTC/direct P2P, other).
 
 Step 1 landed the transport building block, developed and validated in
 isolation:
+=======
+(transport options compared: HTTP relay, WebRTC/direct P2P, other). It is
+**not wired into the game window yet** (`play.js`'s `gameLoop()` still only
+knows local human / local AI) — this first step only lands the transport
+building block, developed and validated in isolation:
+>>>>>>> 2d01ed4 (remotechannel)
 
 - `app/content/remote-relay-protocol.js` — pure encode/decode logic for the
   relay's wire format (no fetch, no DOM — plain functions, unit-tested).
@@ -198,6 +208,7 @@ isolation:
   needed) — useful to check compatibility with a given relay before wiring
   it into the app.
 
+<<<<<<< HEAD
 Step 2 wires it into the game window:
 
 - `players[key]` in `play.js` now accepts a third shape alongside `null`
@@ -614,6 +625,13 @@ just English where French would be nicer to have.
 
 =======
 >>>>>>> 5778b04 (fin gestion modules)
+=======
+Still to decide before the next step (wiring into `play.js`): a third player
+type (`{remote: true}` alongside `null`/human and a level object/AI) in
+`gameLoop()`, the invitation screen (match id generation/sharing), and match
+resume after the window is closed and reopened.
+
+>>>>>>> 2d01ed4 (remotechannel)
 ## Scripts
 
 All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
@@ -624,11 +642,15 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
 <<<<<<< HEAD
+<<<<<<< HEAD
 | `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
 =======
 >>>>>>> 5778b04 (fin gestion modules)
+=======
+| `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
+>>>>>>> 2d01ed4 (remotechannel)
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the

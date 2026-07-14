@@ -16,7 +16,10 @@ import { httpFetch } from './tauri-bridge.js';
 import {
     encodeEnvelope, decodeEnvelope, hasOpponentMoved,
     buildSaveBody, buildLoadBody,
+<<<<<<< HEAD
     encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope,
+=======
+>>>>>>> 2d01ed4 (remotechannel)
 } from './remote-relay-protocol.js';
 
 /**
@@ -62,6 +65,7 @@ export class HttpRelayChannel extends RemoteChannel {
      * @param {(url:string, init?:object) => Promise<{status:number, text():Promise<string>}>} [opts.fetchImpl]
      *   fetch à utiliser -- par défaut httpFetch (plugin-http, cote Rust, pas
      *   de CORS). Injectable pour les tests (relai en mémoire).
+<<<<<<< HEAD
      * @param {'tabulon'|'jocly-simple-match'} [opts.codec='tabulon']
      *   'tabulon' : notre enveloppe libre (encodeEnvelope/decodeEnvelope) --
      *   suffisante quand les DEUX cotes sont Tabulon.
@@ -82,13 +86,23 @@ export class HttpRelayChannel extends RemoteChannel {
         if (!matchId) throw new Error('HttpRelayChannel: matchId requis');
         if (codec === 'jocly-simple-match' && !gameName)
             throw new Error('HttpRelayChannel: gameName requis pour le codec jocly-simple-match');
+=======
+     */
+    constructor({ relayUrl, matchId, localNbTurns = 0, pollIntervalMs = 1500, fetchImpl = httpFetch }) {
+        super();
+        if (!relayUrl) throw new Error('HttpRelayChannel: relayUrl requis');
+        if (!matchId) throw new Error('HttpRelayChannel: matchId requis');
+>>>>>>> 2d01ed4 (remotechannel)
         this._relayUrl = relayUrl;
         this._matchId = matchId;
         this._localNbTurns = localNbTurns;
         this._pollIntervalMs = pollIntervalMs;
         this._fetch = fetchImpl;
+<<<<<<< HEAD
         this._codec = codec;
         this._gameName = gameName;
+=======
+>>>>>>> 2d01ed4 (remotechannel)
         this._onRemoteMove = null;
         this._timer = null;
         this._polling = false;
@@ -101,6 +115,7 @@ export class HttpRelayChannel extends RemoteChannel {
 
     onRemoteMove(callback) { this._onRemoteMove = callback; }
 
+<<<<<<< HEAD
     /**
      * Recale la baseline de comparaison sans rien transmettre au relai.
      * A utiliser quand la position locale change autrement que par un coup
@@ -117,6 +132,8 @@ export class HttpRelayChannel extends RemoteChannel {
         this._localNbTurns = nbTurns;
     }
 
+=======
+>>>>>>> 2d01ed4 (remotechannel)
     async start() {
         if (this._polling) return;
         this._polling = true;
@@ -130,10 +147,14 @@ export class HttpRelayChannel extends RemoteChannel {
 
     async push({ nbTurns, lastMove = null, state = null }) {
         this._localNbTurns = nbTurns;
+<<<<<<< HEAD
         const envelope = this._codec === 'jocly-simple-match'
             ? encodeJoclySimpleMatchEnvelope({ matchId: this._matchId, gameName: this._gameName, nbTurns, matchdata: state })
             : encodeEnvelope({ nbTurns, lastMove, state });
         const body = buildSaveBody(this._matchId, envelope);
+=======
+        const body = buildSaveBody(this._matchId, encodeEnvelope({ nbTurns, lastMove, state }));
+>>>>>>> 2d01ed4 (remotechannel)
         await this._post(body);
     }
 
@@ -150,9 +171,13 @@ export class HttpRelayChannel extends RemoteChannel {
             const res = await this._post(buildLoadBody(this._matchId));
             const text = await res.text();
             this._lastError = null;
+<<<<<<< HEAD
             const remote = this._codec === 'jocly-simple-match'
                 ? decodeJoclySimpleMatchEnvelope(text)
                 : decodeEnvelope(text);
+=======
+            const remote = decodeEnvelope(text);
+>>>>>>> 2d01ed4 (remotechannel)
             if (hasOpponentMoved(this._localNbTurns, remote)) {
                 this._localNbTurns = remote.nbTurns;
                 this._onRemoteMove?.(remote);

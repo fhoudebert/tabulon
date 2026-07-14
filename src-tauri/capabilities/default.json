@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for all Tabulon windows (hub, play, and satellite windows alike all use the store/os plugins; shell/dialog are used by several of them too)",
+  "description": "Capability for all Tabulon windows (hub, play, and satellite windows alike all use the store/os plugins; shell/dialog are used by several of them too; http is scoped to the remote-play relay hosts only)",
   "windows": ["*"],
   "permissions": [
     "core:default",
@@ -9,6 +9,12 @@
     "shell:default",
     "dialog:default",
     "os:default",
-    "store:default"
+    "store:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://biscandine.fr/*" }
+      ]
+    }
   ]
 }
