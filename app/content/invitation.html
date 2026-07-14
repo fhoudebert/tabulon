@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+		<link rel="icon" href="data:,">
+	<title>Tabulon</title>
+	<link rel="stylesheet" href="tabulon.css">
+	<script>if (typeof module === 'object') { window.module = module; module = undefined; }</script>
+	<script src="../node_modules/jquery/dist/jquery.js" charset="utf-8"></script>
+	<script src="../browser/jocly.js" charset="utf-8"></script>
+	<script type="module" src="invitation.js"></script>
+</head>
+<body>
+<div class="window window-gray">
+	<div class="window-content">
+		<div class="invitation-container">
+			<p class="invitation-intro" data-i18n="invitation.intro"></p>
+			<div class="form-group">
+				<input type="text" id="invitation-url" class="form-control" data-i18n-placeholder="invitation.placeholder">
+			</div>
+			<p id="invitation-status" class="invitation-status"></p>
+		</div>
+	</div>
+	<footer class="toolbar toolbar-footer">
+		<div class="toolbar-actions">
+			<button id="button-cancel" class="btn btn-default"><span data-i18n="btn.cancel">Cancel</span></button>
+			<button id="button-join" class="btn btn-primary pull-right"><span data-i18n="invitation.join">Join</span></button>
+		</div>
+	</footer>
+</div>
+</body>
+</html>

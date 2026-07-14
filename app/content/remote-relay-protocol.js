@@ -131,3 +131,80 @@ export function generateMatchId() {
     for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
     return 'tb-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
+
+// -- Codec compatible jocly-simple-match ---------------------------------------
+// Contrairement a encodeEnvelope/decodeEnvelope ci-dessus (notre propre
+// format, libre puisque le relai ne valide rien), CE codec reproduit
+// exactement la structure ecrite/lue par control.js
+// (https://framagit.org/jcfrog/jocly-simple-match/-/blob/master/js/control.js) :
+//   { matchDetails: {matchId, gameName, nbTurns, a:{pseudo}, b:{pseudo}},
+//     matchdata: <sortie de match.save()>, time, key }
+// Necessaire pour VRAIMENT jouer contre quelqu'un connecte via leur page web
+// (index.php), pas seulement contre une autre instance de Tabulon -- c'est
+// tout l'interet du bouton "Invitation" (voir README.md § Remote play).
+// matchdata est un objet Jocly opaque (mais du meme moteur jocly2 des deux
+// cotes, donc du meme format) ; on ne l'interprete jamais ici, seul
+// matchdata.playedMoves (tableau) est lu pour en extraire le dernier coup.
+
+/**
+ * @param {{matchId:string, gameName:string, nbTurns:number, matchdata:*}} data
+ * @returns {string} JSON pret a poster comme "gamedata"
+ */
+export function encodeJoclySimpleMatchEnvelope({ matchId, gameName, nbTurns, matchdata }) {
+    if (!matchId) throw new Error('encodeJoclySimpleMatchEnvelope: matchId requis');
+    if (!Number.isInteger(nbTurns) || nbTurns < 0) {
+        throw new Error('encodeJoclySimpleMatchEnvelope: nbTurns doit être un entier >= 0');
+    }
+    return JSON.stringify({
+        matchDetails: { matchId, gameName, nbTurns, a: { pseudo: '' }, b: { pseudo: '' } },
+        matchdata,
+        time: Date.now(),
+        // jocly-simple-match ne verifie jamais cette cle malgre son nom --
+        // aucune authentification reelle, cote eux comme cote nous.
+        key: 'tabulon',
+    });
+}
+
+/**
+ * @param {string} text
+ * @returns {{nbTurns:number, lastMove:*, state:*}|null}
+ */
+export function decodeJoclySimpleMatchEnvelope(text) {
+    if (typeof text !== 'string' || text.trim().length === 0) return null;
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch {
+        return null;
+    }
+    const nbTurns = data?.matchDetails?.nbTurns;
+    if (!Number.isInteger(nbTurns)) return null;
+    const moves = data.matchdata?.playedMoves;
+    const lastMove = Array.isArray(moves) && moves.length ? moves[moves.length - 1] : null;
+    return { nbTurns, lastMove, state: data.matchdata ?? null };
+}
+
+/**
+ * Décompose un lien d'invitation jocly-simple-match, ex. :
+ *   https://biscandine.fr/variantes/joclymatch/index.php?game=knightmate-chess&mid=1784023862731-pIUWbcgh0yDFVT&player=a
+ * en {gameName, matchId, player, relayUrl} -- relayUrl est déduite en
+ * remplaçant index.php par fileio.php dans le même dossier (les deux scripts
+ * vivent toujours côte à côte dans jocly-simple-match).
+ * @param {string} urlString
+ * @returns {{gameName:string, matchId:string, player:'a'|'b', relayUrl:string}|null}
+ */
+export function parseInvitationUrl(urlString) {
+    let url;
+    try {
+        url = new URL(String(urlString).trim());
+    } catch {
+        return null;
+    }
+    const gameName = url.searchParams.get('game');
+    const matchId  = url.searchParams.get('mid');
+    const playerParam = (url.searchParams.get('player') || '').toLowerCase();
+    if (!gameName || !matchId || (playerParam !== 'a' && playerParam !== 'b')) return null;
+    // index.php -> fileio.php, meme dossier (convention jocly-simple-match)
+    const relayPath = url.pathname.replace(/[^/]*$/, 'fileio.php');
+    return { gameName, matchId, player: playerParam, relayUrl: url.origin + relayPath };
+}

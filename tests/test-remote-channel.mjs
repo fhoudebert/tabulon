@@ -135,4 +135,47 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     assert(calls === 0, 'aucun faux "coup adverse" après resetBaseline() alignée sur le relai');
 }
 
+// ── 7. Codec 'jocly-simple-match' : interop avec un VRAI client
+//     jocly-simple-match (pas une autre instance de Tabulon) ────────────────────
+{
+    const matchId = 'partie-6';
+    // Simule ce qu'écrirait control.js lui-même (saveGameIfNecessary), sans
+    // passer par notre encodeur -- c'est bien l'interop qu'on teste ici.
+    store.set(matchId, JSON.stringify({
+        matchDetails: { matchId, gameName: 'classic-chess', nbTurns: 1, a: { pseudo: 'Alice' }, b: { pseudo: '' } },
+        matchdata: { playedMoves: [{ from: 'e2', to: 'e4' }], board: 'après 1.e4' },
+        time: Date.now(),
+        key: 'myverypreciouskey',
+    }));
+
+    const me = new HttpRelayChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId, pollIntervalMs: 20,
+        codec: 'jocly-simple-match', gameName: 'classic-chess',
+    });
+    let received = null;
+    me.onRemoteMove(payload => { received = payload; });
+    await me.start();
+    await sleep(60);
+    me.stop();
+
+    assert(received !== null, 'un coup écrit au format control.js est bien détecté');
+    assert(received?.lastMove?.to === 'e4', 'lastMove extrait de matchdata.playedMoves (dernier élément)');
+    assert(received?.state?.board === 'après 1.e4', 'state = matchdata complet (pour un load() intégral côté nous)');
+}
+{
+    // Et dans l'autre sens : ce que NOUS écrivons doit être lisible par un
+    // vrai client control.js -- on vérifie juste la forme exacte des octets
+    // qu'il attend (voir index.php: matchDetails = {matchId,gameName,nbTurns,...}).
+    const matchId = 'partie-7';
+    const me = new HttpRelayChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId, pollIntervalMs: 20,
+        codec: 'jocly-simple-match', gameName: 'go',
+    });
+    await me.push({ nbTurns: 1, state: { playedMoves: [{ pt: [3, 3] }] } });
+    const raw = JSON.parse(store.get(matchId));
+    assert(raw.matchDetails.matchId === matchId && raw.matchDetails.gameName === 'go' && raw.matchDetails.nbTurns === 1,
+        'ce que nous écrivons a la forme exacte attendue par control.js (matchDetails.{matchId,gameName,nbTurns})');
+    assert(Array.isArray(raw.matchdata.playedMoves), 'ce que nous écrivons expose matchdata.playedMoves (lu par control.js/loadMatchFromID)');
+}
+
 console.log(`\n${passed} assertions passées.`);

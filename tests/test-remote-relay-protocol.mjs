@@ -4,6 +4,7 @@
 import {
     encodeEnvelope, decodeEnvelope, hasOpponentMoved,
     buildSaveBody, buildLoadBody, generateMatchId,
+    encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope, parseInvitationUrl,
 } from '../app/content/remote-relay-protocol.js';
 
 let passed = 0;
@@ -78,5 +79,57 @@ assert(hasOpponentMoved(0, null) === false, 'hasOpponentMoved : rien côté rela
     assert(a !== b, 'generateMatchId : deux appels donnent deux identifiants différents');
     assert(a.length >= 16, 'generateMatchId : longueur suffisante pour ne pas être devinable');
 }
+
+// ── 8. Codec compatible jocly-simple-match (interop réelle) ─────────────────
+{
+    const matchdata = { playedMoves: [{ from: 'e2', to: 'e4' }, { from: 'e7', to: 'e5' }], board: 'xyz' };
+    const json = encodeJoclySimpleMatchEnvelope({ matchId: 'm-1', gameName: 'classic-chess', nbTurns: 2, matchdata });
+    const raw = JSON.parse(json);
+    assert(raw.matchDetails.matchId === 'm-1', 'encodeJoclySimpleMatchEnvelope : matchId au bon endroit (matchDetails)');
+    assert(raw.matchDetails.gameName === 'classic-chess', 'encodeJoclySimpleMatchEnvelope : gameName présent');
+    assert(raw.matchDetails.nbTurns === 2, 'encodeJoclySimpleMatchEnvelope : nbTurns présent');
+    assert(typeof raw.matchDetails.a?.pseudo === 'string' && typeof raw.matchDetails.b?.pseudo === 'string',
+        'encodeJoclySimpleMatchEnvelope : champs a.pseudo/b.pseudo présents (forme exacte de control.js)');
+    assert(JSON.stringify(raw.matchdata) === JSON.stringify(matchdata), 'encodeJoclySimpleMatchEnvelope : matchdata transmis tel quel');
+    assert(raw.key === 'tabulon', 'encodeJoclySimpleMatchEnvelope : champ key présent (jamais vérifié par le relai, mais attendu par control.js)');
+
+    const decoded = decodeJoclySimpleMatchEnvelope(json);
+    assert(decoded.nbTurns === 2, 'decodeJoclySimpleMatchEnvelope : nbTurns lu depuis matchDetails.nbTurns');
+    assert(decoded.lastMove.to === 'e5', 'decodeJoclySimpleMatchEnvelope : lastMove = dernier élément de matchdata.playedMoves');
+    assert(JSON.stringify(decoded.state) === JSON.stringify(matchdata), 'decodeJoclySimpleMatchEnvelope : state = matchdata complet (pour un load() intégral)');
+}
+assert(decodeJoclySimpleMatchEnvelope('') === null, 'decodeJoclySimpleMatchEnvelope("") -> null');
+assert(decodeJoclySimpleMatchEnvelope('{"matchDetails":{}}') === null,
+    'decodeJoclySimpleMatchEnvelope sans nbTurns -> null');
+{
+    // matchdata sans playedMoves (partie tout juste créée, 0 coup) : ne doit
+    // pas planter, lastMove reste null.
+    const json = encodeJoclySimpleMatchEnvelope({ matchId: 'm-2', gameName: 'go', nbTurns: 0, matchdata: {} });
+    const decoded = decodeJoclySimpleMatchEnvelope(json);
+    assert(decoded.nbTurns === 0 && decoded.lastMove === null, 'decodeJoclySimpleMatchEnvelope : matchdata sans playedMoves -> lastMove null, pas d’exception');
+}
+
+// ── 9. Parsing d'un lien d'invitation jocly-simple-match ──────────────────────
+{
+    const url = 'https://biscandine.fr/variantes/joclymatch/index.php?game=knightmate-chess&mid=1784023862731-pIUWbcgh0yDFVT&player=a';
+    const parsed = parseInvitationUrl(url);
+    assert(parsed.gameName === 'knightmate-chess', 'parseInvitationUrl : gameName extrait');
+    assert(parsed.matchId === '1784023862731-pIUWbcgh0yDFVT', 'parseInvitationUrl : matchId extrait tel quel');
+    assert(parsed.player === 'a', 'parseInvitationUrl : player extrait');
+    assert(parsed.relayUrl === 'https://biscandine.fr/variantes/joclymatch/fileio.php',
+        `parseInvitationUrl : relayUrl déduite (index.php -> fileio.php, même dossier) (obtenu: ${parsed.relayUrl})`);
+}
+{
+    const parsed = parseInvitationUrl(
+        'https://biscandine.fr/variantes/joclymatch/index.php?game=go&mid=abc&player=B');
+    assert(parsed.player === 'b', 'parseInvitationUrl : "player" insensible à la casse (B -> b)');
+}
+assert(parseInvitationUrl('ceci n’est pas une URL') === null, 'parseInvitationUrl : chaîne invalide -> null');
+assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/index.php?game=go&mid=abc') === null,
+    'parseInvitationUrl : player manquant -> null');
+assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/index.php?mid=abc&player=a') === null,
+    'parseInvitationUrl : game manquant -> null');
+assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/index.php?game=go&player=a') === null,
+    'parseInvitationUrl : mid manquant -> null');
 
 console.log(`\n${passed} assertions passées.`);

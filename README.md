@@ -199,19 +199,17 @@ Step 2 wires it into the game window:
   proper fix would mean periodically pushing a full state snapshot for
   resync, the way jocly-simple-match falls back to a full reload.
 
-Still open: an actual invitation *screen* (currently just the match id/relay
-url fields — good enough to test with a friend, copy-paste over chat, but no
-dedicated "create/join a remote game" flow from the hub), and match resume
-after the window is closed and reopened (the remote config isn't persisted
-anywhere yet — reopening `play.html` for a fork/template/store-based resume
-loses it, same as it does for the players' human/AI configuration today).
-On that last point: Tabulon has **no general "resume this exact match by id"
-mechanism** even for local games — `new_match` hands out a fresh in-memory
-id every time (`src-tauri/src/commands/match_cmds.rs`), so this isn't a
-remote-play-specific gap to close so much as it's how the app already works
-(Save/Load and templates are the existing way to carry a position across
-sessions). If remote play needs its own resume story later, it'll likely
-piggyback on that Save/Load format rather than inventing a new one.
+Still open: match resume after the window is closed and reopened (the
+remote config isn't persisted anywhere yet — reopening `play.html` for a
+fork/template/store-based resume loses it, same as it does for the players'
+human/AI configuration today). Tabulon has **no general "resume this exact
+match by id" mechanism** even for local games — `new_match` hands out a
+fresh in-memory id every time (`src-tauri/src/commands/match_cmds.rs`), so
+this isn't a remote-play-specific gap to close so much as it's how the app
+already works (Save/Load and templates are the existing way to carry a
+position across sessions). If remote play needs its own resume story later,
+it'll likely piggyback on that Save/Load format rather than inventing a new
+one.
 
 Step 3, smaller correctness/robustness pass on step 2:
 
@@ -236,6 +234,49 @@ Step 3, smaller correctness/robustness pass on step 2:
   missing from `capabilities/default.json`'s `http:default` scope before
   starting to actually play.
 
+Step 4, the invitation screen — and, underneath it, real interop with the
+actual jocly-simple-match web client (not just Tabulon talking to Tabulon):
+
+- New **Invitation** button on the hub's game detail panel, next to Quick
+  play / Clocked play. Opens `invitation.html`/`invitation.js`: paste a link
+  such as
+  `https://biscandine.fr/variantes/joclymatch/index.php?game=knightmate-chess&mid=…&player=a`
+  and Join starts the match already configured with a remote opponent on the
+  correct side.
+- Steps 1–3 used our own JSON envelope for the relay (`encodeEnvelope` /
+  `decodeEnvelope` in `remote-relay-protocol.js`) — deliberately free-form,
+  since `fileio.php` doesn't validate structure, and it was enough for
+  Tabulon talking to Tabulon. An invitation link, though, may well be shared
+  with someone playing through jocly-simple-match's *own* web page
+  (`index.php`/`control.js`) rather than through Tabulon — and their client
+  only understands **their** exact wire format:
+  `{matchDetails:{matchId,gameName,nbTurns,a:{pseudo},b:{pseudo}}, matchdata, time, key}`.
+  `HttpRelayChannel` now takes a `codec` option (`'tabulon'`, the default, or
+  `'jocly-simple-match'`) selecting between the two on both read and write;
+  invitation-based games use `'jocly-simple-match'` automatically. The two
+  clients can share the exact same match on the exact same relay this way —
+  validated live against `biscandine.fr`, both directions
+  (`scripts/check-jocly-compat.mjs`: what Tabulon writes is read back with
+  the exact shape `control.js` expects, and a payload shaped exactly like
+  what `control.js` itself writes is correctly decoded by Tabulon).
+- `matchdata` in that format **is** the full engine state (same jocly2
+  engine both sides, so the same `match.save()`/`match.load()` shape) —
+  pushes now always include it (`joclyMatch.save()`), not just the last
+  move, which the `'jocly-simple-match'` codec requires (their reference
+  client does a full `match.load()` on every change, not an incremental
+  `playMove()`).
+- `players.js`'s Save button doesn't expose `codec`/`gameName` as editable
+  fields (only matchId/relayUrl) — to avoid silently downgrading an
+  invitation-joined side back to the `'tabulon'` codec if the Players window
+  is opened and saved without touching that side, it now preserves the
+  original `codec`/`gameName` whenever the match id in the form is left
+  unchanged from what it received.
+
+Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
+WebSocket instead of polling, and peer-to-peer (WebRTC or direct) without
+any relay server — including, as raised alongside this step, joining via a
+short invitation code or a saved contact instead of a URL. Not started.
+
 ## Scripts
 
 All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
@@ -246,6 +287,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
+| `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the

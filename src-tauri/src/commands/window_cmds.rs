@@ -116,6 +116,22 @@ pub fn open_info(app: AppHandle, game_name: String) -> Result<(), String> {
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// rpc.call("openInvitation", gameName) — coller un lien d'invitation
+/// jocly-simple-match (index.php?game=...&mid=...&player=...) pour rejoindre
+/// une partie a distance. Lance new_match(gameName, ..., inviteId) une fois
+/// le lien valide (voir invitation.js).
+#[tauri::command]
+pub fn open_invitation(app: AppHandle, game_name: String) -> Result<(), String> {
+    open_window(&app, WindowOptions {
+        label: &format!("invitation-{game_name}"),
+        url:   &format!("content/invitation.html?game={game_name}"),
+        title: &format!("Invitation — {game_name}"),
+        width: 460.0, height: 260.0,
+        min_width: 340.0, min_height: 220.0,
+        persist_key: None,
+    }).map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// rpc.call("open_extensions") — écran de gestion des extensions (dist externe)
 #[tauri::command]
 pub fn open_extensions(app: AppHandle) -> Result<(), String> {

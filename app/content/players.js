@@ -10,6 +10,10 @@ import { listen, emit, httpFetch } from './tauri-bridge.js';
 import { generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
 
 const matchId = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
+// Preserve codec/gameName (ex. venus d'une invitation jocly-simple-match)
+// tant que le match id n'est pas change ici -- le formulaire ne les affiche
+// pas, on ne veut pas les perdre silencieusement a un simple Save.
+const lastReceivedRemote = { a: null, b: null };
 
 function BuildSelect(sel, levels, currentType, currentLevelIndex) {
     sel.innerHTML = '';
@@ -71,6 +75,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (info.type === 'remote') {
                 if (matchIdInput) matchIdInput.value = info.matchId || '';
                 if (relayInput)   relayInput.value   = info.relayUrl || DEFAULT_RELAY_URL;
+                // Retenu pour Save : si le match id n'est pas modifié dans ce
+                // formulaire, on rend au moteur le codec/gameName d'origine
+                // (ex. jocly-simple-match venu d'une invitation) plutôt que
+                // de le faire silencieusement retomber sur notre codec par
+                // défaut, qui casserait l'interop avec l'autre client.
+                lastReceivedRemote[which] = { matchId: info.matchId, codec: info.codec, gameName: info.gameName };
+            } else {
+                lastReceivedRemote[which] = null;
             }
             SyncRemoteFields(form);
         });
@@ -132,8 +144,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else if (val === 'remote') {
                 const matchIdVal = form.querySelector('.match-id')?.value.trim();
                 const relayUrlVal = form.querySelector('.relay-url')?.value.trim() || DEFAULT_RELAY_URL;
-                if (matchIdVal) result[key] = { type: 'remote', matchId: matchIdVal, relayUrl: relayUrlVal };
-                else result[key] = { type: 'human', levelIndex: -1 };  // pas d'id -> repli humain
+                if (matchIdVal) {
+                    const prev = lastReceivedRemote[which];
+                    const unchanged = prev && prev.matchId === matchIdVal;
+                    result[key] = {
+                        type: 'remote', matchId: matchIdVal, relayUrl: relayUrlVal,
+                        codec: unchanged ? prev.codec : 'tabulon',
+                        gameName: unchanged ? prev.gameName : undefined,
+                    };
+                } else {
+                    result[key] = { type: 'human', levelIndex: -1 };  // pas d'id -> repli humain
+                }
             } else {
                 const idx = parseInt(val.replace('ai:', ''), 10);
                 result[key] = { type: 'ai', levelIndex: idx };

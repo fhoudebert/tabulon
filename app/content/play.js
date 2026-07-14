@@ -33,6 +33,9 @@ const clockConfig = (() => {
 })();
 // ID de la partie dont on fork la position (store key "fork:{forkId}")
 const forkId = new URLSearchParams(window.location.search).get('fork') || null;
+// ID de l'invitation à rejoindre (store key "invite:{inviteId}"), déposée par
+// invitation.js juste avant new_match -- voir README.md § Remote play.
+const inviteId = new URLSearchParams(window.location.search).get('invite') || null;
 
 // -- Horloge --------------------------------------------------------------------
 // Modèle JoclyBoard (joc/app/joclyboard.js) : l'état de l'horloge vit ici,
@@ -159,11 +162,14 @@ function cancelRemoteWait(reason) {
 // currentNbTurns : nombre de coups deja joues localement au moment de la
 // creation (baseline correcte pour une partie deja entamee -- fork, reprise
 // apres fermeture de la fenetre...) ; ignore si le canal existe deja.
-function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl }, currentNbTurns) {
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName }, currentNbTurns) {
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
-    remoteChannel = new HttpRelayChannel({ relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns });
+    remoteChannel = new HttpRelayChannel({
+        relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns,
+        codec: codec || 'tabulon', gameName: remoteGameName || gameName,
+    });
     remoteChannelKey = playerKey;
     remoteChannel.onRemoteMove(onRemoteMoveReceived);
     remoteChannel.start();
@@ -194,14 +200,21 @@ async function resyncRemoteChannelBaseline() {
 // players[key] (interne) <-> descripteur echange avec players.js (satellite)
 function describePlayer(value) {
     if (!value) return { type: 'human' };
-    if (value.remote) return { type: 'remote', matchId: value.matchId, relayUrl: value.relayUrl };
+    if (value.remote) return {
+        type: 'remote', matchId: value.matchId, relayUrl: value.relayUrl,
+        codec: value.codec || 'tabulon', gameName: value.gameName || null,
+    };
     return { type: 'ai', levelIndex: levels.indexOf(value) };
 }
 
 function buildPlayerValue(info) {
     if (!info) return null;
     if (info.type === 'remote' && info.matchId && info.relayUrl)
-        return { remote: true, matchId: String(info.matchId), relayUrl: String(info.relayUrl) };
+        return {
+            remote: true, matchId: String(info.matchId), relayUrl: String(info.relayUrl),
+            codec: info.codec === 'jocly-simple-match' ? 'jocly-simple-match' : 'tabulon',
+            gameName: info.gameName || gameName,
+        };
     if (info.type === 'ai' && levels[info.levelIndex]) return levels[info.levelIndex];
     return null;
 }
@@ -286,9 +299,15 @@ async function gameLoop() {
             // qu'un adversaire distant existe (sur l'AUTRE cote), on le lui
             // transmet. On ne repousse jamais un coup qu'on vient de recevoir
             // de lui (playedLocally=false) -- inutile, il l'a deja.
+            // state (joclyMatch.save()) est INDISPENSABLE en codec
+            // jocly-simple-match (un vrai client control.js fait
+            // match.load(matchdata), il n'y a pas d'equivalent playMove(un
+            // seul coup) cote leur protocole) ; utile aussi en codec 'tabulon'
+            // pour une resynchronisation complete si besoin plus tard.
             if (playedLocally && remoteChannel) {
                 const moves = await joclyMatch.getPlayedMoves().catch(() => []);
-                remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null })
+                const state = await joclyMatch.save().catch(() => null);
+                remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null, state })
                     .catch(e => console.warn('[play] envoi du coup au relai distant échoué :', e.message || e));
             }
 
@@ -537,7 +556,8 @@ function initSatelliteListeners() {
         await ClockTurn(await joclyMatch.getTurn().catch(() => null)).catch(() => {});
         if (remoteChannel) {
             const moves = await joclyMatch.getPlayedMoves().catch(() => []);
-            remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null })
+            const state = await joclyMatch.save().catch(() => null);
+            remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null, state })
                 .catch(e => console.warn('[play] envoi du coup au relai distant échoué :', e.message || e));
         }
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
@@ -952,6 +972,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             await joclyMatch.load(saveData).catch(e => console.warn('[play] fork load failed:', e));
             store?.delete('fork:' + forkId).catch(() => {});
         }
+    }
+
+    // Si invite : rejoindre une partie via un lien d'invitation
+    // jocly-simple-match (voir invitation.js). "player" dans le lien est le
+    // cote que JE joue localement -- l'AUTRE cote est donc distant, avec le
+    // codec compatible control.js (pas notre enveloppe 'tabulon').
+    console.info('[play] inviteId depuis l\'URL :', inviteId);
+    if (inviteId) {
+        const invite = await store?.get('invite:' + inviteId).catch(() => null);
+        console.info('[play] invite lu depuis le store :', invite);
+        if (invite?.matchId && invite?.relayUrl) {
+            const remoteSide = invite.player === 'b' ? Jocly.PLAYER_A : Jocly.PLAYER_B;
+            const localSide  = invite.player === 'b' ? Jocly.PLAYER_B : Jocly.PLAYER_A;
+            players[localSide]  = null;
+            players[remoteSide] = {
+                remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
+                codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
+            };
+            console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);
+        } else {
+            console.warn('[play] invite: donnees introuvables pour', inviteId);
+        }
+        store?.delete('invite:' + inviteId).catch(() => {});
     }
 
     // Câblage des fenêtres satellites : elles envoient des events Tauri

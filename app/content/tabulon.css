@@ -974,3 +974,23 @@ strong { font-weight: 600; }
 .ext-dist-label { color: #737475; margin-right: 6px; }
 #ext-status { line-height: 22px; }
 .ext-readonly { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 4px; color: #6b5200; }
+
+/* -- invitation.html --------------------------------------------------------- */
+.invitation-container {
+  padding: 16px;
+}
+.invitation-intro {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 10px 0;
+}
+.invitation-status {
+  font-size: 12px;
+  min-height: 16px;
+}
+.invitation-status.warn {
+  color: #9a6700;
+}
+.invitation-status.fail {
+  color: #cf222e;
+}

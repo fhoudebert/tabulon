@@ -222,7 +222,7 @@ function InitDetailButtons() {
     // détail manque (ancien hub.html encore servi), on désactive le panneau
     // avec un message actionnable au lieu de laisser un TypeError bloquer
     // tout le DOMContentLoaded (et donc le chargement de la liste des jeux).
-    const required = ['quickplay', 'clockedplay', 'info', 'boardstate',
+    const required = ['quickplay', 'clockedplay', 'invitation', 'info', 'boardstate',
         'favorite', 'unfavorite', 'fileElem', 'openbook', 'detail-back',
         'game-detail-body', 'game-detail-empty'];
     const missing = required.filter(id => !document.getElementById(id));
@@ -237,6 +237,7 @@ function InitDetailButtons() {
     const g = () => currentGame;
     document.getElementById('quickplay').addEventListener('click',   () => g() && tRpc.call('new_match', g()));
     document.getElementById('clockedplay').addEventListener('click', () => g() && tRpc.call('open_clock_setup', g()));
+    document.getElementById('invitation').addEventListener('click',  () => g() && tRpc.call('open_invitation', g()));
     document.getElementById('info').addEventListener('click',        () => g() && tRpc.call('open_info', g()));
     document.getElementById('boardstate').addEventListener('click',  () => g() && tRpc.call('open_board_state', g()));
 
