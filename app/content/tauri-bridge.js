@@ -106,3 +106,10 @@ export const Store = new Proxy(function () {}, {
 // @tauri-apps/plugin-os
 export const platform = (...args) => tauri().os.platform(...args);
 export const locale   = (...args) => tauri().os.locale(...args);
+
+// @tauri-apps/plugin-http — fetch execute cote Rust (reqwest), donc pas
+// soumis au CORS du navigateur. Necessaire pour parler a un relai HTTP
+// distant (fileio.php de jocly-simple-match n'envoie pas d'en-tetes CORS).
+// L'URL doit etre autorisee dans capabilities/default.json (permission
+// http:default -> allow[].url).
+export const httpFetch = (...args) => tauri().http.fetch(...args);

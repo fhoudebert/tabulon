@@ -137,6 +137,42 @@ reported by the `get_dist_info` command (About panel / Extensions screen). The
 app shell (`content/**`) always comes from the embedded build, so a stale
 external dist cannot break the UI itself.
 
+## Remote play (experimental, `remoteplay` branch)
+
+Playing a Jocly game against a remote human is being built incrementally on
+the `remoteplay` branch — see `ANALYSE-JEU-DISTANCE.md` for the full design
+(transport options compared: HTTP relay, WebRTC/direct P2P, other). It is
+**not wired into the game window yet** (`play.js`'s `gameLoop()` still only
+knows local human / local AI) — this first step only lands the transport
+building block, developed and validated in isolation:
+
+- `app/content/remote-relay-protocol.js` — pure encode/decode logic for the
+  relay's wire format (no fetch, no DOM — plain functions, unit-tested).
+- `app/content/remote-channel.js` — the transport-agnostic `RemoteChannel`
+  interface (`start`/`stop`/`push`/`onRemoteMove`) plus its first
+  implementation, `HttpRelayChannel`: HTTP polling against a relay speaking
+  the same wire protocol as jocly-simple-match's `fileio.php`
+  (<https://framagit.org/jcfrog/jocly-simple-match>) — a dumb key/value
+  store per match id, no server-side validation of the payload. This makes
+  it usable, as-is, against an existing instance such as
+  <https://biscandine.fr/variantes/joclymatch/fileio.php>, or a fresh
+  deployment of the same PHP script.
+- Requests go through `tauri-plugin-http` (`httpFetch` in `tauri-bridge.js`),
+  not the webview's native `fetch` — the relay doesn't send CORS headers, so
+  a browser-side `fetch` would be blocked; the Rust-side HTTP client isn't
+  subject to that. Allowed relay hosts are scoped in
+  `src-tauri/capabilities/default.json` (`http:default` → `allow[].url`);
+  add a host there before pointing `HttpRelayChannel` at it.
+- `scripts/check-remote-relay.mjs` exercises the protocol against a **real**
+  jocly-simple-match instance from plain Node (no CORS there, so no plugin
+  needed) — useful to check compatibility with a given relay before wiring
+  it into the app.
+
+Still to decide before the next step (wiring into `play.js`): a third player
+type (`{remote: true}` alongside `null`/human and a level object/AI) in
+`gameLoop()`, the invitation screen (match id generation/sharing), and match
+resume after the window is closed and reopened.
+
 ## Scripts
 
 All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
@@ -146,6 +182,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
+| `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the

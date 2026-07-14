@@ -25,6 +25,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_cli::init())
+        .plugin(tauri_plugin_http::init())
         // ── États partagés ───────────────────────────────────────────────────
         .manage(AppState::default())
         .manage(NotifyChannels::default())
