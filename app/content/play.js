@@ -361,6 +361,16 @@ function BuildPlayerSelect(selectId, playerKey) {
         sel.appendChild(opt);
     });
 
+    // "Joueur distant" : pas de champs ici (matchId/relayUrl) -- choisir
+    // cette option ouvre la fenetre Players (voir plus bas) plutot que de
+    // configurer quoi que ce soit directement. L'option existe surtout pour
+    // que le select puisse REFLETER cet etat quand il est configure par
+    // ailleurs (invitation, fenetre Players) -- voir syncFooterSelect().
+    const optRemote = document.createElement('option');
+    optRemote.value = 'remote';
+    optRemote.textContent = t('common.remote');
+    sel.appendChild(optRemote);
+
     // Defaut : A = humain, B = premier niveau IA (si disponible)
     if (playerKey === Jocly.PLAYER_B && levels.length > 0) {
         players[playerKey] = levels[0];
@@ -372,6 +382,15 @@ function BuildPlayerSelect(selectId, playerKey) {
 
     sel.addEventListener('change', async () => {
         const v = sel.value;
+        if (v === 'remote') {
+            // Pas de champs ici pour matchId/relayUrl -- on ouvre Players et
+            // on remet le select dans l'etat qu'il reflete reellement en
+            // attendant (syncFooterSelect corrigera l'affichage une fois la
+            // config reelle connue, via get-players/set-players ou l'invite).
+            syncFooterSelect(playerKey);
+            tRpc.call('open_players', matchId);
+            return;
+        }
         const wasRemote = !!players[playerKey]?.remote;
         players[playerKey] = v === '' ? null : levels[parseInt(v, 10)];
         await joclyMatch?.abortUserTurn().catch(() => {});
@@ -380,6 +399,18 @@ function BuildPlayerSelect(selectId, playerKey) {
         if (wasRemote && ![Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote))
             disposeRemoteChannel();
     });
+}
+
+// Aligne le select rapide du footer (select-player-a/-b) sur l'etat reel de
+// players[key] -- humain (''), IA (index en string), ou distant ('remote').
+// A appeler chaque fois que players[key] change ailleurs que par ce select
+// lui-meme (invitation, fenetre Players).
+function syncFooterSelect(key) {
+    const selId = key === Jocly.PLAYER_A ? 'select-player-a' : 'select-player-b';
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    const value = players[key];
+    sel.value = value?.remote ? 'remote' : value ? String(levels.indexOf(value)) : '';
 }
 
 // -- Communication avec les fenetres satellites --------------------------------
@@ -449,16 +480,8 @@ function initSatelliteListeners() {
             const stillRemote = [Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote);
             if (!stillRemote) disposeRemoteChannel();
         }
-        // Mettre a jour les selects dans play.html (humain/IA seulement --
-        // "distant" n'y figure pas, se configure via la fenetre Players)
-        [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach(key => {
-            const selId = key === Jocly.PLAYER_A ? 'select-player-a' : 'select-player-b';
-            const sel = document.getElementById(selId);
-            if (!sel) return;
-            const info = payload[key];
-            if (info?.type === 'remote') return;   // pas d'option correspondante ici
-            sel.value = (info?.type === 'ai' && info.levelIndex >= 0) ? String(info.levelIndex) : '';
-        });
+        // Mettre a jour les selects rapides du footer (humain/IA/distant)
+        [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach(key => syncFooterSelect(key));
     });
 
     // get-played-moves : retourne l'historique des coups comme strings lisibles
@@ -990,6 +1013,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
             };
+            syncFooterSelect(localSide);
+            syncFooterSelect(remoteSide);
             console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);
         } else {
             console.warn('[play] invite: donnees introuvables pour', inviteId);

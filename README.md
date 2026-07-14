@@ -272,6 +272,29 @@ actual jocly-simple-match web client (not just Tabulon talking to Tabulon):
   original `codec`/`gameName` whenever the match id in the form is left
   unchanged from what it received.
 
+Step 5, after joining an invitation-based game against a real jocly-simple-
+match instance confirmed the move exchange itself works: two follow-ups.
+
+- The footer's quick player select (`select-player-a`/`-b`, next to the
+  toolbar) never had a "remote" option, so it kept showing whatever
+  human/AI default it was built with even after a side was actually
+  configured as remote (by an invitation or by the Players window) — the
+  match played correctly, but that dropdown lied about it. It now has a
+  (display-only) "Remote player" entry, kept in sync with the real
+  `players[key]` state from every place that changes it (invitation join/
+  create, Players window save). Picking it manually from the footer just
+  opens the Players window instead of pretending to configure anything —
+  there's no room for a matchId/relayUrl there.
+- **Invitation window can now also create a game**, not just join one: pick
+  a relay (defaults to the same test instance), *Create* generates a match
+  id and shows the link for the other player to open (`player=b` — you play
+  `a`), *Start* launches it. `buildInvitationUrl()` in
+  `remote-relay-protocol.js` is the exact inverse of `parseInvitationUrl()`.
+  No server-side "create match" step is involved — `fileio.php` is a dumb
+  per-id store with no registration, so the id only starts to mean anything
+  once the first move is pushed to it, same as if it had been created
+  through jocly-simple-match's own `gamespanel.php`.
+
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling, and peer-to-peer (WebRTC or direct) without
 any relay server — including, as raised alongside this step, joining via a

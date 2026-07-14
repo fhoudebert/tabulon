@@ -4,7 +4,8 @@
 import {
     encodeEnvelope, decodeEnvelope, hasOpponentMoved,
     buildSaveBody, buildLoadBody, generateMatchId,
-    encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope, parseInvitationUrl,
+    encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope,
+    parseInvitationUrl, buildInvitationUrl,
 } from '../app/content/remote-relay-protocol.js';
 
 let passed = 0;
@@ -131,5 +132,27 @@ assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/index.php?
     'parseInvitationUrl : game manquant -> null');
 assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/index.php?game=go&player=a') === null,
     'parseInvitationUrl : mid manquant -> null');
+
+// ── 10. Construction d'un lien d'invitation (sens inverse : je crée) ────────
+{
+    const link = buildInvitationUrl({
+        relayUrl: 'https://biscandine.fr/variantes/joclymatch/fileio.php',
+        gameName: 'knightmate-chess', matchId: '1784023862731-pIUWbcgh0yDFVT', player: 'b',
+    });
+    assert(link === 'https://biscandine.fr/variantes/joclymatch/index.php?game=knightmate-chess&mid=1784023862731-pIUWbcgh0yDFVT&player=b',
+        `buildInvitationUrl : lien construit correctement (obtenu: ${link})`);
+}
+{
+    // Aller-retour : ce que je construis doit se reparser à l'identique
+    // (à part le rôle : je construis le lien pour l'AUTRE joueur).
+    const relayUrl = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
+    const link = buildInvitationUrl({ relayUrl, gameName: 'go', matchId: 'xyz-123', player: 'b' });
+    const reparsed = parseInvitationUrl(link);
+    assert(reparsed.gameName === 'go' && reparsed.matchId === 'xyz-123' && reparsed.player === 'b',
+        'buildInvitationUrl puis parseInvitationUrl : aller-retour cohérent');
+    assert(reparsed.relayUrl === relayUrl, 'buildInvitationUrl puis parseInvitationUrl : relayUrl retrouvée à l’identique');
+}
+assert(buildInvitationUrl({ relayUrl: 'pas une url', gameName: 'go', matchId: 'x', player: 'a' }) === null,
+    'buildInvitationUrl : relayUrl invalide -> null');
 
 console.log(`\n${passed} assertions passées.`);

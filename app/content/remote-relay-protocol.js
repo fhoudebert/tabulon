@@ -208,3 +208,25 @@ export function parseInvitationUrl(urlString) {
     const relayPath = url.pathname.replace(/[^/]*$/, 'fileio.php');
     return { gameName, matchId, player: playerParam, relayUrl: url.origin + relayPath };
 }
+
+/**
+ * Inverse de parseInvitationUrl : construit le lien à envoyer à l'autre
+ * joueur pour une partie qu'ON vient de créer (voir invitation.js, section
+ * "Create"). fileio.php -> index.php, même dossier -- même convention.
+ * @param {{relayUrl:string, gameName:string, matchId:string, player:'a'|'b'}} data
+ * @returns {string|null} null si relayUrl n'est pas une URL valide
+ */
+export function buildInvitationUrl({ relayUrl, gameName, matchId, player }) {
+    let url;
+    try {
+        url = new URL(relayUrl);
+    } catch {
+        return null;
+    }
+    url.pathname = url.pathname.replace(/[^/]*$/, 'index.php');
+    url.search = '';
+    url.searchParams.set('game', gameName);
+    url.searchParams.set('mid', matchId);
+    url.searchParams.set('player', player);
+    return url.toString();
+}

@@ -126,8 +126,8 @@ pub fn open_invitation(app: AppHandle, game_name: String) -> Result<(), String> 
         label: &format!("invitation-{game_name}"),
         url:   &format!("content/invitation.html?game={game_name}"),
         title: &format!("Invitation — {game_name}"),
-        width: 460.0, height: 260.0,
-        min_width: 340.0, min_height: 220.0,
+        width: 480.0, height: 480.0,
+        min_width: 360.0, min_height: 420.0,
         persist_key: None,
     }).map(|_| ()).map_err(|e| e.to_string())
 }

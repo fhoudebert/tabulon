@@ -994,3 +994,26 @@ strong { font-weight: 600; }
 .invitation-status.fail {
   color: #cf222e;
 }
+.invitation-container h4 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+.invitation-container hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 14px 0;
+}
+.invitation-actions {
+  text-align: right;
+  margin-bottom: 4px;
+}
+.invitation-link-row {
+  display: flex;
+  gap: 4px;
+}
+.invitation-link-row input {
+  flex: 1;
+  font-size: 11px;
+}
