@@ -119,6 +119,8 @@ const DICT = {
         'players.heading': 'Players', 'players.name': 'Player name',
         'players.matchId': 'Match ID', 'players.relayUrl': 'Relay URL',
         'players.generate': 'Generate', 'players.copy': 'Copy', 'players.copied': 'Copied!',
+        'players.test': 'Test', 'players.testChecking': 'Checking…',
+        'players.testOk': 'Relay reachable', 'players.testFail': 'Unreachable (network/CORS?)',
         // history
         'tip.start': 'Start', 'tip.stepBack': 'Step back',
         'tip.stepForward': 'Step forward', 'tip.playMoves': 'Play',
@@ -236,6 +238,8 @@ const DICT = {
         'players.heading': 'Joueurs', 'players.name': 'Nom du joueur',
         'players.matchId': 'Identifiant de partie', 'players.relayUrl': 'URL du relai',
         'players.generate': 'Générer', 'players.copy': 'Copier', 'players.copied': 'Copié !',
+        'players.test': 'Tester', 'players.testChecking': 'Vérification…',
+        'players.testOk': 'Relai joignable', 'players.testFail': 'Injoignable (réseau/CORS ?)',
         'tip.start': 'Début', 'tip.stepBack': 'Coup précédent',
         'tip.stepForward': 'Coup suivant', 'tip.playMoves': 'Lecture',
         'tip.pauseMoves': 'Pause', 'tip.end': 'Fin',

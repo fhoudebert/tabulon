@@ -113,4 +113,26 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     globalThis.window.__TAURI__.http.fetch = mockFetch; // restaure pour la suite éventuelle
 }
 
+// ── 6. resetBaseline() évite un faux positif après une action locale
+//     qui n'a rien poussé au relai (takeback/restart/load) ────────────────────
+{
+    const matchId = 'partie-5';
+    const a = new HttpRelayChannel({ relayUrl: 'https://relai.test/fileio.php', matchId, pollIntervalMs: 15 });
+    const b = new HttpRelayChannel({ relayUrl: 'https://relai.test/fileio.php', matchId, pollIntervalMs: 15 });
+
+    await a.push({ nbTurns: 3, lastMove: 'm3' });   // le relai est déjà à 3
+
+    let calls = 0;
+    b.onRemoteMove(() => { calls++; });
+    // B a localement rechargé une position à 3 coups (takeback/restart) sans
+    // rien pousser au relai -- resetBaseline() aligne sa reference sur 3
+    // sans passer par push() (qui, lui, ecrirait au relai).
+    b.resetBaseline(3);
+    await b.start();
+    await sleep(60);
+    a.stop(); b.stop();
+
+    assert(calls === 0, 'aucun faux "coup adverse" après resetBaseline() alignée sur le relai');
+}
+
 console.log(`\n${passed} assertions passées.`);

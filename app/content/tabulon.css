@@ -733,6 +733,17 @@ strong { font-weight: 600; }
 .players-container .remote-fields button {
   flex: 1;
 }
+.players-container .remote-test-status {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: #666;
+}
+.players-container .remote-test-status.ok {
+  color: #1a7f37;
+}
+.players-container .remote-test-status.fail {
+  color: #cf222e;
+}
 
 /* -- view-options.html ------------------------------------------------------ */
 .view-options {

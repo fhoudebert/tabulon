@@ -205,6 +205,36 @@ dedicated "create/join a remote game" flow from the hub), and match resume
 after the window is closed and reopened (the remote config isn't persisted
 anywhere yet — reopening `play.html` for a fork/template/store-based resume
 loses it, same as it does for the players' human/AI configuration today).
+On that last point: Tabulon has **no general "resume this exact match by id"
+mechanism** even for local games — `new_match` hands out a fresh in-memory
+id every time (`src-tauri/src/commands/match_cmds.rs`), so this isn't a
+remote-play-specific gap to close so much as it's how the app already works
+(Save/Load and templates are the existing way to carry a position across
+sessions). If remote play needs its own resume story later, it'll likely
+piggyback on that Save/Load format rather than inventing a new one.
+
+Step 3, smaller correctness/robustness pass on step 2:
+
+- `input-move` (the "Possible moves" satellite window) played moves by
+  calling `playMove()` directly, bypassing `gameLoop()` entirely — so a move
+  played that way during a remote game was never sent to the opponent. Fixed:
+  it now pushes to the active channel exactly like `gameLoop()` does for any
+  locally-played move.
+- Takeback, restart, rollback-to, loading a board state, and loading a saved
+  game file all change the local position **without** going through the
+  relay (this relay has no concept of "unplay a move"). Previously only some
+  of these cancelled a pending wait for the opponent's move; now all of them
+  do, and all of them also call the new `HttpRelayChannel.resetBaseline()`
+  so the channel's own move-count bookkeeping matches the new local
+  position — otherwise it could permanently miss a subsequent opponent move,
+  or misfire on one it had already seen. This does **not** fix the relay
+  desync itself (still a known limitation, see above) — it only keeps our
+  side's tracking consistent with whatever the local position actually is.
+- The Players window's "Remote player" fields gained a **Test** button: a
+  one-off connectivity check against the configured relay URL (independent
+  of whether the match id has any data yet), to catch a wrong URL or a host
+  missing from `capabilities/default.json`'s `http:default` scope before
+  starting to actually play.
 
 ## Scripts
 

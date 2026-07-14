@@ -83,6 +83,22 @@ export class HttpRelayChannel extends RemoteChannel {
 
     onRemoteMove(callback) { this._onRemoteMove = callback; }
 
+    /**
+     * Recale la baseline de comparaison sans rien transmettre au relai.
+     * A utiliser quand la position locale change autrement que par un coup
+     * poussé (takeback, restart, chargement d'une sauvegarde/etat...) : ces
+     * actions n'ont pas d'equivalent cote relai (fileio.php ne sait pas
+     * "deposer un coup"), donc elles ne font QUE decaler notre reference
+     * locale pour eviter de re-signaler comme "nouveau" un coup deja connu,
+     * ou de rater un vrai nouveau coup adverse. Ne resout PAS la
+     * desynchronisation avec le relai lui-meme (voir README.md § Remote play,
+     * limite connue).
+     * @param {number} nbTurns
+     */
+    resetBaseline(nbTurns) {
+        this._localNbTurns = nbTurns;
+    }
+
     async start() {
         if (this._polling) return;
         this._polling = true;

@@ -178,6 +178,19 @@ function disposeRemoteChannel() {
     cancelRemoteWait('remote channel disposed');
 }
 
+// A appeler apres toute action qui change la position locale SANS passer par
+// gameLoop (takeback, restart, rollback-to, chargement d'un fichier/etat) :
+// recale la baseline du canal actif sur le nombre de coups reellement joue
+// localement maintenant, pour eviter un faux positif ou un coup manque au
+// prochain poll. Ne resout PAS la desynchronisation avec le relai lui-meme
+// (voir README.md § Remote play, limite connue) -- juste notre bookkeeping.
+async function resyncRemoteChannelBaseline() {
+    if (!remoteChannel) return;
+    remoteMoveBuffer = null;
+    const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+    remoteChannel.resetBaseline(moves.length);
+}
+
 // players[key] (interne) <-> descripteur echange avec players.js (satellite)
 function describePlayer(value) {
     if (!value) return { type: 'human' };
@@ -453,6 +466,7 @@ function initSatelliteListeners() {
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('rollback');
         await joclyMatch.rollback(payload?.index ?? 0).catch(e => console.warn('[play] rollback:', e));
+        await resyncRemoteChannelBaseline();
     });
 
     // get-template-data : données complètes pour "Save template"
@@ -484,6 +498,7 @@ function initSatelliteListeners() {
         cancelRemoteWait('load-board-state');
         try {
             await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: payload.state });
+            await resyncRemoteChannelBaseline();
             paused = false;
             UpdatePause();
             UpdateFooter('');
@@ -511,12 +526,20 @@ function initSatelliteListeners() {
     // input-move : joue un coup choisi dans la fenêtre "Possible moves"
     // (équivalent joclyboard::inputMove) — on interrompt le userTurn en
     // attente puis on applique ; la boucle reprend sur le tour suivant.
+    // Ce chemin contourne gameLoop() (playMove direct, pas userTurn) : on
+    // reproduit donc ici l'envoi au relai distant que gameLoop fait pour tout
+    // coup joué localement, sinon l'adversaire distant ne le recevrait jamais.
     listen(prefix + 'input-move', async ({ payload }) => {
         if (!joclyMatch || !payload?.move) return;
         await joclyMatch.abortUserTurn().catch(() => {});
         cancelRemoteWait('input-move');
         await joclyMatch.playMove(payload.move).catch(e => console.warn('[play] input-move:', e));
         await ClockTurn(await joclyMatch.getTurn().catch(() => null)).catch(() => {});
+        if (remoteChannel) {
+            const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+            remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null })
+                .catch(e => console.warn('[play] envoi du coup au relai distant échoué :', e.message || e));
+        }
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
     });
 
@@ -625,6 +648,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const turn = await joclyMatch.getTurn().catch(() => null);
             if (!players[turn]) break;  // tour humain trouvé
         }
+        await resyncRemoteChannelBaseline();
     });
 
     btn('button-restart', async () => {
@@ -633,6 +657,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('restart');
         await joclyMatch.rollback(0);
+        await resyncRemoteChannelBaseline();
         paused = false;
         UpdatePause();
         UpdateFooter('');
@@ -695,7 +720,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             catch { console.warn('[play] load: invalid JSON'); return; }
             await joclyMatch.abortUserTurn().catch(() => {});
             await joclyMatch.abortMachineSearch().catch(() => {});
-            try { await joclyMatch.load(data); }
+            cancelRemoteWait('load-file');
+            try { await joclyMatch.load(data); await resyncRemoteChannelBaseline(); }
             catch (err) {
                 // ex. "Trying to load X to Y match" (mauvais jeu)
                 console.warn('[play] load failed:', err.message);

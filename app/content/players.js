@@ -6,8 +6,8 @@
 import tRpc from './tabulon-rpc.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
-import { listen, emit } from './tauri-bridge.js';
-import { generateMatchId, DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
+import { listen, emit, httpFetch } from './tauri-bridge.js';
+import { generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
 
 const matchId = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
 
@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.relay-url').forEach(el => el.placeholder = t('players.relayUrl'));
     document.querySelectorAll('.btn-generate').forEach(el => el.textContent = t('players.generate'));
     document.querySelectorAll('.btn-copy').forEach(el => el.textContent = t('players.copy'));
+    document.querySelectorAll('.btn-test').forEach(el => el.textContent = t('players.test'));
 
     listen('play-rep:' + matchId + ':get-players', ({ payload }) => {
         const { levels, players } = payload;
@@ -94,6 +95,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 setTimeout(() => { btn.textContent = original; }, 1200);
             } catch (e) {
                 console.warn('[players] clipboard write failed:', e.message || e);
+            }
+        });
+        form.querySelector('.btn-test')?.addEventListener('click', async () => {
+            const relayUrl = form.querySelector('.relay-url')?.value.trim() || DEFAULT_RELAY_URL;
+            const matchIdVal = form.querySelector('.match-id')?.value.trim() || 'tabulon-test';
+            const status = form.querySelector('.remote-test-status');
+            if (status) { status.textContent = t('players.testChecking'); status.className = 'remote-test-status'; }
+            try {
+                const res = await httpFetch(relayUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: buildLoadBody(matchIdVal).toString(),
+                });
+                await res.text();   // le contenu importe peu ici -- seule l'atteignabilité compte
+                if (status) { status.textContent = t('players.testOk'); status.className = 'remote-test-status ok'; }
+            } catch (e) {
+                console.warn('[players] test relay failed:', e.message || e);
+                if (status) { status.textContent = t('players.testFail'); status.className = 'remote-test-status fail'; }
             }
         });
     });
