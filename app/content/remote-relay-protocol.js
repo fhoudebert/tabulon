@@ -18,6 +18,13 @@
 
 export const PROTOCOL_VERSION = 1;
 
+// Relai HTTP par defaut (etape 1/2 : instance de test jocly-simple-match
+// utilisee pour valider le protocole -- voir README.md § Remote play et
+// ANALYSE-JEU-DISTANCE.md). A rendre choisissable par l'utilisateur dans une
+// etape ulterieure ; en attendant, le champ "Relay URL" de players.js permet
+// deja de le remplacer manuellement partie par partie.
+export const DEFAULT_RELAY_URL = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
+
 /**
  * Construit l'enveloppe JSON poussée après un coup local.
  * @param {{nbTurns:number, lastMove:*, state:*}} data

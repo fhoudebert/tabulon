@@ -718,6 +718,21 @@ strong { font-weight: 600; }
 .players-container .form-group {
   margin-top: 4px;
 }
+.players-container .remote-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.players-container .remote-fields .match-id {
+  flex: 1 1 100%;
+}
+.players-container .remote-fields .relay-url {
+  flex: 1 1 100%;
+  font-size: 11px;
+}
+.players-container .remote-fields button {
+  flex: 1;
+}
 
 /* -- view-options.html ------------------------------------------------------ */
 .view-options {

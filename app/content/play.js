@@ -12,6 +12,8 @@ import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
+import { HttpRelayChannel } from './remote-channel.js';
+import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
 const gameName = new URLSearchParams(window.location.search).get('game') || 'classic-chess';
@@ -104,8 +106,92 @@ let loopActive   = false;
 let paused       = false;
 let levels       = [];
 
-// Joueurs : null = humain, sinon objet level Jocly
+// Joueurs : null = humain local, objet level Jocly = IA,
+// {remote:true, matchId, relayUrl} = adversaire distant (voir players.js).
+// Un seul cote peut etre "remote" a la fois : l'autre est necessairement
+// humain local (c'est "moi" qui joue cette partie).
 const players = {};
+
+// -- Jeu a distance -------------------------------------------------------------
+// Un seul HttpRelayChannel actif a la fois pour ce match. gameLoop() attend
+// le prochain coup adverse via waitForRemoteMove() ; le callback du canal
+// (onRemoteMove) resout l'attente en cours, ou bufferise le coup si gameLoop
+// n'a pas encore atteint le tour distant (cas normal : le polling peut
+// detecter le coup un peu avant que la boucle ne l'attende explicitement).
+let remoteChannel      = null;
+let remoteChannelKey   = null;   // Jocly.PLAYER_A/B associe au canal actif
+let remoteMoveBuffer   = null;   // {nbTurns, lastMove} recu avant d'etre attendu
+let remoteMoveWaiters  = [];     // [{expectedNbTurns, resolve, reject}]
+
+function onRemoteMoveReceived(payload) {
+    remoteMoveBuffer = payload;
+    remoteMoveWaiters = remoteMoveWaiters.filter(w => {
+        if (payload.nbTurns !== w.expectedNbTurns) return true;
+        remoteMoveBuffer = null;
+        w.resolve(payload.lastMove);
+        return false;
+    });
+}
+
+function waitForRemoteMove(expectedNbTurns) {
+    if (remoteMoveBuffer && remoteMoveBuffer.nbTurns === expectedNbTurns) {
+        const move = remoteMoveBuffer.lastMove;
+        remoteMoveBuffer = null;
+        return Promise.resolve(move);
+    }
+    return new Promise((resolve, reject) => {
+        remoteMoveWaiters.push({ expectedNbTurns, resolve, reject });
+    });
+}
+
+// A appeler partout ou l'on annule le tour courant (pause, reconfiguration
+// des joueurs, restart, takeback) -- meme role que abortUserTurn()/
+// abortMachineSearch() pour le cas "j'attends un coup distant".
+function cancelRemoteWait(reason) {
+    const waiters = remoteMoveWaiters;
+    remoteMoveWaiters = [];
+    waiters.forEach(w => w.reject(new Error(reason)));
+}
+
+// Cree (ou reutilise) le canal pour la configuration donnee, et l'associe a
+// playerKey (le cote distant). Si un canal existe deja pour une autre partie
+// (matchId different) ou un autre cote, il est arrete proprement d'abord.
+// currentNbTurns : nombre de coups deja joues localement au moment de la
+// creation (baseline correcte pour une partie deja entamee -- fork, reprise
+// apres fermeture de la fenetre...) ; ignore si le canal existe deja.
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl }, currentNbTurns) {
+    if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
+        return remoteChannel;
+    disposeRemoteChannel();
+    remoteChannel = new HttpRelayChannel({ relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns });
+    remoteChannelKey = playerKey;
+    remoteChannel.onRemoteMove(onRemoteMoveReceived);
+    remoteChannel.start();
+    return remoteChannel;
+}
+
+function disposeRemoteChannel() {
+    remoteChannel?.stop();
+    remoteChannel = null;
+    remoteChannelKey = null;
+    remoteMoveBuffer = null;
+    cancelRemoteWait('remote channel disposed');
+}
+
+// players[key] (interne) <-> descripteur echange avec players.js (satellite)
+function describePlayer(value) {
+    if (!value) return { type: 'human' };
+    if (value.remote) return { type: 'remote', matchId: value.matchId, relayUrl: value.relayUrl };
+    return { type: 'ai', levelIndex: levels.indexOf(value) };
+}
+
+function buildPlayerValue(info) {
+    if (!info) return null;
+    if (info.type === 'remote' && info.matchId && info.relayUrl)
+        return { remote: true, matchId: String(info.matchId), relayUrl: String(info.relayUrl) };
+    if (info.type === 'ai' && levels[info.levelIndex]) return levels[info.levelIndex];
+    return null;
+}
 
 // -- Boucle de jeu ------------------------------------------------------------
 async function gameLoop() {
@@ -120,19 +206,35 @@ async function gameLoop() {
 
             const turn = await joclyMatch.getTurn();
             await ClockTurn(turn);
-            const level = players[turn];   // null = humain, objet = IA
+            const level = players[turn];   // null = humain, objet level = IA, {remote:true,...} = distant
 
-            let finished = false;
-            let winner   = null;
+            let finished     = false;
+            let winner       = null;
+            let playedLocally = false;   // false pour le tour "distant" (coup deja joue par l'adversaire)
 
             try {
-                if (!level) {
+                if (level?.remote) {
+                    // Tour distant : personne localement pour jouer -- on
+                    // attend le coup de l'adversaire via le relai, puis on
+                    // l'applique. Comme pour l'IA (mode proxy iframe),
+                    // playMove() est necessaire (le coup n'a pas ete joue ici).
+                    const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+                    ensureRemoteChannel(turn, level, moves.length);
+                    UpdateFooter(t('play.waitingRemote'));
+                    const move = await waitForRemoteMove(moves.length + 1);
+                    UpdateFooter('');
+                    const playResult = await joclyMatch.playMove(move);
+                    finished = playResult?.finished || false;
+                    winner   = playResult?.winner;
+
+                } else if (!level) {
                     // Tour humain.
                     // userTurn() joue le coup en interne (mode proxy iframe)
                     // et retourne {move, finished, winner} directement.
                     const result = await joclyMatch.userTurn();
                     finished = result?.finished || false;
                     winner   = result?.winner;
+                    playedLocally = true;
 
                 } else {
                     // Tour IA.
@@ -152,17 +254,29 @@ async function gameLoop() {
                         const r2 = await joclyMatch.userTurn();
                         finished = r2?.finished || false;
                         winner   = r2?.winner;
+                        playedLocally = true;
                     } else {
                         const playResult = await joclyMatch.playMove(result.move);
                         finished = playResult?.finished || false;
                         winner   = playResult?.winner;
+                        playedLocally = true;
                     }
                 }
             } catch (e) {
-                // abortUserTurn() / abortMachineSearch() -> reboucler
+                // abortUserTurn() / abortMachineSearch() / cancelRemoteWait() -> reboucler
                 console.info('[play] turn aborted:', e.message);
                 UpdateFooter('');
                 continue;
+            }
+
+            // Si un coup vient d'etre joue localement (humain ou IA) et
+            // qu'un adversaire distant existe (sur l'AUTRE cote), on le lui
+            // transmet. On ne repousse jamais un coup qu'on vient de recevoir
+            // de lui (playedLocally=false) -- inutile, il l'a deja.
+            if (playedLocally && remoteChannel) {
+                const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+                remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null })
+                    .catch(e => console.warn('[play] envoi du coup au relai distant échoué :', e.message || e));
             }
 
             if (finished) {
@@ -226,9 +340,13 @@ function BuildPlayerSelect(selectId, playerKey) {
 
     sel.addEventListener('change', async () => {
         const v = sel.value;
+        const wasRemote = !!players[playerKey]?.remote;
         players[playerKey] = v === '' ? null : levels[parseInt(v, 10)];
         await joclyMatch?.abortUserTurn().catch(() => {});
         await joclyMatch?.abortMachineSearch().catch(() => {});
+        cancelRemoteWait('players reconfigured (footer)');
+        if (wasRemote && ![Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote))
+            disposeRemoteChannel();
     });
 }
 
@@ -266,36 +384,47 @@ function initSatelliteListeners() {
         await emit(`play-rep:${matchId}:get-players`, {
             levels:  cfg.model?.levels || [],
             players: {
-                [Jocly.PLAYER_A]: { type: players[Jocly.PLAYER_A] ? 'ai' : 'human', levelIndex: levels.indexOf(players[Jocly.PLAYER_A]) },
-                [Jocly.PLAYER_B]: { type: players[Jocly.PLAYER_B] ? 'ai' : 'human', levelIndex: levels.indexOf(players[Jocly.PLAYER_B]) },
+                [Jocly.PLAYER_A]: describePlayer(players[Jocly.PLAYER_A]),
+                [Jocly.PLAYER_B]: describePlayer(players[Jocly.PLAYER_B]),
             },
         });
     });
 
     // set-players : change les types de joueurs
-    // payload : { [PLAYER_A]: { type:'human'|'ai', levelIndex:N }, ... }
+    // payload : { [PLAYER_A]: {type:'human'} | {type:'ai',levelIndex:N} |
+    //             {type:'remote',matchId,relayUrl}, ... }
     listen(prefix + 'set-players', async ({ payload }) => {
         if (!joclyMatch || !payload) return;
         const abort = async () => {
             await joclyMatch.abortUserTurn().catch(() => {});
             await joclyMatch.abortMachineSearch().catch(() => {});
+            cancelRemoteWait('players reconfigured');
         };
         let changed = false;
         for (const [playerKey, info] of Object.entries(payload)) {
             const key = parseInt(playerKey, 10);
-            const newLevel = info.type === 'ai' && levels[info.levelIndex] ? levels[info.levelIndex] : null;
-            if (JSON.stringify(players[key]) !== JSON.stringify(newLevel)) {
-                players[key] = newLevel;
+            const newValue = buildPlayerValue(info);
+            if (JSON.stringify(players[key]) !== JSON.stringify(newValue)) {
+                players[key] = newValue;
                 changed = true;
             }
         }
-        if (changed) await abort();
-        // Mettre a jour les selects dans play.html
+        if (changed) {
+            await abort();
+            // Plus aucun cote distant configure -> on arrete le canal tout de
+            // suite (sinon gameLoop en (re)cree/reutilise un au bon moment,
+            // via ensureRemoteChannel, quand c'est le tour du cote distant).
+            const stillRemote = [Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote);
+            if (!stillRemote) disposeRemoteChannel();
+        }
+        // Mettre a jour les selects dans play.html (humain/IA seulement --
+        // "distant" n'y figure pas, se configure via la fenetre Players)
         [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach(key => {
             const selId = key === Jocly.PLAYER_A ? 'select-player-a' : 'select-player-b';
             const sel = document.getElementById(selId);
             if (!sel) return;
             const info = payload[key];
+            if (info?.type === 'remote') return;   // pas d'option correspondante ici
             sel.value = (info?.type === 'ai' && info.levelIndex >= 0) ? String(info.levelIndex) : '';
         });
     });
@@ -322,6 +451,7 @@ function initSatelliteListeners() {
         if (!joclyMatch) return;
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
+        cancelRemoteWait('rollback');
         await joclyMatch.rollback(payload?.index ?? 0).catch(e => console.warn('[play] rollback:', e));
     });
 
@@ -351,6 +481,7 @@ function initSatelliteListeners() {
         if (!joclyMatch || !payload?.state) return;
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
+        cancelRemoteWait('load-board-state');
         try {
             await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: payload.state });
             paused = false;
@@ -383,6 +514,7 @@ function initSatelliteListeners() {
     listen(prefix + 'input-move', async ({ payload }) => {
         if (!joclyMatch || !payload?.move) return;
         await joclyMatch.abortUserTurn().catch(() => {});
+        cancelRemoteWait('input-move');
         await joclyMatch.playMove(payload.move).catch(e => console.warn('[play] input-move:', e));
         await ClockTurn(await joclyMatch.getTurn().catch(() => null)).catch(() => {});
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
@@ -472,6 +604,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!joclyMatch) return;
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
+        cancelRemoteWait('takeback');
+        // LIMITE CONNUE : si un canal distant est actif, reculer localement
+        // ne "desjoue" rien cote relai (fileio.php n'a pas de notion de
+        // retrait de coup) -- la partie distante peut se retrouver
+        // desynchronisee du relai jusqu'au prochain coup local repousse.
+        // Pas traite a cette etape (voir README.md § Remote play).
 
         const moves = await joclyMatch.getPlayedMoves().catch(() => []);
         const n = moves?.length || 0;
@@ -493,6 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!joclyMatch) return;
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
+        cancelRemoteWait('restart');
         await joclyMatch.rollback(0);
         paused = false;
         UpdatePause();
@@ -667,6 +806,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // couvre aussi le cas où cet invoke n'a pas le temps de partir)
     window.addEventListener('beforeunload', () => {
         if (videoRecording) { videoRecording = false; tRpc.call('stop_recording', matchId).catch(() => {}); }
+        disposeRemoteChannel();
     });
     btn('button-stop-video', () => StopRecording());
 

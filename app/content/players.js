@@ -1,11 +1,13 @@
 // app/content/players.js
-// Fenetre satellite : configuration des joueurs (humain / IA niveau X).
-// Communique avec play.html via Tauri events (play-req/play-rep:{matchId}:*).
+// Fenetre satellite : configuration des joueurs (humain / IA niveau X /
+// distant). Communique avec play.html via Tauri events
+// (play-req/play-rep:{matchId}:*).
 
 import tRpc from './tabulon-rpc.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { listen, emit } from './tauri-bridge.js';
+import { generateMatchId, DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 const matchId = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
 
@@ -20,13 +22,37 @@ function BuildSelect(sel, levels, currentType, currentLevelIndex) {
         opt.textContent = lvl.label || lvl.name || t('common.level', { n: i + 1 });
         sel.appendChild(opt);
     });
-    sel.value = (currentType === 'ai' && currentLevelIndex >= 0)
-        ? 'ai:' + currentLevelIndex : 'human';
+    const optRemote = document.createElement('option');
+    optRemote.value = 'remote'; optRemote.textContent = t('common.remote');
+    sel.appendChild(optRemote);
+
+    sel.value = currentType === 'ai' && currentLevelIndex >= 0 ? 'ai:' + currentLevelIndex
+        : currentType === 'remote' ? 'remote'
+        : 'human';
+}
+
+// Affiche/masque les champs match-id/relay-url selon le type sélectionné, et
+// pré-remplit l'URL du relai par défaut si le champ est vide.
+function SyncRemoteFields(form) {
+    const sel = form.querySelector('select');
+    const remoteFields = form.querySelector('.remote-fields');
+    const relayInput = form.querySelector('.relay-url');
+    const show = sel.value === 'remote';
+    if (remoteFields) remoteFields.style.display = show ? '' : 'none';
+    if (show && relayInput && !relayInput.value) relayInput.value = DEFAULT_RELAY_URL;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     await twu.init(t('players.title', { id: matchId }));
+
+    // Libellés des champs distants (placeholders + boutons) -- pas
+    // gérés par data-i18n dans le HTML statique, posés ici comme le reste
+    // du texte dynamique de cette fenêtre.
+    document.querySelectorAll('.match-id').forEach(el => el.placeholder = t('players.matchId'));
+    document.querySelectorAll('.relay-url').forEach(el => el.placeholder = t('players.relayUrl'));
+    document.querySelectorAll('.btn-generate').forEach(el => el.textContent = t('players.generate'));
+    document.querySelectorAll('.btn-copy').forEach(el => el.textContent = t('players.copy'));
 
     listen('play-rep:' + matchId + ':get-players', ({ payload }) => {
         const { levels, players } = payload;
@@ -37,10 +63,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!sel) return;
             const info = players[key] || {};
             BuildSelect(sel, levels, info.type, info.levelIndex);
-            const nameInput = form.querySelector('input[type=text]');
+            const nameInput = form.querySelector('input[type=text]:not(.match-id):not(.relay-url)');
             if (nameInput) nameInput.value = which === 'a' ? t('common.playerA') : t('common.playerB');
+            const matchIdInput = form.querySelector('.match-id');
+            const relayInput   = form.querySelector('.relay-url');
+            if (info.type === 'remote') {
+                if (matchIdInput) matchIdInput.value = info.matchId || '';
+                if (relayInput)   relayInput.value   = info.relayUrl || DEFAULT_RELAY_URL;
+            }
+            SyncRemoteFields(form);
         });
         twu.ready();
+    });
+
+    // Bascule d'affichage des champs distants + génération/copie du match id
+    document.querySelectorAll('.players-a, .players-b').forEach(form => {
+        form.querySelector('select')?.addEventListener('change', () => SyncRemoteFields(form));
+        form.querySelector('.btn-generate')?.addEventListener('click', () => {
+            const input = form.querySelector('.match-id');
+            if (input) input.value = generateMatchId();
+        });
+        form.querySelector('.btn-copy')?.addEventListener('click', async () => {
+            const input = form.querySelector('.match-id');
+            const btn = form.querySelector('.btn-copy');
+            if (!input?.value || !btn) return;
+            try {
+                await navigator.clipboard.writeText(input.value);
+                const original = btn.textContent;
+                btn.textContent = t('players.copied');
+                setTimeout(() => { btn.textContent = original; }, 1200);
+            } catch (e) {
+                console.warn('[players] clipboard write failed:', e.message || e);
+            }
+        });
     });
 
     document.getElementById('button-cancel')?.addEventListener('click', () => tRpc.close());
@@ -49,11 +104,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         const result = {};
         ['a', 'b'].forEach(which => {
             const key  = which === 'a' ? 1 : -1;
-            const sel  = document.querySelector('.players-' + which + ' select');
+            const form = document.querySelector('.players-' + which);
+            const sel  = form?.querySelector('select');
             if (!sel) return;
             const val  = sel.value;
             if (val === 'human') {
                 result[key] = { type: 'human', levelIndex: -1 };
+            } else if (val === 'remote') {
+                const matchIdVal = form.querySelector('.match-id')?.value.trim();
+                const relayUrlVal = form.querySelector('.relay-url')?.value.trim() || DEFAULT_RELAY_URL;
+                if (matchIdVal) result[key] = { type: 'remote', matchId: matchIdVal, relayUrl: relayUrlVal };
+                else result[key] = { type: 'human', levelIndex: -1 };  // pas d'id -> repli humain
             } else {
                 const idx = parseInt(val.replace('ai:', ''), 10);
                 result[key] = { type: 'ai', levelIndex: idx };

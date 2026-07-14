@@ -141,10 +141,10 @@ external dist cannot break the UI itself.
 
 Playing a Jocly game against a remote human is being built incrementally on
 the `remoteplay` branch — see `ANALYSE-JEU-DISTANCE.md` for the full design
-(transport options compared: HTTP relay, WebRTC/direct P2P, other). It is
-**not wired into the game window yet** (`play.js`'s `gameLoop()` still only
-knows local human / local AI) — this first step only lands the transport
-building block, developed and validated in isolation:
+(transport options compared: HTTP relay, WebRTC/direct P2P, other).
+
+Step 1 landed the transport building block, developed and validated in
+isolation:
 
 - `app/content/remote-relay-protocol.js` — pure encode/decode logic for the
   relay's wire format (no fetch, no DOM — plain functions, unit-tested).
@@ -168,10 +168,43 @@ building block, developed and validated in isolation:
   needed) — useful to check compatibility with a given relay before wiring
   it into the app.
 
-Still to decide before the next step (wiring into `play.js`): a third player
-type (`{remote: true}` alongside `null`/human and a level object/AI) in
-`gameLoop()`, the invitation screen (match id generation/sharing), and match
-resume after the window is closed and reopened.
+Step 2 wires it into the game window:
+
+- `players[key]` in `play.js` now accepts a third shape alongside `null`
+  (local human) and a level object (AI): `{remote:true, matchId, relayUrl}`.
+  Exactly one side would normally be remote — the other stays a local human
+  (or even an AI, if you want to let it play unattended against a remote
+  friend; nothing enforces "remote implies the other side is human").
+- `gameLoop()` branches three ways: local human turn (`userTurn()`,
+  unchanged), local AI turn (`machineSearch()`+`playMove()`, unchanged), and
+  remote turn (waits for the next move from the active `HttpRelayChannel`,
+  then `playMove()`s it). After any turn played *locally* (human or AI), if
+  a remote channel is active, the move is pushed to it.
+- The **Players** satellite window (`players.html`/`players.js`) gained a
+  "Remote player" option per side, with a match id field (plus a "Generate"
+  button — a non-guessable id, since — like jocly-simple-match — the relay
+  itself has no real authentication, only the id's secrecy — and a "Copy"
+  button to hand it to the other player through whatever channel you like:
+  chat, email...) and a relay URL field (defaults to the same test instance
+  as `check-remote-relay.mjs`).
+- Every existing "abort the current turn" spot (pause, takeback, restart,
+  reconfiguring players, loading a board state, rolling back, playing a move
+  from the "possible moves" window) also cancels a pending wait for a remote
+  move, so the game loop never hangs.
+- **Known limitation, not addressed at this step**: takeback/rollback while
+  a remote channel is active does not "unplay" anything on the relay side —
+  the relay has no such concept (see `ANALYSE-JEU-DISTANCE.md` §6). The
+  local game can desync from the relay's move counter until the next local
+  move is pushed. Fine for now (this is still an experimental branch); a
+  proper fix would mean periodically pushing a full state snapshot for
+  resync, the way jocly-simple-match falls back to a full reload.
+
+Still open: an actual invitation *screen* (currently just the match id/relay
+url fields — good enough to test with a friend, copy-paste over chat, but no
+dedicated "create/join a remote game" flow from the hub), and match resume
+after the window is closed and reopened (the remote config isn't persisted
+anywhere yet — reopening `play.html` for a fork/template/store-based resume
+loses it, same as it does for the players' human/AI configuration today).
 
 ## Scripts
 
