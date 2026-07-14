@@ -6,13 +6,8 @@
 import tRpc from './tabulon-rpc.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
-<<<<<<< HEAD
 import { listen, emit } from './tauri-bridge.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
-=======
-import { listen, emit, httpFetch } from './tauri-bridge.js';
-import { generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
->>>>>>> b4517b4 (robustesse)
 
 const matchId = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
 // Preserve codec/gameName (ex. venus d'une invitation jocly-simple-match)
@@ -60,13 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // gérés par data-i18n dans le HTML statique, posés ici comme le reste
     // du texte dynamique de cette fenêtre.
     document.querySelectorAll('.match-id').forEach(el => el.placeholder = t('players.matchId'));
-<<<<<<< HEAD
-=======
-    document.querySelectorAll('.relay-url').forEach(el => el.placeholder = t('players.relayUrl'));
-    document.querySelectorAll('.btn-generate').forEach(el => el.textContent = t('players.generate'));
-    document.querySelectorAll('.btn-copy').forEach(el => el.textContent = t('players.copy'));
-    document.querySelectorAll('.btn-test').forEach(el => el.textContent = t('players.test'));
->>>>>>> b4517b4 (robustesse)
 
     listen('play-rep:' + matchId + ':get-players', ({ payload }) => {
         const { levels, players } = payload;
@@ -102,44 +90,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // distance -- ici ne restent que les champs, pour l'edition manuelle.
     document.querySelectorAll('.players-a, .players-b').forEach(form => {
         form.querySelector('select')?.addEventListener('change', () => SyncRemoteFields(form));
-<<<<<<< HEAD
-=======
-        form.querySelector('.btn-generate')?.addEventListener('click', () => {
-            const input = form.querySelector('.match-id');
-            if (input) input.value = generateMatchId();
-        });
-        form.querySelector('.btn-copy')?.addEventListener('click', async () => {
-            const input = form.querySelector('.match-id');
-            const btn = form.querySelector('.btn-copy');
-            if (!input?.value || !btn) return;
-            try {
-                await navigator.clipboard.writeText(input.value);
-                const original = btn.textContent;
-                btn.textContent = t('players.copied');
-                setTimeout(() => { btn.textContent = original; }, 1200);
-            } catch (e) {
-                console.warn('[players] clipboard write failed:', e.message || e);
-            }
-        });
-        form.querySelector('.btn-test')?.addEventListener('click', async () => {
-            const relayUrl = form.querySelector('.relay-url')?.value.trim() || DEFAULT_RELAY_URL;
-            const matchIdVal = form.querySelector('.match-id')?.value.trim() || 'tabulon-test';
-            const status = form.querySelector('.remote-test-status');
-            if (status) { status.textContent = t('players.testChecking'); status.className = 'remote-test-status'; }
-            try {
-                const res = await httpFetch(relayUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: buildLoadBody(matchIdVal).toString(),
-                });
-                await res.text();   // le contenu importe peu ici -- seule l'atteignabilité compte
-                if (status) { status.textContent = t('players.testOk'); status.className = 'remote-test-status ok'; }
-            } catch (e) {
-                console.warn('[players] test relay failed:', e.message || e);
-                if (status) { status.textContent = t('players.testFail'); status.className = 'remote-test-status fail'; }
-            }
-        });
->>>>>>> b4517b4 (robustesse)
     });
 
     document.getElementById('button-cancel')?.addEventListener('click', () => tRpc.close());

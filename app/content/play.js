@@ -203,7 +203,6 @@ function disposeRemoteChannel() {
     cancelRemoteWait('remote channel disposed');
 }
 
-<<<<<<< HEAD
 // Configure players[key] comme distant ET active le canal tout de suite,
 // plutot que d'attendre que gameLoop() atteigne le tour de ce cote (ce que
 // faisait ensureRemoteChannel seule, appelee uniquement depuis la branche
@@ -221,8 +220,6 @@ async function activateRemoteSide(key, conf) {
     syncFooterSelect(key);
 }
 
-=======
->>>>>>> b4517b4 (robustesse)
 // A appeler apres toute action qui change la position locale SANS passer par
 // gameLoop (takeback, restart, rollback-to, chargement d'un fichier/etat) :
 // recale la baseline du canal actif sur le nombre de coups reellement joue
@@ -628,12 +625,8 @@ function initSatelliteListeners() {
         await ClockTurn(await joclyMatch.getTurn().catch(() => null)).catch(() => {});
         if (remoteChannel) {
             const moves = await joclyMatch.getPlayedMoves().catch(() => []);
-<<<<<<< HEAD
             const state = await joclyMatch.save().catch(() => null);
             remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null, state })
-=======
-            remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null })
->>>>>>> b4517b4 (robustesse)
                 .catch(e => console.warn('[play] envoi du coup au relai distant échoué :', e.message || e));
         }
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
