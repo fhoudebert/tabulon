@@ -99,10 +99,6 @@ Shared module resources (css, sounds, `res/` sprites/textures, rules graphs,
 fairy-stockfish engines) always stay with the module: importing a game
 requires its module to already exist in the target external dist, and
 uninstalling never removes shared files (nor files still declared by another
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> cfb5b73 (export import module)
 game of the module). Whole **modules** can also be exported/imported (Modules tab): a module
 extension contains the full `games/<module>/` tree plus the index declarations
 of its games; importing it has no prerequisite (the module is the payload) and
@@ -114,8 +110,6 @@ never travels in extensions. Extensions can also be built without the app:
 `node scripts/make-extension.mjs --module <module> [outdir]` — with a full
 dist or a single-module gulp build
 (`gulp --no-default-games --modules src/games/<module> build`) as source —
-<<<<<<< HEAD
-<<<<<<< HEAD
 the packaging tool that feeds the downloadable extension catalogue.
 
 A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
@@ -126,13 +120,6 @@ it packages **every module** into `outdir/modules/` and **every game** into
 then alphabetically) plus a small landing page — the `outdir` content is
 published as-is under `ext/`. Published extensions are (or will be)
 downloadable from:
-=======
-the packaging tool that feeds the downloadable extension catalogue.
-
-A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
-import dialog accepts both `.tabulon-ext` and `.zip`. Published extensions
-are (or will be) downloadable from:
->>>>>>> 5778b04 (fin gestion modules)
 
 - <https://fhoudebert.github.io/tabulon/ext/> — catalogue
 - <https://fhoudebert.github.io/tabulon/ext/games> — game extensions
@@ -142,17 +129,6 @@ The "Get extensions…" link in the Extensions screen opens the page matching
 the active tab. After an import or uninstall, the hub reloads its game list
 automatically (the Jocly script loader caches the games index for the page
 lifetime, so the hub performs a full reload).
-<<<<<<< HEAD
-=======
-game of the module). Extensions can also be built without the app:
-`node scripts/make-extension.mjs <game> [outdir]` — the packaging tool for a
-future downloadable extension list.
->>>>>>> 84d9dc4 (export/import games)
-=======
-the packaging tool for a future downloadable extension list.
->>>>>>> cfb5b73 (export import module)
-=======
->>>>>>> 5778b04 (fin gestion modules)
 
 At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
@@ -166,31 +142,14 @@ reported by the `get_dist_info` command (About panel / Extensions screen). The
 app shell (`content/**`) always comes from the embedded build, so a stale
 external dist cannot break the UI itself.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 2d01ed4 (remotechannel)
 ## Remote play (experimental, `remoteplay` branch)
 
 Playing a Jocly game against a remote human is being built incrementally on
 the `remoteplay` branch — see `ANALYSE-JEU-DISTANCE.md` for the full design
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> beeed87 (players)
 (transport options compared: HTTP relay, WebRTC/direct P2P, other).
 
 Step 1 landed the transport building block, developed and validated in
 isolation:
-<<<<<<< HEAD
-=======
-(transport options compared: HTTP relay, WebRTC/direct P2P, other). It is
-**not wired into the game window yet** (`play.js`'s `gameLoop()` still only
-knows local human / local AI) — this first step only lands the transport
-building block, developed and validated in isolation:
->>>>>>> 2d01ed4 (remotechannel)
-=======
->>>>>>> beeed87 (players)
 
 - `app/content/remote-relay-protocol.js` — pure encode/decode logic for the
   relay's wire format (no fetch, no DOM — plain functions, unit-tested).
@@ -214,10 +173,6 @@ building block, developed and validated in isolation:
   needed) — useful to check compatibility with a given relay before wiring
   it into the app.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> beeed87 (players)
 Step 2 wires it into the game window:
 
 - `players[key]` in `play.js` now accepts a third shape alongside `null`
@@ -249,10 +204,6 @@ Step 2 wires it into the game window:
   proper fix would mean periodically pushing a full state snapshot for
   resync, the way jocly-simple-match falls back to a full reload.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 1386a9a (joclymatch)
 Still open: match resume after the window is closed and reopened (the
 remote config isn't persisted anywhere yet — reopening `play.html` for a
 fork/template/store-based resume loses it, same as it does for the players'
@@ -264,7 +215,6 @@ already works (Save/Load and templates are the existing way to carry a
 position across sessions). If remote play needs its own resume story later,
 it'll likely piggyback on that Save/Load format rather than inventing a new
 one.
-<<<<<<< HEAD
 
 Step 3, smaller correctness/robustness pass on step 2:
 
@@ -637,104 +587,6 @@ engine source, not guessed), translating the base word and leaving any
 unchanged rather than left blank — no dictionary entry means no visible gap,
 just English where French would be nicer to have.
 
-=======
->>>>>>> 5778b04 (fin gestion modules)
-=======
-Still to decide before the next step (wiring into `play.js`): a third player
-type (`{remote: true}` alongside `null`/human and a level object/AI) in
-`gameLoop()`, the invitation screen (match id generation/sharing), and match
-resume after the window is closed and reopened.
-=======
-Still open: an actual invitation *screen* (currently just the match id/relay
-url fields — good enough to test with a friend, copy-paste over chat, but no
-dedicated "create/join a remote game" flow from the hub), and match resume
-after the window is closed and reopened (the remote config isn't persisted
-anywhere yet — reopening `play.html` for a fork/template/store-based resume
-loses it, same as it does for the players' human/AI configuration today).
-<<<<<<< HEAD
->>>>>>> beeed87 (players)
-=======
-On that last point: Tabulon has **no general "resume this exact match by id"
-mechanism** even for local games — `new_match` hands out a fresh in-memory
-id every time (`src-tauri/src/commands/match_cmds.rs`), so this isn't a
-remote-play-specific gap to close so much as it's how the app already works
-(Save/Load and templates are the existing way to carry a position across
-sessions). If remote play needs its own resume story later, it'll likely
-piggyback on that Save/Load format rather than inventing a new one.
-=======
->>>>>>> 1386a9a (joclymatch)
-
-Step 3, smaller correctness/robustness pass on step 2:
-
-- `input-move` (the "Possible moves" satellite window) played moves by
-  calling `playMove()` directly, bypassing `gameLoop()` entirely — so a move
-  played that way during a remote game was never sent to the opponent. Fixed:
-  it now pushes to the active channel exactly like `gameLoop()` does for any
-  locally-played move.
-- Takeback, restart, rollback-to, loading a board state, and loading a saved
-  game file all change the local position **without** going through the
-  relay (this relay has no concept of "unplay a move"). Previously only some
-  of these cancelled a pending wait for the opponent's move; now all of them
-  do, and all of them also call the new `HttpRelayChannel.resetBaseline()`
-  so the channel's own move-count bookkeeping matches the new local
-  position — otherwise it could permanently miss a subsequent opponent move,
-  or misfire on one it had already seen. This does **not** fix the relay
-  desync itself (still a known limitation, see above) — it only keeps our
-  side's tracking consistent with whatever the local position actually is.
-- The Players window's "Remote player" fields gained a **Test** button: a
-  one-off connectivity check against the configured relay URL (independent
-  of whether the match id has any data yet), to catch a wrong URL or a host
-  missing from `capabilities/default.json`'s `http:default` scope before
-  starting to actually play.
->>>>>>> b4517b4 (robustesse)
-
-<<<<<<< HEAD
->>>>>>> 2d01ed4 (remotechannel)
-=======
-Step 4, the invitation screen — and, underneath it, real interop with the
-actual jocly-simple-match web client (not just Tabulon talking to Tabulon):
-
-- New **Invitation** button on the hub's game detail panel, next to Quick
-  play / Clocked play. Opens `invitation.html`/`invitation.js`: paste a link
-  such as
-  `https://biscandine.fr/variantes/joclymatch/index.php?game=knightmate-chess&mid=…&player=a`
-  and Join starts the match already configured with a remote opponent on the
-  correct side.
-- Steps 1–3 used our own JSON envelope for the relay (`encodeEnvelope` /
-  `decodeEnvelope` in `remote-relay-protocol.js`) — deliberately free-form,
-  since `fileio.php` doesn't validate structure, and it was enough for
-  Tabulon talking to Tabulon. An invitation link, though, may well be shared
-  with someone playing through jocly-simple-match's *own* web page
-  (`index.php`/`control.js`) rather than through Tabulon — and their client
-  only understands **their** exact wire format:
-  `{matchDetails:{matchId,gameName,nbTurns,a:{pseudo},b:{pseudo}}, matchdata, time, key}`.
-  `HttpRelayChannel` now takes a `codec` option (`'tabulon'`, the default, or
-  `'jocly-simple-match'`) selecting between the two on both read and write;
-  invitation-based games use `'jocly-simple-match'` automatically. The two
-  clients can share the exact same match on the exact same relay this way —
-  validated live against `biscandine.fr`, both directions
-  (`scripts/check-jocly-compat.mjs`: what Tabulon writes is read back with
-  the exact shape `control.js` expects, and a payload shaped exactly like
-  what `control.js` itself writes is correctly decoded by Tabulon).
-- `matchdata` in that format **is** the full engine state (same jocly2
-  engine both sides, so the same `match.save()`/`match.load()` shape) —
-  pushes now always include it (`joclyMatch.save()`), not just the last
-  move, which the `'jocly-simple-match'` codec requires (their reference
-  client does a full `match.load()` on every change, not an incremental
-  `playMove()`).
-- `players.js`'s Save button doesn't expose `codec`/`gameName` as editable
-  fields (only matchId/relayUrl) — to avoid silently downgrading an
-  invitation-joined side back to the `'tabulon'` codec if the Players window
-  is opened and saved without touching that side, it now preserves the
-  original `codec`/`gameName` whenever the match id in the form is left
-  unchanged from what it received.
-
-Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
-WebSocket instead of polling, and peer-to-peer (WebRTC or direct) without
-any relay server — including, as raised alongside this step, joining via a
-short invitation code or a saved contact instead of a URL. Not started.
-
->>>>>>> 1386a9a (joclymatch)
 ## Scripts
 
 All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
@@ -744,19 +596,9 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
-<<<<<<< HEAD
-<<<<<<< HEAD
 | `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
-<<<<<<< HEAD
-=======
->>>>>>> 5778b04 (fin gestion modules)
-=======
-| `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
->>>>>>> 2d01ed4 (remotechannel)
-=======
->>>>>>> 1386a9a (joclymatch)
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the
