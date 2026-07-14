@@ -41,9 +41,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // A appeler une fois qu'on a {gameName, matchId, relayUrl, player} valides,
     // qu'ils viennent d'un lien collé (Join) ou d'une partie qu'on vient de
     // créer ici (Create + Start).
-    async function startMatch({ gameName, matchId, relayUrl, player }) {
+    async function startMatch({ gameName, matchId, relayUrl, player, creator }) {
         const inviteId = 'inv-' + Date.now();
-        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player });
+        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: !!creator });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
         tRpc.close();
     }
@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const matchId = generateMatchId();
         const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b' });
         if (!link) { setStatus(createStatus, t('players.testFail'), 'fail'); return; }
-        created = { gameName: selectedGame, matchId, relayUrl, player: 'a' };
+        created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true };
         if (linkInput) linkInput.value = link;
         if (linkRow) linkRow.style.display = '';
         if (startBtn) startBtn.disabled = false;

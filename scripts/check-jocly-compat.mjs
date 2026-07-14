@@ -73,6 +73,29 @@ check(decoded?.lastMove?.to === 'e5', 'decodeJoclySimpleMatchEnvelope en extrait
 check(Array.isArray(decoded?.state?.playedMoves) && decoded.state.playedMoves.length === 2,
     'decodeJoclySimpleMatchEnvelope expose le state complet (pour un load() intégral)');
 
+// 4. Bug connu de fileio.php (pas de nous) : load() sur un mid JAMAIS
+//    sauvegardé renvoie un warning PHP au lieu de JSON vide/valide -- fait
+//    planter JSON.parse côté control.js (loadMatchFromID). Confirmé ici pour
+//    documenter le comportement, PUIS on vérifie que publier un état initial
+//    dès la création (voir play.js, invite.creator) évite bien le problème
+//    pour un client qui suivrait le lien avant notre premier coup.
+const neverSavedId = 'tabulon-neverexisted-' + Date.now();
+const neverSavedRaw = await post(buildLoadBody(neverSavedId));
+let neverSavedIsValidJson = true;
+try { JSON.parse(neverSavedRaw); } catch { neverSavedIsValidJson = false; }
+console.log((neverSavedIsValidJson ? '✓' : 'ℹ') +
+    ' load() sur un mid jamais sauvegardé : ' + (neverSavedIsValidJson ? 'JSON valide (bug absent sur ce relai)' : 'PAS du JSON valide -- bug fileio.php confirmé sur ce relai (pré-existant, hors Tabulon)'));
+
+const preSavedId = 'tabulon-precreated-' + Date.now();
+await post(buildSaveBody(preSavedId, encodeJoclySimpleMatchEnvelope({
+    matchId: preSavedId, gameName: 'go', nbTurns: 0, matchdata: { playedMoves: [] },
+})));
+const preSavedRaw = await post(buildLoadBody(preSavedId));
+let preSavedIsValidJson = true;
+try { JSON.parse(preSavedRaw); } catch { preSavedIsValidJson = false; }
+check(preSavedIsValidJson,
+    'publier un état initial à la création évite le bug : load() renvoie bien du JSON valide ensuite');
+
 console.log(failed
     ? '\n✗ Incompatibilité détectée -- voir ci-dessus.'
     : '\n✓ Le codec jocly-simple-match est bien compatible avec ce relai (écriture ET lecture).');

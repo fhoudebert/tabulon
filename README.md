@@ -295,6 +295,49 @@ match instance confirmed the move exchange itself works: two follow-ups.
   once the first move is pushed to it, same as if it had been created
   through jocly-simple-match's own `gamespanel.php`.
 
+Step 6, a real bug found by testing the Create flow against `biscandine.fr`:
+
+- **The bug**: creating a game (host, playing `a`) and moving first meant
+  that first move was never sent anywhere. `HttpRelayChannel` was only ever
+  created *reactively*, from inside `gameLoop()`'s remote-turn branch — so
+  if the local human's own turn came *before* gameLoop ever reached the
+  remote side's turn, no channel existed yet when that first move resolved,
+  and the `if (playedLocally && remoteChannel)` push was silently skipped.
+  Joining (step 4's original test) happened to always work because in that
+  flow the *other* side moves first, so the channel got created while
+  waiting for their move — before any local move could occur. Fixed:
+  configuring a side as remote (from an invitation or from the Players
+  window) now creates the channel immediately (`activateRemoteSide()`),
+  not lazily on first use.
+- **A related, genuinely pre-existing bug — confirmed live, not ours to
+  fix**: `fileio.php`'s `load()` on a match id that was never `save()`d
+  returns a PHP warning instead of JSON (`fopen(): Failed to open stream`),
+  which is exactly the `JSON.parse` error control.js reported. Their own
+  `gamespanel.php`/`createMatch()` has the identical gap (no initial save
+  either) — it just goes unnoticed there because the creator usually plays
+  quickly. Combined with the bug above, this made the "Create" flow trip it
+  reliably: no move was ever pushed, so a genuinely empty id sat there for
+  the other client to poll. Now that push works, but we've *also* added a
+  direct mitigation on our side regardless: when Tabulon creates the
+  invitation, it publishes the starting position to the relay immediately
+  (`invite.creator` flag, threaded from `invitation.js`'s Create button), so
+  the relay is never empty for whoever opens the link. Verified against
+  `biscandine.fr` in `scripts/check-jocly-compat.mjs`.
+- The footer's quick player select still didn't reflect "remote" correctly
+  in every case that reaches `players[key]` through this new proactive path
+  — `syncFooterSelect()` is now called from the same place.
+- Removed the Players window's **Generate** button for a remote match id —
+  the Invitation window's Create flow supersedes it (generates an id *and*
+  a shareable link, which Generate alone never did); *Copy* and *Test*
+  stay, they're still useful once a match id exists by whatever means.
+- The hub's Invitation button had an icon (`icon-link`) that isn't actually
+  defined in the bundled icon font (`app/tabulon.css` only maps a fixed,
+  deliberately curated set of codepoints — see the comment above that list,
+  itself there because of a past invisible-icon bug of the same kind) — so
+  it silently rendered as nothing. Switched to `icon-users`, already the
+  established icon for multiplayer/player configuration elsewhere
+  (`play.html`'s Players button).
+
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling, and peer-to-peer (WebRTC or direct) without
 any relay server — including, as raised alongside this step, joining via a

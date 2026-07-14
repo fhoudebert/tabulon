@@ -184,6 +184,23 @@ function disposeRemoteChannel() {
     cancelRemoteWait('remote channel disposed');
 }
 
+// Configure players[key] comme distant ET active le canal tout de suite,
+// plutot que d'attendre que gameLoop() atteigne le tour de ce cote (ce que
+// faisait ensureRemoteChannel seule, appelee uniquement depuis la branche
+// "tour distant"). BUG corrige par cette fonction : quand on heberge une
+// partie (Invitation > Create) et qu'on joue le premier coup localement, ce
+// premier coup se jouait AVANT que gameLoop() n'ait jamais atteint le tour
+// distant -- le canal n'existait donc pas encore, et le coup n'etait jamais
+// pousse au relai (rien a lire pour l'autre joueur -- voir README § Remote
+// play). En l'activant ici, des la configuration, le canal existe qu'importe
+// qui joue en premier.
+async function activateRemoteSide(key, conf) {
+    players[key] = conf;
+    const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+    ensureRemoteChannel(key, conf, moves.length);
+    syncFooterSelect(key);
+}
+
 // A appeler apres toute action qui change la position locale SANS passer par
 // gameLoop (takeback, restart, rollback-to, chargement d'un fichier/etat) :
 // recale la baseline du canal actif sur le nombre de coups reellement joue
@@ -468,7 +485,11 @@ function initSatelliteListeners() {
             const key = parseInt(playerKey, 10);
             const newValue = buildPlayerValue(info);
             if (JSON.stringify(players[key]) !== JSON.stringify(newValue)) {
-                players[key] = newValue;
+                if (newValue?.remote) {
+                    await activateRemoteSide(key, newValue);   // cree le canal tout de suite
+                } else {
+                    players[key] = newValue;
+                }
                 changed = true;
             }
         }
@@ -997,10 +1018,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Si invite : rejoindre une partie via un lien d'invitation
-    // jocly-simple-match (voir invitation.js). "player" dans le lien est le
-    // cote que JE joue localement -- l'AUTRE cote est donc distant, avec le
-    // codec compatible control.js (pas notre enveloppe 'tabulon').
+    // Si invite : rejoindre -- ou heberger -- une partie via un lien
+    // d'invitation jocly-simple-match (voir invitation.js). "player" dans le
+    // lien/la creation est le cote que JE joue localement -- l'AUTRE cote
+    // est donc distant, avec le codec compatible control.js.
     console.info('[play] inviteId depuis l\'URL :', inviteId);
     if (inviteId) {
         const invite = await store?.get('invite:' + inviteId).catch(() => null);
@@ -1008,14 +1029,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (invite?.matchId && invite?.relayUrl) {
             const remoteSide = invite.player === 'b' ? Jocly.PLAYER_A : Jocly.PLAYER_B;
             const localSide  = invite.player === 'b' ? Jocly.PLAYER_B : Jocly.PLAYER_A;
-            players[localSide]  = null;
-            players[remoteSide] = {
+            players[localSide] = null;
+            await activateRemoteSide(remoteSide, {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
-            };
+            });
             syncFooterSelect(localSide);
-            syncFooterSelect(remoteSide);
             console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);
+            if (invite.creator) {
+                // On vient de creer cette partie (Invitation > Create) : on
+                // publie tout de suite l'etat de depart (avant meme notre
+                // premier coup), pour que le relai ne soit jamais "vide" si
+                // l'autre joueur ouvre son lien avant qu'on ait joue --
+                // fileio.php renvoie une erreur PHP (pas du JSON) pour un
+                // identifiant jamais sauvegarde, ce qui fait planter le
+                // JSON.parse du client jocly-simple-match reel (bug cote
+                // relai, mais qu'on peut eviter cote nous).
+                const startState = await joclyMatch.save().catch(() => null);
+                remoteChannel?.push({ nbTurns: 0, lastMove: null, state: startState })
+                    .catch(e => console.warn('[play] publication de l\'etat initial échouée :', e.message || e));
+            }
         } else {
             console.warn('[play] invite: donnees introuvables pour', inviteId);
         }

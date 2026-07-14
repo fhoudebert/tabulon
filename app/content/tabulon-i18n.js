@@ -120,7 +120,7 @@ const DICT = {
         // players
         'players.heading': 'Players', 'players.name': 'Player name',
         'players.matchId': 'Match ID', 'players.relayUrl': 'Relay URL',
-        'players.generate': 'Generate', 'players.copy': 'Copy', 'players.copied': 'Copied!',
+        'players.copy': 'Copy', 'players.copied': 'Copied!',
         'players.test': 'Test', 'players.testChecking': 'Checking…',
         'players.testOk': 'Relay reachable', 'players.testFail': 'Unreachable (network/CORS?)',
         'invitation.title': 'Remote game', 'invitation.join': 'Join',
@@ -250,7 +250,7 @@ const DICT = {
         'saveTemplate.title': 'Enregistrer #{id} comme modèle',
         'players.heading': 'Joueurs', 'players.name': 'Nom du joueur',
         'players.matchId': 'Identifiant de partie', 'players.relayUrl': 'URL du relai',
-        'players.generate': 'Générer', 'players.copy': 'Copier', 'players.copied': 'Copié !',
+        'players.copy': 'Copier', 'players.copied': 'Copié !',
         'players.test': 'Tester', 'players.testChecking': 'Vérification…',
         'players.testOk': 'Relai joignable', 'players.testFail': 'Injoignable (réseau/CORS ?)',
         'invitation.title': 'Partie à distance', 'invitation.join': 'Rejoindre',

@@ -7,7 +7,7 @@ import tRpc from './tabulon-rpc.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { listen, emit, httpFetch } from './tauri-bridge.js';
-import { generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
+import { DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
 
 const matchId = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
 // Preserve codec/gameName (ex. venus d'une invitation jocly-simple-match)
@@ -55,7 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // du texte dynamique de cette fenêtre.
     document.querySelectorAll('.match-id').forEach(el => el.placeholder = t('players.matchId'));
     document.querySelectorAll('.relay-url').forEach(el => el.placeholder = t('players.relayUrl'));
-    document.querySelectorAll('.btn-generate').forEach(el => el.textContent = t('players.generate'));
     document.querySelectorAll('.btn-copy').forEach(el => el.textContent = t('players.copy'));
     document.querySelectorAll('.btn-test').forEach(el => el.textContent = t('players.test'));
 
@@ -89,13 +88,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         twu.ready();
     });
 
-    // Bascule d'affichage des champs distants + génération/copie du match id
+    // Bascule d'affichage des champs distants + copie du match id
     document.querySelectorAll('.players-a, .players-b').forEach(form => {
         form.querySelector('select')?.addEventListener('change', () => SyncRemoteFields(form));
-        form.querySelector('.btn-generate')?.addEventListener('click', () => {
-            const input = form.querySelector('.match-id');
-            if (input) input.value = generateMatchId();
-        });
         form.querySelector('.btn-copy')?.addEventListener('click', async () => {
             const input = form.querySelector('.match-id');
             const btn = form.querySelector('.btn-copy');
