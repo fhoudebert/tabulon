@@ -23,16 +23,16 @@
 		<div class="window-content open-position-content">
 			<form>
 				<div class="form-group">
-    				<label>Board state</label>
-    				<input type="text" class="form-control" placeholder="Board position">
-					<p>If supported by the game implementation, use FEN notation or equivalent</p>
+    				<label data-i18n="btn.boardState">Board state</label>
+    				<input type="text" class="form-control" placeholder="Board position" data-i18n-placeholder="openPosition.placeholder">
+					<p data-i18n="openPosition.hint">If supported by the game implementation, use FEN notation or equivalent</p>
   				</div>
 			</form>
 		</div>
 		<footer class="toolbar toolbar-footer">
 			<div class="toolbar-actions">
-				<button id="button-cancel" class="btn btn-default">Cancel</button>
-				<button id="button-save" class="btn btn-primary pull-right">Open</button>
+				<button id="button-cancel" class="btn btn-default"><span data-i18n="common.cancel">Cancel</span></button>
+				<button id="button-save" class="btn btn-primary pull-right"><span data-i18n="openPosition.open">Open</span></button>
 			</div>
 		</footer>
 	</div>

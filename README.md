@@ -343,6 +343,41 @@ WebSocket instead of polling, and peer-to-peer (WebRTC or direct) without
 any relay server — including, as raised alongside this step, joining via a
 short invitation code or a saved contact instead of a URL. Not started.
 
+## Internationalization (i18n)
+
+`app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the
+source of truth; unknown keys fall back to it). Static HTML text is wired
+with `data-i18n` (`textContent`), `data-i18n-title` (`title`), or
+`data-i18n-placeholder` (`placeholder`) — `translateDom()` applies the
+dictionary to every element carrying one of these on `DOMContentLoaded`,
+automatically, for any page that imports the module (most satellite windows
+already do, for the window title). Dynamic JS text uses `t('key', vars)`
+after `await initI18n()`.
+
+The gap this catches: importing the module and calling `initI18n()` isn't
+enough on its own — a label with no `data-i18n*` attribute just sits there
+in whatever language the HTML was written in, dictionary entry or not. That
+was the actual state of several satellite windows (`clock-setup.html` had
+*none* of its labels wired, despite matching `clockSetup.*`/`common.*`
+dictionary entries already existing and unused; `view-options.html`,
+`open-position.html`, `save-template.html`, `info.html` and the `Close`
+button on four other windows had the same gap for at least one label).
+Fixed by adding the missing attributes — no new mechanism, no JS logic
+touched, just wiring already-existing (or, where genuinely missing, newly
+added) dictionary entries to the elements that were never pointed at them.
+
+One thing `data-i18n` can't reach: AI level labels (`levels[i].label` in the
+Players/footer dropdowns, e.g. "Easy", "Fast [1sec]", "Papa") come from the
+Jocly engine's own game modules, not from Tabulon's HTML — there's nothing
+to put a `data-i18n` attribute on. `translateLevelLabel()` in
+`tabulon-i18n.js` is a small overlay for this specific case: a table of the
+level-label vocabulary found across jocly2's games (surveyed directly in the
+engine source, not guessed), translating the base word and leaving any
+`[Nsec]`/`(Nsec)` duration suffix untouched. A label outside that table
+(a game not covered, or a genuinely new one added later) is returned
+unchanged rather than left blank — no dictionary entry means no visible gap,
+just English where French would be nicer to have.
+
 ## Scripts
 
 All scripts live in `scripts/` and run with Node (≥ 20), no install needed.

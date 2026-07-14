@@ -4,7 +4,7 @@
 // (play-req/play-rep:{matchId}:*).
 
 import tRpc from './tabulon-rpc.js';
-import { initI18n, t } from './tabulon-i18n.js';
+import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { listen, emit, httpFetch } from './tauri-bridge.js';
 import { DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
@@ -23,7 +23,7 @@ function BuildSelect(sel, levels, currentType, currentLevelIndex) {
     levels.forEach((lvl, i) => {
         const opt = document.createElement('option');
         opt.value = 'ai:' + i;
-        opt.textContent = lvl.label || lvl.name || t('common.level', { n: i + 1 });
+        opt.textContent = translateLevelLabel(lvl.label) || lvl.name || t('common.level', { n: i + 1 });
         sel.appendChild(opt);
     });
     const optRemote = document.createElement('option');

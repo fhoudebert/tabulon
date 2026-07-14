@@ -60,7 +60,6 @@ const DICT = {
         'btn.openBook': 'Open book', 'btn.boardState': 'Board state',
         'btn.favorite': 'Favorite', 'btn.notFavorite': 'Not favorite',
         'btn.rulesCredits': 'Rules, credits, about', 'btn.invitation': 'Invitation',
-        'btn.cancel': 'Cancel',
         'tip.quickPlay': 'Quick play', 'tip.clockedPlay': 'Clocked play',
         'tip.rules': 'Rules, credits, about',
         'tip.invitation': 'Join a remote game from an invitation link',
@@ -117,6 +116,10 @@ const DICT = {
         'players.title': 'Players #{id}', 'viewOptions.title': 'View Options #{id}',
         'info.title': 'About {game}', 'cameraView.title': 'Camera View #{id}',
         'saveTemplate.title': 'Save #{id} as template',
+        'saveTemplate.hint': 'Templates remembers players, view options, window size and position so you can start playing from a defined configuration',
+        'openPosition.hint': 'If supported by the game implementation, use FEN notation or equivalent',
+        'openPosition.placeholder': 'Board position', 'openPosition.open': 'Open',
+        'showPosition.hint': 'The board state format depends on the game implementation',
         // players
         'players.heading': 'Players', 'players.name': 'Player name',
         'players.matchId': 'Match ID', 'players.relayUrl': 'Relay URL',
@@ -195,7 +198,6 @@ const DICT = {
         'btn.openBook': 'Ouvrir un livre', 'btn.boardState': 'État du plateau',
         'btn.favorite': 'Favori', 'btn.notFavorite': 'Pas favori',
         'btn.rulesCredits': 'Règles, crédits, à propos', 'btn.invitation': 'Invitation',
-        'btn.cancel': 'Annuler',
         'tip.quickPlay': 'Partie rapide', 'tip.clockedPlay': 'Partie chronométrée',
         'tip.rules': 'Règles, crédits, à propos',
         'tip.invitation': 'Rejoindre une partie à distance depuis un lien d’invitation',
@@ -248,6 +250,10 @@ const DICT = {
         'players.title': 'Joueurs #{id}', 'viewOptions.title': "Options d'affichage #{id}",
         'info.title': 'À propos de {game}', 'cameraView.title': 'Vue caméra #{id}',
         'saveTemplate.title': 'Enregistrer #{id} comme modèle',
+        'saveTemplate.hint': 'Les modèles retiennent les joueurs, les options d\u2019affichage, la taille et la position de la fenêtre, pour repartir d\u2019une configuration définie',
+        'openPosition.hint': 'Si le jeu le permet, utilisez la notation FEN ou équivalente',
+        'openPosition.placeholder': 'Position du plateau', 'openPosition.open': 'Ouvrir',
+        'showPosition.hint': 'Le format de l\u2019état du plateau dépend du jeu',
         'players.heading': 'Joueurs', 'players.name': 'Nom du joueur',
         'players.matchId': 'Identifiant de partie', 'players.relayUrl': 'URL du relai',
         'players.copy': 'Copier', 'players.copied': 'Copié !',
@@ -311,6 +317,46 @@ export const getLocale = () => locale;
 export function t(key, vars) {
     const s = DICT[locale]?.[key] ?? DICT.en[key] ?? key;
     return vars ? s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '') : s;
+}
+
+// -- Libellés de niveau IA (levels[i].label côté moteur Jocly) --------------
+// Ces libellés viennent des modules de jeu Jocly (games/*/index.js), pas de
+// Tabulon -- on ne peut pas les faire passer par data-i18n. Relevé exhaustif
+// sur l'ensemble des jeux jocly2 (juillet 2026) : les "difficultés" standard
+// reviennent dans plusieurs jeux, le reste est un thème propre au jeu
+// (marin/pirate, samouraï...). Traduction en overlay : un libellé connu est
+// traduit mot a mot (le suffixe "[Nsec]"/"(Nsec)" est toujours conservé tel
+// quel) ; un libellé inconnu (jeu futur, non couvert ici) ressort inchangé
+// -- jamais de texte manquant, au pire on affiche l'anglais d'origine.
+const LEVEL_LABEL_MAP = {
+    fr: {
+        'easy': 'Facile', 'medium': 'Moyen', 'hard': 'Difficile',
+        'strong': 'Fort', 'fast': 'Rapide', 'slow': 'Lent',
+        'beginner': 'Débutant', 'expert': 'Expert', 'confirmed': 'Confirmé',
+        'baby': 'Bébé', 'mama': 'Maman', 'papa': 'Papa',
+        'sailor': 'Marin', 'cabin boy': 'Mousse', 'officer': 'Officier',
+        'captain': 'Capitaine', 'admiral': 'Amiral',
+        'warrior': 'Guerrier', 'samurai': 'Samouraï',
+    },
+};
+
+/**
+ * Traduit un libellé de niveau IA venu du moteur Jocly (ex. "Easy",
+ * "Fast [1sec]", "Papa"). Le mot de base est traduit si connu ; un éventuel
+ * suffixe entre crochets/parenthèses (durée) est toujours préservé tel quel.
+ * Libellé absent ou non reconnu -> renvoyé inchangé (jamais de trou d'affichage).
+ * @param {string} rawLabel
+ */
+export function translateLevelLabel(rawLabel) {
+    if (!rawLabel) return rawLabel;
+    const table = LEVEL_LABEL_MAP[locale];
+    if (!table) return rawLabel;   // locale 'en' = langue d'origine des libellés
+    const m = /^(.*?)\s*([\[(].*[\])])\s*$/.exec(rawLabel);
+    const base = (m ? m[1] : rawLabel).trim();
+    const suffix = m ? m[2] : '';
+    const translated = table[base.toLowerCase()];
+    if (!translated) return rawLabel;
+    return suffix ? `${translated} ${suffix}` : translated;
 }
 
 /** Applique le dictionnaire aux éléments porteurs de data-i18n*. */

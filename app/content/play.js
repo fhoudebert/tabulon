@@ -11,7 +11,7 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
-import { initI18n, t } from './tabulon-i18n.js';
+import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
@@ -374,7 +374,7 @@ function BuildPlayerSelect(selectId, playerKey) {
     levels.forEach((lvl, i) => {
         const opt = document.createElement('option');
         opt.value = String(i);
-        opt.textContent = lvl.label || lvl.name || t('common.level', { n: i + 1 });
+        opt.textContent = translateLevelLabel(lvl.label) || lvl.name || t('common.level', { n: i + 1 });
         sel.appendChild(opt);
     });
 
