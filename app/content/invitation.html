@@ -38,6 +38,26 @@
 				<button id="button-copy-link" class="btn btn-default"><span data-i18n="players.copy">Copy</span></button>
 			</div>
 			<p id="invitation-create-status" class="invitation-status"></p>
+
+			<hr>
+
+			<h4 data-i18n="invitation.peerHeading"></h4>
+			<p class="invitation-intro" data-i18n="invitation.peerIntro"></p>
+			<div class="invitation-actions">
+				<button id="button-peer-host" class="btn btn-default"><span data-i18n="invitation.peerHost">Create a code</span></button>
+			</div>
+			<div class="form-group invitation-link-row" id="peer-code-row" style="display:none">
+				<input type="text" id="peer-code" class="form-control" readonly>
+				<button id="button-peer-copy" class="btn btn-default"><span data-i18n="players.copy">Copy</span></button>
+			</div>
+			<p id="peer-host-status" class="invitation-status"></p>
+			<div class="form-group">
+				<input type="text" id="peer-code-input" class="form-control" data-i18n-placeholder="invitation.peerCodePlaceholder">
+			</div>
+			<div class="invitation-actions">
+				<button id="button-peer-join" class="btn btn-default"><span data-i18n="invitation.peerJoin">Connect</span></button>
+			</div>
+			<p id="peer-join-status" class="invitation-status"></p>
 		</div>
 	</div>
 	<footer class="toolbar toolbar-footer">

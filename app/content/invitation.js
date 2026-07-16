@@ -1,9 +1,16 @@
 // app/content/invitation.js
-// Fenetre satellite : deux façons de démarrer une partie à distance --
+// Fenetre satellite : trois façons de démarrer une partie à distance --
 //   - Join  : coller un lien reçu (index.php?game=...&mid=...&player=a|b)
 //   - Create: générer un identifiant de partie ici, obtenir le lien à
 //             envoyer à l'autre joueur (rôle 'b', nous jouons 'a'), puis
 //             Start pour lancer la partie.
+//   - Pair à pair (AUCUN serveur) : l'hôte crée un CODE à transmettre
+//             (copier-coller), l'invité le colle et se connecte -- session
+//             TCP directe côté Rust (peer_cmds.rs). La session survit à la
+//             fermeture de cette fenêtre : la fenêtre de jeu s'y rattache
+//             (voir remote-peer-channel.js). Limites (README § Remote play,
+//             étape 8) : joignabilité directe requise (LAN/VPN/IP publique),
+//             pas de traversée NAT, flux non chiffré.
 // Dans les deux cas, la config est déposée sous "invite:{id}" dans le store,
 // puis new_match(gameName, ..., inviteId) est appelé -- play.js lit ce store
 // au démarrage (voir README § Remote play).
@@ -11,8 +18,9 @@
 import tRpc from './tabulon-rpc.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
-import { Store } from './tauri-bridge.js';
+import { Store, listen } from './tauri-bridge.js';
 import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
+import { hostPeerMatch, joinPeerMatch } from './remote-peer-channel.js';
 
 const selectedGame = new URLSearchParams(window.location.search).get('game') || null;
 
@@ -41,9 +49,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // A appeler une fois qu'on a {gameName, matchId, relayUrl, player} valides,
     // qu'ils viennent d'un lien collé (Join) ou d'une partie qu'on vient de
     // créer ici (Create + Start).
-    async function startMatch({ gameName, matchId, relayUrl, player, creator }) {
+    async function startMatch({ gameName, matchId, relayUrl, player, creator, peer }) {
         const inviteId = 'inv-' + Date.now();
-        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: !!creator });
+        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: !!creator, peer: !!peer });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
         tRpc.close();
     }
@@ -91,6 +99,77 @@ document.addEventListener('DOMContentLoaded', async () => {
     startBtn?.addEventListener('click', async () => {
         if (!created) return;
         await startMatch(created);
+    });
+
+    // -- Pair a pair (aucun serveur) ------------------------------------------------
+    // Cote hote : "Creer un code" -> ecoute Rust + code affiche a copier ;
+    // quand l'invite se connecte (event status), Start se debloque et
+    // `created` bascule sur la config p2p (le meme bouton Start sert aux
+    // deux modes de creation). Cote invite : coller le code -> connexion
+    // etablie -> la partie demarre directement (l'hote a forcement deja
+    // clique de son cote pour que le code existe).
+    const peerHostStatus = document.getElementById('peer-host-status');
+    const peerJoinStatus = document.getElementById('peer-join-status');
+    const peerCodeRow    = document.getElementById('peer-code-row');
+    const peerCode       = document.getElementById('peer-code');
+    const peerCodeInput  = document.getElementById('peer-code-input');
+    let   peerHosting    = null;   // {gameName, matchId, ...} en attente de connexion
+
+    await listen('tabulon-peer://status', ({ payload }) => {
+        if (!peerHosting || !payload?.connected) return;
+        created = peerHosting;   // Start lancera la partie p2p
+        if (startBtn) startBtn.disabled = false;
+        setStatus(peerHostStatus, t('invitation.peerConnected'), 'ok');
+    });
+
+    document.getElementById('button-peer-host')?.addEventListener('click', async () => {
+        if (!selectedGame) { setStatus(peerHostStatus, t('invitation.invalidLink'), 'fail'); return; }
+        try {
+            const { code, token } = await hostPeerMatch(selectedGame);
+            peerHosting = {
+                gameName: selectedGame, matchId: 'p2p:' + token.slice(0, 12),
+                player: 'a', peer: true, creator: true,
+            };
+            if (peerCode) peerCode.value = code;
+            if (peerCodeRow) peerCodeRow.style.display = '';
+            setStatus(peerHostStatus, t('invitation.peerWaiting'), '');
+        } catch (e) {
+            console.warn('[invitation] peer host failed:', e.message || e);
+            setStatus(peerHostStatus, t('invitation.peerHostFail'), 'fail');
+        }
+    });
+
+    document.getElementById('button-peer-copy')?.addEventListener('click', async () => {
+        const btn = document.getElementById('button-peer-copy');
+        if (!peerCode?.value || !btn) return;
+        try {
+            await navigator.clipboard.writeText(peerCode.value);
+            const original = btn.textContent;
+            btn.textContent = t('players.copied');
+            setTimeout(() => { btn.textContent = original; }, 1200);
+        } catch (e) {
+            console.warn('[invitation] clipboard write failed:', e.message || e);
+        }
+    });
+
+    document.getElementById('button-peer-join')?.addEventListener('click', async () => {
+        const raw = peerCodeInput?.value || '';
+        if (!raw.trim()) { setStatus(peerJoinStatus, t('invitation.peerInvalidCode'), 'fail'); return; }
+        setStatus(peerJoinStatus, t('invitation.peerConnecting'), '');
+        try {
+            const { gameName, token } = await joinPeerMatch(raw);
+            if (selectedGame && gameName !== selectedGame)
+                setStatus(peerJoinStatus, t('invitation.gameMismatch', { game: gameName }), 'warn');
+            await startMatch({
+                gameName, matchId: 'p2p:' + token.slice(0, 12),
+                player: 'b', peer: true,
+            });
+        } catch (e) {
+            console.warn('[invitation] peer join failed:', e.message || e);
+            setStatus(peerJoinStatus,
+                e.message === 'code d\'invitation invalide'
+                    ? t('invitation.peerInvalidCode') : t('invitation.peerConnectFail'), 'fail');
+        }
     });
 
     await twu.ready();

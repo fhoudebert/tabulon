@@ -13,6 +13,7 @@ import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { HttpRelayChannel } from './remote-channel.js';
+import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
@@ -110,7 +111,10 @@ let paused       = false;
 let levels       = [];
 
 // Joueurs : null = humain local, objet level Jocly = IA,
-// {remote:true, matchId, relayUrl} = adversaire distant (voir players.js).
+// {remote:true, matchId, relayUrl} = adversaire distant via relai HTTP, ou
+// {remote:true, peer:true, matchId} = adversaire distant en pair-a-pair
+// (session TCP cote Rust, etablie par la fenetre Invitation -- voir
+// remote-peer-channel.js).
 // Un seul cote peut etre "remote" a la fois : l'autre est necessairement
 // humain local (c'est "moi" qui joue cette partie).
 const players = {};
@@ -162,14 +166,29 @@ function cancelRemoteWait(reason) {
 // currentNbTurns : nombre de coups deja joues localement au moment de la
 // creation (baseline correcte pour une partie deja entamee -- fork, reprise
 // apres fermeture de la fenetre...) ; ignore si le canal existe deja.
-function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName }, currentNbTurns) {
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer }, currentNbTurns) {
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
-    remoteChannel = new HttpRelayChannel({
-        relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns,
-        codec: codec || 'tabulon', gameName: remoteGameName || gameName,
-    });
+    if (peer) {
+        // Pair-a-pair : la session TCP existe deja cote Rust (etablie par la
+        // fenetre Invitation avant new_match) -- le canal ne fait que s'y
+        // attacher. Meme interface RemoteChannel, gameLoop ne voit aucune
+        // difference avec le relai HTTP.
+        const chan = new PeerChannel({ matchId: remoteMatchId, localNbTurns: currentNbTurns });
+        chan.onStatusChange(({ connected, error }) => {
+            if (!connected) {
+                console.warn('[play] session pair-a-pair terminee', error || '');
+                UpdateFooter(t('play.peerDisconnected'));
+            }
+        });
+        remoteChannel = chan;
+    } else {
+        remoteChannel = new HttpRelayChannel({
+            relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns,
+            codec: codec || 'tabulon', gameName: remoteGameName || gameName,
+        });
+    }
     remoteChannelKey = playerKey;
     remoteChannel.onRemoteMove(onRemoteMoveReceived);
     remoteChannel.start();
@@ -220,12 +239,18 @@ function describePlayer(value) {
     if (value.remote) return {
         type: 'remote', matchId: value.matchId, relayUrl: value.relayUrl,
         codec: value.codec || 'tabulon', gameName: value.gameName || null,
+        peer: !!value.peer,
     };
     return { type: 'ai', levelIndex: levels.indexOf(value) };
 }
 
 function buildPlayerValue(info) {
     if (!info) return null;
+    if (info.type === 'remote' && info.peer && info.matchId)
+        return {
+            remote: true, peer: true, matchId: String(info.matchId),
+            gameName: info.gameName || gameName,
+        };
     if (info.type === 'remote' && info.matchId && info.relayUrl)
         return {
             remote: true, matchId: String(info.matchId), relayUrl: String(info.relayUrl),
@@ -1026,11 +1051,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (inviteId) {
         const invite = await store?.get('invite:' + inviteId).catch(() => null);
         console.info('[play] invite lu depuis le store :', invite);
-        if (invite?.matchId && invite?.relayUrl) {
+        if (invite?.matchId && (invite?.relayUrl || invite?.peer)) {
             const remoteSide = invite.player === 'b' ? Jocly.PLAYER_A : Jocly.PLAYER_B;
             const localSide  = invite.player === 'b' ? Jocly.PLAYER_B : Jocly.PLAYER_A;
             players[localSide] = null;
-            await activateRemoteSide(remoteSide, {
+            await activateRemoteSide(remoteSide, invite.peer ? {
+                // Pair-a-pair : la session est deja etablie (voir
+                // invitation.js) ; les deux cotes sont forcement Tabulon,
+                // donc enveloppe 'tabulon' -- pas de codec jocly-simple-match.
+                remote: true, peer: true, matchId: invite.matchId,
+                gameName: invite.gameName || gameName,
+            } : {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
             });

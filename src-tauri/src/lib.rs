@@ -4,7 +4,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{extension_cmds, fs_cmds, hub_cmds, match_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{extension_cmds, fs_cmds, hub_cmds, match_cmds, peer_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -30,6 +30,7 @@ pub fn run() {
         .manage(AppState::default())
         .manage(NotifyChannels::default())
         .manage(VideoState::default())
+        .manage(peer_cmds::PeerState::default())
         // ── Setup ─────────────────────────────────────────────────────────────
         // Filet de sécurité vidéo : si une fenêtre de jeu est détruite pendant
         // un enregistrement (fermeture, fin d'app), finaliser le MP4 — sinon
@@ -129,6 +130,13 @@ pub fn run() {
             extension_cmds::export_module,
             extension_cmds::remove_module,
             window_cmds::open_extensions,
+            // ── Jeu a distance pair-a-pair (aucun serveur) ───────────────────
+            peer_cmds::peer_host_start,
+            peer_cmds::peer_connect,
+            peer_cmds::peer_send,
+            peer_cmds::peer_last_message,
+            peer_cmds::peer_status,
+            peer_cmds::peer_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tabulon");

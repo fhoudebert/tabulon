@@ -73,13 +73,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const relayInput   = form.querySelector('.relay-url');
             if (info.type === 'remote') {
                 if (matchIdInput) matchIdInput.value = info.matchId || '';
-                if (relayInput)   relayInput.value   = info.relayUrl || DEFAULT_RELAY_URL;
+                // Cote pair-a-pair : pas de relai du tout -- champ laisse
+                // vide plutot que d'afficher une URL de relai qui ne sert pas.
+                if (relayInput)   relayInput.value   = info.peer ? '' : (info.relayUrl || DEFAULT_RELAY_URL);
                 // Retenu pour Save : si le match id n'est pas modifié dans ce
                 // formulaire, on rend au moteur le codec/gameName d'origine
                 // (ex. jocly-simple-match venu d'une invitation) plutôt que
                 // de le faire silencieusement retomber sur notre codec par
                 // défaut, qui casserait l'interop avec l'autre client.
-                lastReceivedRemote[which] = { matchId: info.matchId, codec: info.codec, gameName: info.gameName };
+                lastReceivedRemote[which] = { matchId: info.matchId, codec: info.codec, gameName: info.gameName, peer: !!info.peer };
             } else {
                 lastReceivedRemote[which] = null;
             }
@@ -142,7 +144,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (matchIdVal) {
                     const prev = lastReceivedRemote[which];
                     const unchanged = prev && prev.matchId === matchIdVal;
-                    result[key] = {
+                    // Meme regle de preservation que codec/gameName : un cote
+                    // pair-a-pair (etabli par la fenetre Invitation) reste
+                    // pair-a-pair tant que le match id n'est pas modifie ici
+                    // -- sinon Save le degraderait silencieusement en config
+                    // relai (le formulaire n'a pas de notion de p2p).
+                    result[key] = (unchanged && prev.peer) ? {
+                        type: 'remote', peer: true, matchId: matchIdVal,
+                        gameName: prev.gameName,
+                    } : {
                         type: 'remote', matchId: matchIdVal, relayUrl: relayUrlVal,
                         codec: unchanged ? prev.codec : 'tabulon',
                         gameName: unchanged ? prev.gameName : undefined,

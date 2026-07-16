@@ -338,10 +338,123 @@ Step 6, a real bug found by testing the Create flow against `biscandine.fr`:
   established icon for multiplayer/player configuration elsewhere
   (`play.html`'s Players button).
 
+Step 8, peer-to-peer play **without any server** (no game relay, no
+signalling server) — starting with the transport building block, validated
+in isolation like step 1 was:
+
+- **Why not WebRTC — an empirical finding, not a guess.** The original
+  analysis (`ANALYSE-JEU-DISTANCE.md` §4.B) flagged "check that
+  `RTCPeerConnection` exists in the embedded webview on each OS" as an
+  unverified risk. Verified now, and the answer on Linux is **no**:
+  distribution builds of WebKitGTK (Tauri's Linux webview engine — checked
+  on Ubuntu 24.04, WebKitGTK 2.52) are **compiled without WebRTC**.
+  `typeof RTCPeerConnection === 'undefined'`, and it's not a runtime toggle:
+  setting `enable-webrtc=true` and installing the GStreamer WebRTC plugins
+  (`webrtcbin`, `libnice`) changes nothing, because the symbols
+  (`setLocalDescription`, `createDataChannel`, `iceGatheringState`…) are
+  simply absent from `libwebkit2gtk-4.1.so`. Reproduce with
+  `scripts/check-webrtc-webview.py` (needs `python3-gi`,
+  `gir1.2-webkit2-4.1`; the page attempts a full local loopback —
+  offer/answer/ICE without STUN, DataChannel ping/pong — if the API exists).
+- **The decisive observation**: with "no server at all" as the requirement,
+  WebRTC would run without STUN/TURN — which yields only *host* ICE
+  candidates, i.e. exactly the reachability of a plain direct TCP
+  connection. Dropping WebRTC therefore loses no connectivity, and gains a
+  transport that lives in **Rust** (`src-tauri/src/commands/peer_cmds.rs`):
+  identical on all three OSes, independent of what each webview engine
+  ships, and owned by the *application* rather than by a window — so the
+  Invitation window can establish the session and the game window can pick
+  it up afterwards, with no JS object to hand over. As a side effect the
+  manual exchange needs **one** code (host → guest) instead of WebRTC's two
+  (offer, then answer back).
+- The transport: the host listens on an OS-assigned ephemeral TCP port
+  (`peer_host_start`); the guest tries each address from the invitation
+  code (`peer_connect`); a one-line JSON handshake carries a 128-bit
+  session token (generated webview-side, `generatePeerToken()`) which the
+  host verifies — a wrong token is refused *and the host keeps listening*.
+  After that, both sides relay newline-delimited JSON lines — the same
+  `'tabulon'` envelope as the HTTP relay (`encodeEnvelope`, so
+  `JSON.stringify` guarantees no literal newlines). Received lines are
+  broadcast to the webviews (`tabulon-peer://message` event) and the last
+  one is kept (`peer_last_message`) so a game window that subscribes *after*
+  the session was established can catch up — one slot is enough, plies
+  alternate (same "latest state wins" semantics as `fileio.php`).
+- The invitation code (`app/content/remote-peer-protocol.js`, pure logic):
+  `TBP1-<base64url of {v,gameName,ips,port,token}>`, single line,
+  whitespace-tolerant on paste. Local addresses come from the OS default
+  route (UDP-connect trick, no packet sent); multi-interface hosts only
+  advertise the default one — known simplification, `127.0.0.1` is always
+  appended for two instances on the same machine.
+- **Limits, stated plainly** (they are the price of "no server at all"):
+  the guest must be able to route to one of the host's addresses — same
+  LAN, VPN, or a public IP/port-forward. There is **no NAT traversal** (no
+  STUN/TURN — that would be a server), so two strangers behind home
+  routers, without any of the above, will not connect. The stream is
+  **not encrypted** (no TLS); the token gates access to the session but
+  the moves travel in clear — fine for a board game on a trusted network,
+  worth knowing anyway. No automatic reconnection: if the link drops, the
+  session is over (status event) and a fresh code is needed. One peer
+  session at a time (mirrors the single active relay channel in `play.js`).
+- Validation at this step: `cargo test` runs a **real TCP session** on
+  localhost (handshake, bidirectional relay, wrong-token refusal with the
+  listener surviving it, clean-shutdown propagation both ways — the core
+  is deliberately decoupled from Tauri's `AppHandle` to make that
+  possible); `tests/test-remote-peer-protocol.mjs` covers the invitation
+  code (23 assertions). Not wired into any UI yet at this sub-step.
+
+Step 8 (second half), the UI and game wiring on top of that transport:
+
+- `PeerChannel` (`app/content/remote-peer-channel.js`) is the second
+  implementation of the `RemoteChannel` interface after `HttpRelayChannel`
+  — `gameLoop()` in `play.js` is untouched, `ensureRemoteChannel()` just
+  picks the class from the player config (`{remote:true, peer:true,
+  matchId}` vs the relay's `{remote:true, matchId, relayUrl}`). The
+  channel doesn't own the connection: the TCP session lives in Rust,
+  established by the Invitation window *before* the game window exists;
+  `PeerChannel` only attaches (subscribes to `tabulon-peer://message`,
+  sends through `peer_send`). A move received between the two windows is
+  caught up via `peer_last_message` — and the `nbTurns` filter
+  (`hasOpponentMoved`, shared with the relay codec) makes any replay
+  harmless.
+- The **Invitation** window gains a third mode, "peer-to-peer (no server
+  at all)", next to Join and Create: the host clicks *Create a code* and
+  sends the `TBP1-…` block to the other player by whatever channel
+  (copy button provided); the guest pastes it and clicks *Connect* — the
+  match starts on the guest side as soon as the session is established,
+  and on the host side the shared *Start* button unlocks when the
+  connection lands (`tabulon-peer://status`). Host plays A, guest plays B.
+  Both sides are necessarily Tabulon (no jocly-simple-match web client in
+  this mode), so the wire format is the plain `'tabulon'` envelope.
+- The Players window shows a peer side as a "Remote player" with an empty
+  relay field, and — same preservation rule as the relay `codec` — keeps
+  the peer configuration on Save as long as the match id field isn't
+  edited. Editing it *does* silently turn the side into a relay/human
+  config (the form has no peer-to-peer notion); acceptable for now,
+  the Invitation window is the real entry point.
+- Peer disconnection (the opponent closed their app, network drop) is
+  surfaced in the footer (`play.peerDisconnected`); the game cannot sync
+  anymore at that point — there is **no automatic reconnection**, a fresh
+  code is needed for a new session. Closing the game window releases the
+  Rust session via the existing `beforeunload` →
+  `disposeRemoteChannel()` path (best effort: if the process is killed or
+  crashes, the session lingers until the next host/connect or app exit —
+  the remote side then only notices when TCP does).
+- Validation: `tests/test-remote-peer-channel.mjs` (14 assertions —
+  interface parity with `RemoteChannel`, both directions over a mocked
+  Rust bridge, nbTurns filtering and dedupe, catch-up of a move received
+  before `start()`, unreadable payloads ignored, `stop()` releasing the
+  session, status callback), plus the existing protocol/i18n-parity
+  suites. As with steps 2–7, **no live two-instance runtime test was
+  possible in this environment** (no display, no second machine): the
+  Rust transport is exercised for real by `cargo test` over localhost,
+  but the full flow (two Tabulon apps exchanging a code and playing)
+  remains to be validated by hand — same caveat as every previous step,
+  stated rather than hidden. `cargo check` and `cargo test` green;
+  `node --check` on every touched JS file.
+
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
-WebSocket instead of polling, and peer-to-peer (WebRTC or direct) without
-any relay server — including, as raised alongside this step, joining via a
-short invitation code or a saved contact instead of a URL. Not started.
+WebSocket instead of polling for the relay transport, and a saved-contact
+address book for peer-to-peer.
 
 ## Internationalization (i18n)
 
