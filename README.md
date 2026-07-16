@@ -452,6 +452,51 @@ Step 8 (second half), the UI and game wiring on top of that transport:
   stated rather than hidden. `cargo check` and `cargo test` green;
   `node --check` on every touched JS file.
 
+Step 8c, making the peer-to-peer mode actually usable **across the
+Internet** (public IP + port forwarding) — the two gaps steps 8a/8b left
+open for that scenario, stated there as limits:
+
+- **Fixed listening port** (optional): `peer_host_start` took no port and
+  always bound an OS-assigned ephemeral one — fine on a LAN, useless with
+  a router port-forwarding rule, which targets one fixed port (an
+  ephemeral port would force redoing the rule every game). The host's
+  peer-to-peer block in the Invitation window gains an optional *Port*
+  field; when set, the listener binds exactly that port, and a port
+  already in use is a **visible error** (shown with the real bind message)
+  rather than a silent fallback to an ephemeral port — a silent fallback
+  would break the forwarding rule without the host knowing.
+- **Public address in the code** (optional): the invitation code only
+  carried the host's *local* addresses (default-route IP + `127.0.0.1`),
+  which mean nothing to a guest across the Internet. The host can now
+  enter their public IP — or a host name (DynDNS-style; `peer_connect`
+  resolves names via `ToSocketAddrs`), several allowed, comma-separated —
+  and these go **first** in the code: a host who fills them in is aiming
+  for an Internet game, so the guest tries them before the local
+  addresses (each unreachable address costs its connect timeout). Local
+  addresses stay in the code as a fallback. IPv6 literals are now
+  bracketed correctly on the guest side (`[addr]:port`).
+- How to actually play over the Internet, end to end: the host finds
+  their public IP (any "what is my IP" service), creates a TCP
+  port-forwarding rule on their router (public port → this machine, same
+  port is simplest), enters that port and the public IP in the two new
+  fields, clicks *Create a code* and sends the code — nothing changes for
+  the guest, who just pastes it. **What this does not solve** (unchanged
+  from 8a/8b, worth restating): the stream is still unencrypted — the
+  token gates access, the moves travel in clear; a forwarded port is an
+  open port for the duration; hosts who can't touch their router (CGNAT,
+  strict corporate/campus NAT) still can't host — that's the "no server
+  at all" trade-off, a VPN (or the HTTP relay mode) remains the way out.
+  The host's public IP also ends up inside the invitation code — share
+  the code accordingly.
+- Validation: `cargo test` gains a fixed-port test (binds the requested
+  port exactly; a taken port errors instead of falling back);
+  `tests/test-remote-peer-channel.mjs` covers `hostPeerMatch` option
+  plumbing (fixed port passed through, public addresses first,
+  whitespace/duplicate cleanup, locals kept as fallback) and the protocol
+  suite covers host names in the code. Same environment caveat as before:
+  no real two-machine Internet test was possible here — the NAT/router
+  part of the flow is exactly what only a manual test can exercise.
+
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling for the relay transport, and a saved-contact
 address book for peer-to-peer.

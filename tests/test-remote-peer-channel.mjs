@@ -48,7 +48,8 @@ function bridge(a, b) { a.peer = b; b.peer = a; }
 // paresseux), il suffit que l'objet existe.
 globalThis.window = { __TAURI__: {} };
 
-const { PeerChannel } = await import('../app/content/remote-peer-channel.js');
+const { PeerChannel, hostPeerMatch } = await import('../app/content/remote-peer-channel.js');
+const { decodePeerCode } = await import('../app/content/remote-peer-protocol.js');
 const { RemoteChannel } = await import('../app/content/remote-channel.js');
 const { encodeEnvelope } = await import('../app/content/remote-relay-protocol.js');
 
@@ -175,6 +176,34 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
         'onStatusChange signale la déconnexion');
     assert(String(chan.lastError?.message).includes('connexion perdue'), 'lastError renseigné');
     chan.stop();
+}
+
+// ── 7. hostPeerMatch (étape 8c) : port fixe + adresses publiques en tête ────
+{
+    const calls = [];
+    const invokeImpl = async (cmd, args) => {
+        calls.push([cmd, args]);
+        if (cmd === 'peer_host_start') return { port: args.port ?? 40123, ips: ['192.168.1.42', '127.0.0.1'] };
+        throw new Error('commande inattendue: ' + cmd);
+    };
+    // sans options : port null transmis (= éphémère côté Rust), adresses locales seules
+    const r1 = await hostPeerMatch('classic-chess', { invokeImpl });
+    assert(calls[0][1].port === null, 'sans option, port null (éphémère) transmis à peer_host_start');
+    assert(JSON.stringify(decodePeerCode(r1.code).ips) === JSON.stringify(['192.168.1.42', '127.0.0.1']),
+        'sans option, le code ne contient que les adresses locales');
+    // avec port fixe + adresses publiques
+    const r2 = await hostPeerMatch('classic-chess', {
+        port: 40000,
+        extraAddresses: [' mon-nom.dyndns.example ', '203.0.113.7', '192.168.1.42'],  // espaces + doublon local
+        invokeImpl,
+    });
+    assert(calls[1][1].port === 40000, 'le port fixe est transmis à peer_host_start');
+    const ips = decodePeerCode(r2.code).ips;
+    assert(ips[0] === 'mon-nom.dyndns.example' && ips[1] === '203.0.113.7',
+        'adresses publiques EN TÊTE du code (essayées en premier), espaces nettoyés');
+    assert(ips.filter(a => a === '192.168.1.42').length === 1,
+        'une adresse saisie qui doublonne une locale n\'apparaît qu\'une fois');
+    assert(ips.includes('127.0.0.1'), 'les adresses locales restent dans le code, en secours');
 }
 
 console.log(`\ntest-remote-peer-channel: ${passed} assertions OK`);

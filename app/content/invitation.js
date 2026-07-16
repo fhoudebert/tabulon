@@ -124,8 +124,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('button-peer-host')?.addEventListener('click', async () => {
         if (!selectedGame) { setStatus(peerHostStatus, t('invitation.invalidLink'), 'fail'); return; }
+        // Jeu a travers Internet (etape 8c), deux champs optionnels :
+        //   - port fixe : celui de la regle de redirection de la box de
+        //     l'hote (box -> cette machine, TCP). Vide = port ephemere.
+        //   - adresse(s) publique(s) : IP publique ou nom d'hote (DynDNS),
+        //     plusieurs possibles separees par des virgules -- mises en
+        //     tete du code, essayees en premier par l'invite.
+        const portRaw = document.getElementById('peer-port')?.value.trim() || '';
+        let port = null;
+        if (portRaw) {
+            port = Number(portRaw);
+            if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                setStatus(peerHostStatus, t('invitation.peerBadPort'), 'fail');
+                return;
+            }
+        }
+        const extraAddresses = (document.getElementById('peer-extra-addr')?.value || '')
+            .split(',').map(a => a.trim()).filter(Boolean);
         try {
-            const { code, token } = await hostPeerMatch(selectedGame);
+            const { code, token } = await hostPeerMatch(selectedGame, { port, extraAddresses });
             peerHosting = {
                 gameName: selectedGame, matchId: 'p2p:' + token.slice(0, 12),
                 player: 'a', peer: true, creator: true,
@@ -135,7 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             setStatus(peerHostStatus, t('invitation.peerWaiting'), '');
         } catch (e) {
             console.warn('[invitation] peer host failed:', e.message || e);
-            setStatus(peerHostStatus, t('invitation.peerHostFail'), 'fail');
+            setStatus(peerHostStatus, t('invitation.peerHostFail', { error: String(e.message || e) }), 'fail');
         }
     });
 

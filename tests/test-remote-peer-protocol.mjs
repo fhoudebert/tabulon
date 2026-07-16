@@ -33,6 +33,18 @@ function assert(cond, msg) {
     assert(back.token === info.token, 'jeton préservé');
 }
 
+// ── 1bis. Noms d'hôte (étape 8c : IP publique / DynDNS dans le code) ────────
+{
+    const code = encodePeerCode({
+        gameName: 'shogi',
+        ips: ['mon-nom.dyndns.example', '203.0.113.7', '192.168.1.42'],
+        port: 40000, token: 'abcdef0123456789',
+    });
+    const back = decodePeerCode(code);
+    assert(back !== null && back.ips[0] === 'mon-nom.dyndns.example',
+        'un nom d\'hôte passe dans le code, ordre préservé (publique en tête)');
+}
+
 // ── 2. Tolérance au copier-coller ────────────────────────────────────────────
 {
     const code = encodePeerCode({ gameName: 'shogi', ips: ['10.0.0.5'], port: 1234, token: 'abcdef0123456789' });

@@ -115,14 +115,28 @@ export class PeerChannel extends RemoteChannel {
  * Cote HOTE : demarre l'ecoute Rust et construit le code d'invitation a
  * transmettre a l'autre joueur. La connexion effective arrivera plus tard
  * (event tabulon-peer://status {connected:true}) -- a ecouter cote UI.
- * @returns {Promise<{code:string, token:string}>}
+ *
+ * Options (etape 8c, jeu a travers Internet via redirection de port) :
+ * @param {number} [opts.port] - port d'ecoute FIXE (celui de la regle de
+ *   redirection de la box). Vide = port ephemere, comme avant. Un port
+ *   deja occupe est une erreur remontee telle quelle (pas de repli
+ *   silencieux qui invaliderait la regle NAT sans prevenir).
+ * @param {string[]} [opts.extraAddresses] - adresses a inclure EN TETE du
+ *   code : IP publique de l'hote ou nom d'hote (DNS/DynDNS -- resolu cote
+ *   invite par TcpStream::connect). En tete car un hote qui les renseigne
+ *   vise une partie a travers Internet : l'invite doit les essayer avant
+ *   les adresses locales (chaque adresse injoignable coute son delai de
+ *   connexion). Les adresses locales restent dans le code, en secours.
+ * @returns {Promise<{code:string, token:string, port:number}>}
  */
-export async function hostPeerMatch(gameName, { invokeImpl = tauriInvoke } = {}) {
+export async function hostPeerMatch(gameName, { port = null, extraAddresses = [], invokeImpl = tauriInvoke } = {}) {
     const token = generatePeerToken();
-    const info = await invokeImpl('peer_host_start', { token });
-    const code = encodePeerCode({ gameName, ips: info.ips, port: info.port, token });
+    const info = await invokeImpl('peer_host_start', { token, port });
+    const extras = (extraAddresses || []).map(a => String(a).trim()).filter(Boolean);
+    const ips = [...extras, ...info.ips.filter(a => !extras.includes(a))];
+    const code = encodePeerCode({ gameName, ips, port: info.port, token });
     if (!code) throw new Error('code d\'invitation impossible a construire');
-    return { code, token };
+    return { code, token, port: info.port };
 }
 
 /**
