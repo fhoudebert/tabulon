@@ -528,6 +528,21 @@ peer-to-peer mode:
   including the real-world regression fixture) plus the usual
   `node --check` and i18n-parity passes on a fresh patched checkout.
 
+Step 8e, one more piece of Players-window cleanup from real use: the
+**relay URL field is gone**. In practice it always showed the default
+relay's `fileio.php` address — noise with no job, since the Invitation
+window is the entry point for remote play and the only way a
+*non-default* relay URL ever arrives is inside a pasted invitation link.
+The URL now lives outside the form: the per-side preserved config
+(`lastReceivedRemote`, the same rule that already protects
+`codec`/`gameName`/peer) additionally keeps `relayUrl`, so saving the
+Players window with an unchanged match id keeps whatever relay the match
+was created on; typing a *new* match id manually falls back to the
+default relay — the only honest option left, and the right one for the
+manual case. Peer-to-peer sides are unaffected (they never had a relay).
+No Rust change; validation is the usual suites plus `node --check` on a
+fresh patched checkout.
+
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling for the relay transport, and a saved-contact
 address book for peer-to-peer.

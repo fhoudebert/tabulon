@@ -35,15 +35,16 @@ function BuildSelect(sel, levels, currentType, currentLevelIndex) {
         : 'human';
 }
 
-// Affiche/masque les champs match-id/relay-url selon le type sélectionné, et
-// pré-remplit l'URL du relai par défaut si le champ est vide.
+// Affiche/masque le champ match-id selon le type sélectionné. Le champ URL
+// du relai a été retiré (étape 8e) : il affichait presque toujours le relai
+// par défaut, sans intérêt ici -- l'URL vit désormais hors formulaire (voir
+// lastReceivedRemote), et une URL non-défaut ne peut arriver que par un
+// lien d'invitation.
 function SyncRemoteFields(form) {
     const sel = form.querySelector('select');
     const remoteFields = form.querySelector('.remote-fields');
-    const relayInput = form.querySelector('.relay-url');
     const show = sel.value === 'remote';
     if (remoteFields) remoteFields.style.display = show ? '' : 'none';
-    if (show && relayInput && !relayInput.value) relayInput.value = DEFAULT_RELAY_URL;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -54,7 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // gérés par data-i18n dans le HTML statique, posés ici comme le reste
     // du texte dynamique de cette fenêtre.
     document.querySelectorAll('.match-id').forEach(el => el.placeholder = t('players.matchId'));
-    document.querySelectorAll('.relay-url').forEach(el => el.placeholder = t('players.relayUrl'));
 
     listen('play-rep:' + matchId + ':get-players', ({ payload }) => {
         const { levels, players } = payload;
@@ -65,21 +65,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!sel) return;
             const info = players[key] || {};
             BuildSelect(sel, levels, info.type, info.levelIndex);
-            const nameInput = form.querySelector('input[type=text]:not(.match-id):not(.relay-url)');
+            const nameInput = form.querySelector('input[type=text]:not(.match-id)');
             if (nameInput) nameInput.value = which === 'a' ? t('common.playerA') : t('common.playerB');
             const matchIdInput = form.querySelector('.match-id');
-            const relayInput   = form.querySelector('.relay-url');
             if (info.type === 'remote') {
                 if (matchIdInput) matchIdInput.value = info.matchId || '';
-                // Cote pair-a-pair : pas de relai du tout -- champ laisse
-                // vide plutot que d'afficher une URL de relai qui ne sert pas.
-                if (relayInput)   relayInput.value   = info.peer ? '' : (info.relayUrl || DEFAULT_RELAY_URL);
                 // Retenu pour Save : si le match id n'est pas modifié dans ce
                 // formulaire, on rend au moteur le codec/gameName d'origine
                 // (ex. jocly-simple-match venu d'une invitation) plutôt que
                 // de le faire silencieusement retomber sur notre codec par
                 // défaut, qui casserait l'interop avec l'autre client.
-                lastReceivedRemote[which] = { matchId: info.matchId, codec: info.codec, gameName: info.gameName, peer: !!info.peer };
+                lastReceivedRemote[which] = { matchId: info.matchId, codec: info.codec, gameName: info.gameName, peer: !!info.peer, relayUrl: info.relayUrl };
             } else {
                 lastReceivedRemote[which] = null;
             }
@@ -110,10 +106,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 result[key] = { type: 'human', levelIndex: -1 };
             } else if (val === 'remote') {
                 const matchIdVal = form.querySelector('.match-id')?.value.trim();
-                const relayUrlVal = form.querySelector('.relay-url')?.value.trim() || DEFAULT_RELAY_URL;
                 if (matchIdVal) {
                     const prev = lastReceivedRemote[which];
                     const unchanged = prev && prev.matchId === matchIdVal;
+                    // URL du relai : le champ a ete retire (etape 8e). Match
+                    // id inchange -> on garde l'URL de la conf d'origine
+                    // (ex. venue d'un lien d'invitation vers un autre relai)
+                    // ; id modifie/nouveau -> relai par defaut.
+                    const relayUrlVal = (unchanged && prev.relayUrl) || DEFAULT_RELAY_URL;
                     // Meme regle de preservation que codec/gameName : un cote
                     // pair-a-pair (etabli par la fenetre Invitation) reste
                     // pair-a-pair tant que le match id n'est pas modifie ici
