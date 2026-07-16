@@ -115,6 +115,12 @@ et/ou la liste des coups par `matchId`, et que chaque client interroge.
   support de `RTCPeerConnection` dans la webview embarquée sur chaque OS
   (WebView2 / WebKitGTK / WKWebView — a priori présent, moteurs
   navigateurs modernes, mais à valider en pratique sur Tabulon).
+  **Mise à jour (étape 8, vérifié empiriquement)** : sous Linux la réponse
+  est NON — les builds de distribution de WebKitGTK sont compilés SANS
+  WebRTC (`scripts/check-webrtc-webview.py` pour reproduire). Le mode
+  pair-à-pair retenu est donc une connexion TCP directe portée côté Rust
+  (même joignabilité qu'un WebRTC sans STUN/TURN), voir README § Remote
+  play, étape 8.
 - Variante plus simple mais moins « grand public » : connexion directe
   entre les deux machines sans vrai WebRTC — l'hôte de la partie ouvre un
   port et écoute (TCP/WS), l'autre joueur se connecte par IP:port. Demande

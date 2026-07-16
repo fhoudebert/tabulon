@@ -457,6 +457,7 @@ Step 8 (second half), the UI and game wiring on top of that transport:
   stated rather than hidden. `cargo check` and `cargo test` green;
   `node --check` on every touched JS file.
 
+<<<<<<< HEAD
 Step 8c, making the peer-to-peer mode actually usable **across the
 Internet** (public IP + port forwarding) — the two gaps steps 8a/8b left
 open for that scenario, stated there as limits:
@@ -548,6 +549,8 @@ manual case. Peer-to-peer sides are unaffected (they never had a relay).
 No Rust change; validation is the usual suites plus `node --check` on a
 fresh patched checkout.
 
+=======
+>>>>>>> 1a0dc58 (peer to peer via code)
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling for the relay transport, and a saved-contact
 address book for peer-to-peer.
