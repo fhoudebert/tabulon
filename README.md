@@ -458,6 +458,9 @@ Step 8 (second half), the UI and game wiring on top of that transport:
   `node --check` on every touched JS file.
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 6a1ac01 (ip+port)
 Step 8c, making the peer-to-peer mode actually usable **across the
 Internet** (public IP + port forwarding) — the two gaps steps 8a/8b left
 open for that scenario, stated there as limits:
@@ -503,6 +506,7 @@ open for that scenario, stated there as limits:
   no real two-machine Internet test was possible here — the NAT/router
   part of the flow is exactly what only a manual test can exercise.
 
+<<<<<<< HEAD
 Step 8d, fit and finish from the first real-world test of the
 peer-to-peer mode:
 
@@ -551,6 +555,8 @@ fresh patched checkout.
 
 =======
 >>>>>>> 1a0dc58 (peer to peer via code)
+=======
+>>>>>>> 6a1ac01 (ip+port)
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling for the relay transport, and a saved-contact
 address book for peer-to-peer.
