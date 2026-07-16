@@ -53,11 +53,26 @@ function assert(cond, msg) {
     assert(back !== null && back.gameName === 'shogi', 'espaces/sauts de ligne du copier-coller ignorés');
 }
 
+// ── 2bis. Préfixe TBP1- perdu (double-clic qui sélectionne après le '-') ────
+{
+    const code = encodePeerCode({ gameName: 'go', ips: ['10.0.0.9'], port: 4321, token: 'abcdef0123456789' });
+    const sansPrefixe = code.slice('TBP1-'.length);
+    const back = decodePeerCode(sansPrefixe);
+    assert(back !== null && back.gameName === 'go' && back.port === 4321,
+        'un code sans son préfixe TBP1- est quand même décodé');
+    // fixture de régression : le code exact du bug constaté en test réel
+    const reel = 'eyJ2IjoxLCJnIjoiY2xhc3NpYy1jaGVzcyIsImEiOlsiMTkyLjE2OC4xLjE5IiwiMTI3LjAuMC4xIl0sInAiOjM0NTkzLCJ0IjoiZDNlNTU4OTk4ODA4ZDYzZDY2YmY5MTIwZmFhOGVlOTcifQ';
+    const r = decodePeerCode(reel);
+    assert(r !== null && r.gameName === 'classic-chess' && r.port === 34593
+        && r.ips[0] === '192.168.1.19',
+        'régression : le code réel amputé du préfixe (bug terrain) est accepté');
+}
+
 // ── 3. Rejets (jamais d'exception, toujours null) ────────────────────────────
 {
     assert(decodePeerCode(null) === null, 'null rejeté');
     assert(decodePeerCode('') === null, 'chaîne vide rejetée');
-    assert(decodePeerCode('pas-un-code') === null, 'préfixe absent rejeté');
+    assert(decodePeerCode('pas-un-code') === null, 'texte quelconque rejeté (JSON invalide)');
     assert(decodePeerCode('TBP1-%%%%') === null, 'base64 invalide rejeté sans exception');
     assert(decodePeerCode('TBP1-' + Buffer.from('{"v":2}').toString('base64url')) === null,
         'version inconnue rejetée');

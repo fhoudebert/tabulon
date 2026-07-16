@@ -81,17 +81,25 @@ export function encodePeerCode({ gameName, ips, port, token }) {
 
 /**
  * Decode un code d'invitation colle par l'utilisateur.
- * Tolerant aux espaces/sauts de ligne ajoutes par le copier-coller.
+ * Tolerant aux espaces/sauts de ligne ajoutes par le copier-coller, ET au
+ * prefixe TBP1- manquant : un double-clic dans le champ du code selectionne
+ * le "mot" apres le tiret (le '-' casse la selection), donc un copier-coller
+ * manuel arrive facilement ampute du prefixe -- constate en test reel. Le
+ * prefixe n'est qu'un marqueur de version ; la vraie garde reste la
+ * validation stricte des champs ci-dessous (v===1, adresses, port, jeton).
  * @returns {{gameName:string, ips:string[], port:number, token:string}|null}
  *   null si le code est illisible ou incomplet (jamais d'exception).
  */
 export function decodePeerCode(code) {
     if (typeof code !== 'string') return null;
     const cleaned = code.replace(/\s+/g, '');
-    if (!cleaned.startsWith(CODE_PREFIX)) return null;
+    const payload = cleaned.startsWith(CODE_PREFIX)
+        ? cleaned.slice(CODE_PREFIX.length)
+        : cleaned;
+    if (!payload) return null;
     let parsed;
     try {
-        parsed = JSON.parse(fromBase64Url(cleaned.slice(CODE_PREFIX.length)));
+        parsed = JSON.parse(fromBase64Url(payload));
     } catch {
         return null;
     }

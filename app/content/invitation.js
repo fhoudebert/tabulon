@@ -18,8 +18,8 @@
 import tRpc from './tabulon-rpc.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
-import { Store, listen } from './tauri-bridge.js';
-import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
+import { Store, listen, httpFetch } from './tauri-bridge.js';
+import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
 import { hostPeerMatch, joinPeerMatch } from './remote-peer-channel.js';
 
 const selectedGame = new URLSearchParams(window.location.search).get('game') || null;
@@ -120,6 +120,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         created = peerHosting;   // Start lancera la partie p2p
         if (startBtn) startBtn.disabled = false;
         setStatus(peerHostStatus, t('invitation.peerConnected'), 'ok');
+    });
+
+    // Tester le relai (etape 8d, deplace depuis la fenetre Joueurs) : meme
+    // sonde qu'avant -- un POST "load" sur un id anodin ; seule
+    // l'atteignabilite du fileio.php compte, pas le contenu de la reponse.
+    document.getElementById('button-test-relay')?.addEventListener('click', async () => {
+        const relayUrl = document.getElementById('invitation-relay-url')?.value.trim() || DEFAULT_RELAY_URL;
+        setStatus(createStatus, t('players.testChecking'), '');
+        try {
+            const res = await httpFetch(relayUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: buildLoadBody('tabulon-test').toString(),
+            });
+            await res.text();
+            setStatus(createStatus, t('players.testOk'), 'ok');
+        } catch (e) {
+            console.warn('[invitation] test relay failed:', e.message || e);
+            setStatus(createStatus, t('players.testFail'), 'fail');
+        }
+    });
+
+    // Les champs de code/lien en lecture seule se selectionnent en entier au
+    // clic : un double-clic ne selectionne que le "mot" sous le curseur (le
+    // '-' de TBP1- coupe la selection), ce qui a deja produit un code
+    // ampute en copier-coller manuel -- constate en test reel.
+    ['peer-code', 'invitation-link'].forEach(id => {
+        document.getElementById(id)?.addEventListener('click', function () { this.select(); });
     });
 
     document.getElementById('button-peer-host')?.addEventListener('click', async () => {

@@ -6,8 +6,8 @@
 import tRpc from './tabulon-rpc.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
-import { listen, emit, httpFetch } from './tauri-bridge.js';
-import { DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
+import { listen, emit } from './tauri-bridge.js';
+import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 const matchId = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
 // Preserve codec/gameName (ex. venus d'une invitation jocly-simple-match)
@@ -55,8 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // du texte dynamique de cette fenêtre.
     document.querySelectorAll('.match-id').forEach(el => el.placeholder = t('players.matchId'));
     document.querySelectorAll('.relay-url').forEach(el => el.placeholder = t('players.relayUrl'));
-    document.querySelectorAll('.btn-copy').forEach(el => el.textContent = t('players.copy'));
-    document.querySelectorAll('.btn-test').forEach(el => el.textContent = t('players.test'));
 
     listen('play-rep:' + matchId + ':get-players', ({ payload }) => {
         const { levels, players } = payload;
@@ -90,40 +88,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         twu.ready();
     });
 
-    // Bascule d'affichage des champs distants + copie du match id
+    // Bascule d'affichage des champs distants. Les boutons Copier/Tester
+    // ont ete retires (etape 8d) : depuis l'etape 4, le partage et le test
+    // passent par la fenetre Invitation, la vraie porte d'entree du jeu a
+    // distance -- ici ne restent que les champs, pour l'edition manuelle.
     document.querySelectorAll('.players-a, .players-b').forEach(form => {
         form.querySelector('select')?.addEventListener('change', () => SyncRemoteFields(form));
-        form.querySelector('.btn-copy')?.addEventListener('click', async () => {
-            const input = form.querySelector('.match-id');
-            const btn = form.querySelector('.btn-copy');
-            if (!input?.value || !btn) return;
-            try {
-                await navigator.clipboard.writeText(input.value);
-                const original = btn.textContent;
-                btn.textContent = t('players.copied');
-                setTimeout(() => { btn.textContent = original; }, 1200);
-            } catch (e) {
-                console.warn('[players] clipboard write failed:', e.message || e);
-            }
-        });
-        form.querySelector('.btn-test')?.addEventListener('click', async () => {
-            const relayUrl = form.querySelector('.relay-url')?.value.trim() || DEFAULT_RELAY_URL;
-            const matchIdVal = form.querySelector('.match-id')?.value.trim() || 'tabulon-test';
-            const status = form.querySelector('.remote-test-status');
-            if (status) { status.textContent = t('players.testChecking'); status.className = 'remote-test-status'; }
-            try {
-                const res = await httpFetch(relayUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: buildLoadBody(matchIdVal).toString(),
-                });
-                await res.text();   // le contenu importe peu ici -- seule l'atteignabilité compte
-                if (status) { status.textContent = t('players.testOk'); status.className = 'remote-test-status ok'; }
-            } catch (e) {
-                console.warn('[players] test relay failed:', e.message || e);
-                if (status) { status.textContent = t('players.testFail'); status.className = 'remote-test-status fail'; }
-            }
-        });
     });
 
     document.getElementById('button-cancel')?.addEventListener('click', () => tRpc.close());

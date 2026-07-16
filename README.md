@@ -497,6 +497,37 @@ open for that scenario, stated there as limits:
   no real two-machine Internet test was possible here — the NAT/router
   part of the flow is exactly what only a manual test can exercise.
 
+Step 8d, fit and finish from the first real-world test of the
+peer-to-peer mode:
+
+- **A truncated code from a double-click copy is now accepted.** Field
+  report: a guest pasted `eyJ2Ijox…` — a valid code minus its `TBP1-`
+  prefix — and got "invalid invitation code". Cause: double-clicking the
+  code field selects only the "word" under the cursor, and the `-` in
+  `TBP1-` breaks word selection, so a manual copy easily loses the
+  prefix. Two fixes: `decodePeerCode()` now accepts a prefix-less code
+  (the prefix is a version marker; the real gate is, and remains, the
+  strict field validation — v, addresses, port, token), with the exact
+  field-reported string kept as a regression fixture; and the read-only
+  code/link fields select their whole content on click, so a manual copy
+  grabs everything. The Copy buttons were always safe — this only bit
+  manual selection.
+- **The Players window drops its Copy and Test buttons** (feedback: not
+  useful there). Since step 4 the Invitation window is the real entry
+  point for remote play — sharing goes through it, so a Copy next to the
+  match id and a relay Test buried in Players had no job left. The match
+  id and relay URL *fields* stay, for manual edits. The relay **Test
+  button moves to the Invitation window** instead, next to the relay URL
+  field of the Create section (same probe as before: a `load` POST on a
+  throwaway id — only reachability matters). It tests whatever URL is in
+  the field, or the default relay when empty; the result lands in the
+  Create status line. No new i18n keys: the button reuses
+  `players.test`/`testChecking`/`testOk`/`testFail`.
+- No Rust change in this step (`src-tauri/` untouched), so no cargo run
+  was needed; validation is the extended protocol suite (26 assertions,
+  including the real-world regression fixture) plus the usual
+  `node --check` and i18n-parity passes on a fresh patched checkout.
+
 Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
 WebSocket instead of polling for the relay transport, and a saved-contact
 address book for peer-to-peer.
