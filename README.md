@@ -113,8 +113,13 @@ dist or a single-module gulp build
 the packaging tool that feeds the downloadable extension catalogue.
 
 A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
-import dialog accepts both `.tabulon-ext` and `.zip`. Published extensions
-are (or will be) downloadable from:
+import dialog accepts both `.tabulon-ext` and `.zip`. The whole catalogue is
+produced in one shot by `node scripts/export-all.mjs [outdir] [--dist path]`:
+it packages **every module** into `outdir/modules/` and **every game** into
+`outdir/games/`, each with a static `index.html` (games grouped by module,
+then alphabetically) plus a small landing page — the `outdir` content is
+published as-is under `ext/`. Published extensions are (or will be)
+downloadable from:
 
 - <https://fhoudebert.github.io/tabulon/ext/> — catalogue
 - <https://fhoudebert.github.io/tabulon/ext/games> — game extensions
@@ -591,6 +596,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
+| `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
 
