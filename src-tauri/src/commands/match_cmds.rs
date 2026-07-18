@@ -13,7 +13,7 @@
 use crate::state::AppState;
 use crate::window_manager::{open_window, WindowOptions};
 use serde_json::Value;
-use tauri::{AppHandle, Manager, State, Emitter};
+use tauri::{AppHandle, State, Emitter};
 use tauri_plugin_store::StoreExt;
 
 // ── Cycle de vie d'une partie ──────────────────────────────────────────────────
