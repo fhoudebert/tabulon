@@ -562,25 +562,6 @@ the mechanism (`dist_override.rs` + `asset-rewrite.js`):
 Without an external dist the protocol is never hit and the script not
 injected — behaviour identical to before the feature.
 
-### Known pitfalls
-
-- **Delete `src-tauri/target/`** after any file added to or removed from
-  `app/` (stale embedded assets → "ghost file" symptoms).
-- `.hidden { display:none !important }` in tabulon.css: never put this
-  class on an element revealed via `style.display` in JS — use an inline
-  `style="display:none"` instead.
-- COOP/COEP headers are enabled in `tauri.conf.json` (SharedArrayBuffer
-  for Fairy-Stockfish WASM).
-- Frontend files go in HTML/JS pairs (`hub.js`/`hub.html` and friends): a
-  stale HTML is detected by its JS (degraded mode + console message)
-  rather than silently breaking.
-
-### Remaining internal work
-
-- Rust commands with no rpc mapping (`close_window`, `match_ended`,
-  `open_book_window`, `open_window_for_match`, `show_error_dialog`):
-  check their internal usages and remove the orphans.
-- `engine.html/js` (external UCI/CECP engines): present but not finished.
 
 ## Project layout
 
