@@ -1,6 +1,8 @@
 # Tabulon
 
-Play **125 board games** on your desktop — chess and its many variants, draughts, shogi, xiangqi, go-style territory games, mills, tafl, and more. Tabulon is a free, cross-platform application (Linux, Windows, macOS) built on the [Jocly](https://github.com/mi-g/jocly) game library, as a [Tauri 2](https://v2.tauri.app) migration of [JoclyBoard](https://github.com/mi-g/joclyboard).
+Play **125 board games** on your desktop — chess and its many variants, draughts, shogi, xiangqi, go-style territory games, mills, tafl, and more. Tabulon is a free, cross-platform application (Linux, Windows, macOS) built on the [Jocly](https://fhoudebert.github.io/jocly2) game library, as a [Tauri 2](https://v2.tauri.app) inspired by the abandonned JoclyBoard.
+
+![The game list](liste.png)
 
 ## What you can do
 
@@ -13,6 +15,8 @@ Play **125 board games** on your desktop — chess and its many variants, draugh
 - **Capture your games** — record a video of the board or take 3D screenshots, right from the app.
 - **Open as many boards as you like** — every game runs in its own window; satellite windows (history, clock, players, possible moves…) follow the one you're playing.
 - **Use it in English or French** — the interface follows your system language.
+
+![A game in progress](game.png)
 
 ## Getting started
 
@@ -44,7 +48,7 @@ English and French, auto-detected from your system. Game rules pages are shown i
 
 ## For developers
 
-Build instructions, architecture, scripts, extension packaging, the remote-play design history and the test suites are documented in [DEVELOPMENT.md](./DEVELOPMENT.md) and [ARCHITECTURE.md](./ARCHITECTURE.md).
+Build instructions, architecture, scripts, extension packaging, the remote-play design history and the test suites are documented in [DEVELOPMENT.md](./DEVELOPMENT.md) (build, internal architecture, remote-play design, scripts, tests).
 
 ## License
 

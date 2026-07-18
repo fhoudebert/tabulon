@@ -4,7 +4,7 @@ A cross-platform desktop app for playing 125 board games, built with **Tauri 2**
 
 Main features: 2D/3D boards, human vs AI play, clocked games, game import/export, per-game rules, favorites and templates, any number of simultaneous games, English/French UI (locale detected from the system).
 
-For the internal architecture (window inventory, JS ⇄ Rust protocol, satellite-window events), see [ARCHITECTURE.md](./ARCHITECTURE.md).
+For the internal architecture (window inventory, JS ⇄ Rust protocol, satellite-window events), see the "Internal architecture" section below.
 
 ---
 
@@ -147,10 +147,10 @@ external dist cannot break the UI itself.
 Two ways to play a Jocly game against a remote human, both entered through
 the **Invitation** window (hub game panel, next to Quick play / Clocked
 play): a shared **HTTP relay**, or **peer-to-peer with no server at all**.
-The design analysis and transport comparison live in
-`ANALYSE-JEU-DISTANCE.md`. The sections below describe the **current
-state**, not the development history (that history is in the branch's
-commit log).
+The sections below describe the **current state**, not the development
+history (that history is in the branch's commit log); the "Design
+background" subsection at the end keeps the still-relevant parts of the
+original design analysis.
 
 ### Common architecture
 
@@ -172,8 +172,10 @@ commit log).
 - **Known limitation**: takeback/rollback/restart change the local
   position without propagating (neither transport has an "unplay"
   concept). `resetBaseline()` keeps the local channel bookkeeping
-  consistent, but the two sides can desync until the next pushed move —
-  see `ANALYSE-JEU-DISTANCE.md` §6 for the resync options.
+  consistent, but the two sides can desync until the next pushed move.
+  A resync story (e.g. pushing the full engine state on demand, which the
+  `'jocly-simple-match'` codec already does on every move) is an open
+  item.
 - The Players window shows a remote side as "Remote player" and
   **preserves** its full configuration (`codec`, `gameName`, `relayUrl`,
   peer flags) on Save as long as the match id field is left unchanged;
@@ -269,16 +271,56 @@ and `scripts/check-jocly-compat.mjs`. The full two-machine flow (two
 Tabulon instances exchanging a code over a real network) is the part only
 a manual test exercises.
 
-Open items, from `ANALYSE-JEU-DISTANCE.md`'s comparison: push/WebSocket
-instead of polling for the relay transport; a saved-contact address book
-for peer-to-peer; a match-resume story (would piggyback on the existing
-Save/Load format rather than invent a new one); and the WebRTC
-re-evaluation noted above.
+Open items, from the design comparison below: push/WebSocket instead of
+polling for the relay transport; a saved-contact address book for
+peer-to-peer; a match-resume story (persist `matchId` + side + transport
+with the game, piggybacking on the existing Save/Load format rather than
+inventing a new one); and the WebRTC re-evaluation noted above.
+
+### Design background
+
+Distilled from the original design analysis; kept here because it still
+explains *why* the current shape was chosen.
+
+- **The Jocly engine is transport-agnostic** — proven by
+  jocly-simple-match: `Match` exposes everything needed (`save()`,
+  `load()`, `playMove()`, `getTurn()`, `userTurn()`, `abortUserTurn()`)
+  without knowing anything about the network. Their whole "server" is a
+  per-match text file (`fileio.php`) holding
+  `{matchDetails, matchdata (= match.save()), time, key}`; the client
+  polls while waiting (a full reload only on a fraction of the ticks) and,
+  when `nbTurns` changed, loads the state *before* the last move then
+  `playMove()`s it — so the opponent's move is animated instead of the
+  board jumping to the final position. Player identity is just the
+  `?player=a`/`?player=b` link; the `key` field is never actually
+  verified — security rests entirely on the match id being unguessable.
+  That contract (matchId + serialized `match.save()` + move detection by
+  turn count) is exactly what `HttpRelayChannel` reproduces.
+- **Transports considered, and why these two**: a relay (polling now,
+  push/WebSocket as an upgrade path) is the shortest path and can reuse
+  any existing jocly-simple-match instance — its cost is that *someone*
+  hosts it, and the relay sees the moves. Peer-to-peer avoids any server;
+  WebRTC was ruled out empirically (see above), and without STUN/TURN it
+  would not have connected anything plain TCP cannot reach anyway.
+  Also considered and set aside: a synced folder (Dropbox/Syncthing) as a
+  mailbox — zero network code but latency and tooling assumptions on both
+  sides; move-per-message over email/XMPP/Matrix — correspondence-play
+  UX, no live feel. Both remain possible `RemoteChannel` implementations
+  if ever wanted, which is the point of the interface.
+- **Minimal security posture, stated**: unguessable match ids (UUID-class)
+  for the relay, the 128-bit token for peer sessions, and no claim of
+  confidentiality — neither transport encrypts by itself (the relay is
+  only as private as its HTTPS and its operator; the peer stream is plain
+  TCP).
 
 ## Internationalization (i18n)
 
 `app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the
-source of truth; unknown keys fall back to it). Static HTML text is wired
+source of truth; unknown keys fall back to it). The locale comes from the
+**system** (`os.locale()` from plugin-os, falling back to
+`navigator.language`, then `en`; the bridge is imported as a namespace on
+purpose, so a missing export degrades instead of killing the page); the
+detected locale is shown in the About panel. Static HTML text is wired
 with `data-i18n` (`textContent`), `data-i18n-title` (`title`), or
 `data-i18n-placeholder` (`placeholder`) — `translateDom()` applies the
 dictionary to every element carrying one of these on `DOMContentLoaded`,
@@ -303,6 +345,11 @@ engine source, not guessed), translating the base word and leaving any
 (a game not covered, or a genuinely new one added later) is returned
 unchanged rather than left blank — no dictionary entry means no visible gap,
 just English where French would be nicer to have.
+
+**Localized rules pages** (`info.js::DocCandidates`), in priority order:
+1) the language key declared by the game's `*-config.js` (e.g. `rules.fr` —
+free-form file name); 2) probing an `_fr` suffix next to the `en` file;
+3) the `en` file.
 
 ## Scripts
 
@@ -349,6 +396,192 @@ cargo tauri icon path/to/source.png
 
 ---
 
+## Internal architecture
+
+> History: a SharedWorker architecture ("one application brain") was
+> explored and **abandoned**. In the current architecture, each match's
+> business core lives in its own `play.html` window.
+
+```
+┌────────────────────────────┐
+│ hub.html  (single window)  │  game list + detail panel
+└──────────┬─────────────────┘
+           │ tRpc.call('new_match', …)          [Tauri invoke]
+           ▼
+┌────────────────────────────┐   1 window per match; Jocly runs here
+│ play.html #matchId         │   (attachElement → iframe): game loop
+│  = the match's brain       │   human/AI/remote, clock, save/load, skins
+└──────────┬─────────────────┘
+           │ Tauri events  play-req / play-rep / play-event :{matchId}:*
+           ▼
+┌────────────────────────────┐   satellite windows = pure views
+│ history, clock, players,   │   (no business state; they query play.js
+│ view-options, info, camera │    and listen to its pushes)
+└────────────────────────────┘
+```
+
+- **Rust** (`src-tauri/`): window management (creation, persisted
+  geometry), store, favorites/templates, native dialogs, file writing,
+  video recording (ffmpeg), extension packaging
+  (`extension_cmds.rs`, mirrored by `scripts/make-extension.mjs`), the
+  peer-to-peer TCP session (`peer_cmds.rs`), and the external-dist
+  protocol. **No game logic.**
+- **`window.Jocly`**: loaded in every page that needs it via
+  `<script src="../browser/jocly.js">` (the jocly2 build copied into
+  `dist/`, merged at the web root by `frontendDist: ["../app", "../dist"]`).
+
+### Window inventory
+
+| File (app/content/) | Role |
+|---|---|
+| `hub.html/js` | Main window: sidebar (All/Favorites/Templates/Extensions/About), game list with shortcuts (favorite, rules, quick play), detail panel (animated visuals, action buttons — including Invitation — and the game's templates). Tablet-responsive (icon sidebar < 900 px, list **or** detail view < 680 px). |
+| `play.html/js` | The board + the match's brain: game loop (`userTurn`/`machineSearch`/remote channel), clock state, JSON save/load, snapshot, fork, pause, A/B player and skin (2D/3D) selectors in the footer. The `…` button toggles button bar ⟷ selectors. |
+| `invitation.html/js` | Remote-play entry point: join a relay match from a link, create one (id + shareable link, relay Test button), or peer-to-peer host/connect with a `TBP1-…` code. See "Remote play" above. |
+| `extensions.html/js` | Import/export/uninstall of game and module extensions (Games/Modules tabs); the hub is notified through `relay_to_window('main','extensionsChanged')` and reloads its list. |
+| `clock-setup.html/js` | Clocked-game configuration → `new_match(game, clock)`. |
+| `clock.html/js` | Clock display (7-segment font); pure view over play.js state. |
+| `history.html/js` | Played-moves navigation (takeback, replay, resume from a position). |
+| `players.html/js`, `view-options.html/js`, `camera-view.html/js`, `save-template.html/js`, `info.html/js`, `book.html/js`, `moves`, `open-position`, `show-position` | Various satellites. `info` loads localized rules/description/credits (see i18n). |
+
+Shared modules: `tauri-bridge.js` (access to `window.__TAURI__`; see its
+header for the `withGlobalTauri` rationale), `tabulon-rpc.js`
+(name → payload mapping of Rust commands), `tabulon-i18n.js`,
+`tabulon-winutils.js` (window init/title/ready), `remote-channel.js` /
+`remote-relay-protocol.js` / `remote-peer-channel.js` /
+`remote-peer-protocol.js` (remote play), `asset-rewrite.js` (external
+dist), `tabulon.css`.
+
+### Communication protocols
+
+**UI → Rust (request/response)**: `tRpc.call('name', ...args)` →
+`invoke('name', mappedPayload)`. The args → payload mapping is centralized
+in `tabulon-rpc.js`: **every new Rust command must be added there.**
+Current inventory (from `lib.rs`'s `generate_handler`):
+
+- `fs_cmds`: `parse_pjn`, `read_text_file`, `save_text_file`,
+  `save_data_uri_file`, `get_dist_info`
+- `hub_cmds`: `get_app_info`, `notify_user_response`
+- `match_cmds`: `new_match`, `match_ended`, `is_favorite`, `set_favorite`,
+  `notify_user`, `open_window_for_match`, `close_window`,
+  `open_book_window`, `open_show_position`, `show_error_dialog`
+- `template_cmds`: `play_template`, `save_template`, `remove_template`,
+  `is_template_name_valid`
+- `video_cmds`: `start_recording`, `record_frame`, `stop_recording`
+- `window_cmds`: `open_history`, `open_clock`, `open_clock_setup`,
+  `open_players`, `open_view_options`, `open_camera_view`,
+  `open_save_template`, `open_info`, `open_invitation`,
+  `open_extensions`, `open_board_state`, `open_book`, `open_moves`,
+  `open_position`, `relay_to_window`
+- `extension_cmds`: `list_extension_games`, `export_extension`,
+  `import_extension`, `remove_extension`, `export_module`,
+  `remove_module`
+- `peer_cmds`: `peer_host_start`, `peer_connect`, `peer_send`,
+  `peer_last_message`, `peer_status`, `peer_stop`
+
+**Rust → UI (fire-and-forget pushes)**: hub listens to `updateFavorites`,
+`updateTemplates`, `notifyUser` (banner + reply via
+`notify_user_response`) and `extensionsChanged`; every window can receive
+`tabulon-peer://message` / `tabulon-peer://status` (peer session).
+
+**Satellites ⇄ play.js** (the central protocol), per match, defined in
+`play.js::initSatelliteListeners()`:
+
+```
+request : emit('play-req:{matchId}:{action}', payload)      satellite → play
+reply   : listen('play-rep:{matchId}:{action}')             play → satellite
+push    : listen('play-event:{matchId}:{event}')            play → satellites
+```
+
+Served actions: `get-clock`, `get-view-options`/`set-view-options`,
+`get-players`/`set-players`, `get-possible-moves`,
+`input-move`/`show-move` (Possible moves window),
+`get-camera`/`set-camera` (3D camera view),
+`get-board-state`/`load-board-state` (show/open-position windows),
+`rollback-to`, `get-played-moves`… Pushes: `update-clock` (turn change,
+game end), `move-played` (after every move, a Load or a book replay).
+
+**PGN/PJN books**: hub.js drops the file content into the store
+(`book:{game}`); book.html parses it through the Rust `parse_pjn` command
+(tolerates \r\n and repeated empty lines) and lists the games; on click,
+the extracted SAN moves are stored under `fork:{id}` with a `book` marker
+and `new_match` opens a board that replays them via `pickMove`/`playMove`
+(game paused, navigation through the History window).
+
+### The clock (JoclyBoard model, ported)
+
+State lives in `play.js`: `{mode, 1: ms, -1: ms, xtrasec_±1, mps_±1,
+turn, t0}`. On every turn change, `ClockTurn()` debits the elapsed time
+from the player who just moved (+ per-move bonus / per-session re-credit
+in countdown mode) then sets `t0`/`turn`; `ClockStop()` settles at game
+end. Without a clocked game, a *countup* clock still runs (cumulated
+thinking time). `clock.html` only displays (current time computed
+view-side from `turn`/`t0`).
+
+### Store (plugin-store, `tabulon.json`)
+
+Notable keys: `nav-last`, `last-game`, `favoriteGames`, `templates`,
+`view-options:{game}`, `clock` (last setup values), `play-footer-bar`
+(visible button bar), `window:{label}` (geometry), `fork:{id}` (position
+transfer on fork), `book:{game}` (book file content).
+
+### Video capture
+
+`play.js` pumps JPEG frames (`viewControl('takeSnapshot',
+{format:'jpeg', quality})`) to the Rust `record_frame` command, which
+pushes them onto the stdin of an ffmpeg spawned by `start_recording`
+(`-f mjpeg … libx264`; `-loglevel error` is mandatory with a piped stderr,
+otherwise the buffer deadlocks). Sequential self-rescheduling loop (no
+`setInterval` piling up concurrent 3D captures); idle periods are skipped
+after `video-record:ignoreIdenticalFrames` identical frames (default 30);
+capture is unavailable in 2D skins (Jocly limitation: WebGL rendering
+required — buttons greyed with a tooltip). **Ending a recording**: the MP4
+is only readable after ffmpeg's stdin is closed (moov atom); three paths
+lead there — the Record video toggle, the dedicated Stop button, and two
+automatic safety nets when the game window closes mid-recording
+(`beforeunload` JS-side + a `WindowEvent::Destroyed` hook on `play-{id}`
+in lib.rs → `finalize_recording`). Prerequisite: ffmpeg in the PATH.
+
+### External dist, under the hood
+
+The user-facing behaviour is in "Bundled games vs full library" above;
+the mechanism (`dist_override.rs` + `asset-rewrite.js`):
+
+1. `dist_override::external_dist()` looks for a usable dist —
+   `TABULON_DIST`, `$APPIMAGE` (the .AppImage's folder, not the temporary
+   mount), `<exe>/dist`, with .app/AppImage walk-ups — resolved once
+   (`OnceLock`).
+2. If present, a custom `tabulon-dist://` protocol serves its files
+   (falling back to the embedded `asset_resolver()`), with a traversal
+   guard (`..` rejected).
+3. `asset-rewrite.js` (injected through `initialization_script` on every
+   window) rewrites `browser/**` and `games/**` on the fly (script/img/
+   link + fetch + XHR) to that protocol. `content/**` is never redirected:
+   the UI shell always stays embedded.
+4. `get_dist_info` exposes the state (external/embedded + path) to the UI.
+
+Without an external dist the protocol is never hit and the script not
+injected — behaviour identical to before the feature.
+
+### Known pitfalls
+
+- **Delete `src-tauri/target/`** after any file added to or removed from
+  `app/` (stale embedded assets → "ghost file" symptoms).
+- `.hidden { display:none !important }` in tabulon.css: never put this
+  class on an element revealed via `style.display` in JS — use an inline
+  `style="display:none"` instead.
+- COOP/COEP headers are enabled in `tauri.conf.json` (SharedArrayBuffer
+  for Fairy-Stockfish WASM).
+- Frontend files go in HTML/JS pairs (`hub.js`/`hub.html` and friends): a
+  stale HTML is detected by its JS (degraded mode + console message)
+  rather than silently breaking.
+
+### Remaining internal work
+
+- Rust commands with no rpc mapping (`close_window`, `match_ended`,
+  `open_book_window`, `open_window_for_match`, `show_error_dialog`):
+  check their internal usages and remove the orphans.
+- `engine.html/js` (external UCI/CECP engines): present but not finished.
+
 ## Project layout
 
 ```
@@ -365,7 +598,7 @@ tabulon/
 
 Game logic runs in `play.html` (Jocly attached in an iframe); satellite
 windows (history, clock, players, …) are pure views talking to it over Tauri
-events. Details in [ARCHITECTURE.md](./ARCHITECTURE.md).
+events. Details in the "Internal architecture" section above.
 
 ## License
 
