@@ -25,9 +25,8 @@ Grab a build (or build from source — see [DEVELOPMENT.md](./DEVELOPMENT.md)) a
 To unlock the **full 125-game library**, either:
 
 1. **Install extensions** — the easiest way. Open the **Extensions** screen (hub sidebar, Configuration group) and import downloaded `.tabulon-ext` files. Browse the catalogue:
-   - <https://fhoudebert.github.io/tabulon/ext/> — catalogue home
-   - <https://fhoudebert.github.io/tabulon/ext/modules> — whole game families (a *module* bundles related games and their shared resources; import it with no prerequisite)
-   - <https://fhoudebert.github.io/tabulon/ext/games> — individual games (importing a game requires its module to be installed first)
+   - [Modules](https://fhoudebert.github.io/tabulon/ext/modules) — whole game families (a *module* bundles related games and their shared resources; import it with no prerequisite)
+   - [Games] (https://fhoudebert.github.io/tabulon/ext/games) — individual games (importing a game requires its module to be installed first)
 
    The "Get extensions…" link in the Extensions screen takes you straight there. Extensions can also be uninstalled from the same screen.
 
