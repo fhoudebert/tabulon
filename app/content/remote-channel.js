@@ -9,7 +9,7 @@
 //
 // Pourquoi une classe abstraite : la boucle de jeu (gameLoop) ne doit jamais
 // avoir à savoir si l'adversaire distant parle par relai HTTP, WebSocket ou
-// pair-à-pair -- voir ANALYSE-JEU-DISTANCE.md, §3.b. Elle appelle seulement
+// pair-à-pair (voir DEVELOPMENT.md § Remote play). Elle appelle seulement
 // push()/onRemoteMove() sur l'objet RemoteChannel qu'on lui donne.
 
 import { httpFetch } from './tauri-bridge.js';
@@ -48,7 +48,7 @@ export class RemoteChannel {
  * (https://framagit.org/jcfrog/jocly-simple-match) -- donc utilisable dès
  * maintenant contre une instance existante telle que
  * https://biscandine.fr/variantes/joclymatch/fileio.php, ou contre une copie
- * de ce même script déployée ailleurs. Voir ANALYSE-JEU-DISTANCE.md, §4.A.
+ * de ce même script déployée ailleurs (voir DEVELOPMENT.md § Remote play).
  */
 export class HttpRelayChannel extends RemoteChannel {
     /**
@@ -109,7 +109,7 @@ export class HttpRelayChannel extends RemoteChannel {
      * "deposer un coup"), donc elles ne font QUE decaler notre reference
      * locale pour eviter de re-signaler comme "nouveau" un coup deja connu,
      * ou de rater un vrai nouveau coup adverse. Ne resout PAS la
-     * desynchronisation avec le relai lui-meme (voir README.md § Remote play,
+     * desynchronisation avec le relai lui-meme (voir DEVELOPMENT.md § Remote play,
      * limite connue).
      * @param {number} nbTurns
      */

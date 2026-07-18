@@ -8,7 +8,7 @@
 # installes : le paquet distribution est COMPILE sans WebRTC
 # (strings libwebkit2gtk-4.1.so | grep setLocalDescription -> 0 occurrence).
 # C'est ce constat qui a oriente le jeu pair-a-pair vers un transport TCP
-# cote Rust plutot que WebRTC -- voir README.md § Remote play.
+# cote Rust plutot que WebRTC -- voir DEVELOPMENT.md § Remote play.
 #
 # Prerequis : apt install python3-gi gir1.2-webkit2-4.1 xvfb
 # Usage     : xvfb-run -a python3 scripts/check-webrtc-webview.py

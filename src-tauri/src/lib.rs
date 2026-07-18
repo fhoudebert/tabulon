@@ -79,16 +79,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // ── Matchs / cycle de vie ────────────────────────────────────────
             match_cmds::new_match,
-            match_cmds::match_ended,
             match_cmds::is_favorite,
             match_cmds::set_favorite,
             match_cmds::notify_user,
             // ── Utilitaires fenêtres ──────────────────────────────────────────
-            match_cmds::open_window_for_match,
-            match_cmds::close_window,
-            match_cmds::open_book_window,
             match_cmds::open_show_position,
-            match_cmds::show_error_dialog,
             // ── Fenêtres secondaires ──────────────────────────────────────────
             window_cmds::open_history,
             window_cmds::open_clock,
