@@ -4,7 +4,7 @@
 // (tests/test-remote-peer-protocol.mjs), comme remote-relay-protocol.js.
 //
 // Pourquoi PAS WebRTC (decision documentee, verifiee empiriquement -- voir
-// README.md § Remote play) : la webview Linux de Tauri (WebKitGTK, build
+// DEVELOPMENT.md § Remote play) : la webview Linux de Tauri (WebKitGTK, build
 // Ubuntu/Debian) est COMPILEE SANS WebRTC -- typeof RTCPeerConnection ===
 // 'undefined', et les symboles (setLocalDescription, createDataChannel,
 // webrtcbin...) sont absents du binaire libwebkit2gtk-4.1 ; le reglage

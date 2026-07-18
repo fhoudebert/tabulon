@@ -35,7 +35,7 @@ const clockConfig = (() => {
 // ID de la partie dont on fork la position (store key "fork:{forkId}")
 const forkId = new URLSearchParams(window.location.search).get('fork') || null;
 // ID de l'invitation à rejoindre (store key "invite:{inviteId}"), déposée par
-// invitation.js juste avant new_match -- voir README.md § Remote play.
+// invitation.js juste avant new_match -- voir DEVELOPMENT.md § Remote play.
 const inviteId = new URLSearchParams(window.location.search).get('invite') || null;
 
 // -- Horloge --------------------------------------------------------------------
@@ -225,7 +225,7 @@ async function activateRemoteSide(key, conf) {
 // recale la baseline du canal actif sur le nombre de coups reellement joue
 // localement maintenant, pour eviter un faux positif ou un coup manque au
 // prochain poll. Ne resout PAS la desynchronisation avec le relai lui-meme
-// (voir README.md § Remote play, limite connue) -- juste notre bookkeeping.
+// (voir DEVELOPMENT.md § Remote play, limite connue) -- juste notre bookkeeping.
 async function resyncRemoteChannelBaseline() {
     if (!remoteChannel) return;
     remoteMoveBuffer = null;
@@ -721,7 +721,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // ne "desjoue" rien cote relai (fileio.php n'a pas de notion de
         // retrait de coup) -- la partie distante peut se retrouver
         // desynchronisee du relai jusqu'au prochain coup local repousse.
-        // Pas traite a cette etape (voir README.md § Remote play).
+        // Pas traite a cette etape (voir DEVELOPMENT.md § Remote play).
 
         const moves = await joclyMatch.getPlayedMoves().catch(() => []);
         const n = moves?.length || 0;

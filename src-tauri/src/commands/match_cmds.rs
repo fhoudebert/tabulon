@@ -1,17 +1,16 @@
 // src-tauri/src/commands/match_cmds.rs
 //
-// Architecture simplifiée (voir ARCHITECTURE.md) : plus de SharedWorker.
-// Jocly tourne directement dans chaque fenêtre play.html (window.Jocly via
-// <script src="../browser/jocly.js">), chaque fenêtre gère sa propre boucle
-// de jeu de façon autonome.
+// Architecture simplifiée (voir DEVELOPMENT.md § Internal architecture) :
+// plus de SharedWorker. Jocly tourne directement dans chaque fenêtre
+// play.html (window.Jocly via <script src="../browser/jocly.js">), chaque
+// fenêtre gère sa propre boucle de jeu de façon autonome.
 //
 // Ce fichier ne contient que ce que Rust doit vraiment gérer :
-//   - Ouvrir la fenêtre play.html (new_match)
+//   - Ouvrir la fenêtre play.html (new_match) et show-position
 //   - Favoris (is_favorite / set_favorite) via le store Tauri
-//   - Gestion des fenêtres satellites (open_window_for_match, close_window, etc.)
-//   - Vidéo (record_frame, stop_recording, start_recording) — inchangé
+//   - notify_user (bannière du hub)
 
-use crate::state::{AppState, Match};
+use crate::state::AppState;
 use crate::window_manager::{open_window, WindowOptions};
 use serde_json::Value;
 use tauri::{AppHandle, Manager, State, Emitter};
@@ -43,17 +42,6 @@ pub fn new_match(
     let id = state.next_match_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    {
-        let mut matches = state.matches.lock().unwrap();
-        matches.insert(id, Match {
-            id,
-            game_name: game_name.clone(),
-            game_data: Value::Null,
-            window_label: format!("play-{id}"),
-            satellite_labels: vec![],
-        });
-    }
-
     let clock_param = clock
         .map(|c| format!("&clock={}", urlencoding::encode(&c.to_string())))
         .unwrap_or_default();
@@ -80,11 +68,6 @@ pub fn new_match(
     Ok(id)
 }
 
-#[tauri::command]
-pub fn match_ended(state: State<AppState>, match_id: u32) -> Result<(), String> {
-    state.matches.lock().unwrap().remove(&match_id);
-    Ok(())
-}
 
 // ── Favoris (store Rust direct, plus de délégation au worker) ────────────────
 
@@ -127,74 +110,8 @@ pub fn set_favorite(
 
 /// Ouvre une fenêtre play.html existante (appelée par window_cmds si besoin),
 /// ou les fenêtres utilitaires associées à un match.
-#[tauri::command]
-pub fn open_window_for_match(
-    app: AppHandle,
-    state: State<AppState>,
-    r#type: String,
-    game_name: Option<String>,
-    match_id: Option<u32>,
-    view_options: Option<Value>,
-) -> Result<(), String> {
-    let id = match_id.unwrap_or(0);
-    let gn = game_name.as_deref().unwrap_or("");
-    match r#type.as_str() {
-        "play" => {
-            {
-                let mut matches = state.matches.lock().unwrap();
-                matches.insert(id, Match {
-                    id, game_name: gn.to_string(),
-                    game_data: Value::Null,
-                    window_label: format!("play-{id}"),
-                    satellite_labels: vec![],
-                });
-            }
-            let opts_str = view_options
-                .map(|o| serde_json::to_string(&o).unwrap_or_default())
-                .unwrap_or_default();
-            let url = if opts_str.is_empty() {
-                format!("content/play.html?game={gn}&id={id}")
-            } else {
-                format!("content/play.html?game={gn}&id={id}&options={}", urlencoding::encode(&opts_str))
-            };
-            open_window(&app, WindowOptions {
-                label: &format!("play-{id}"), url: &url,
-                title: gn,
-                width: 700.0, height: 630.0,
-                min_width: 400.0, min_height: 400.0,
-                persist_key: Some(format!("window:play-{gn}")),
-            }).map(|_| ()).map_err(|e| e.to_string())
-        }
-        "clock-setup" => open_window(&app, WindowOptions {
-            label: &format!("clock-setup-{gn}"),
-            url: &format!("content/clock-setup.html?game={gn}"),
-            title: &format!("{gn} clock setup"),
-            width: 360.0, height: 480.0,
-            min_width: 280.0, min_height: 300.0,
-            persist_key: None,
-        }).map(|_| ()).map_err(|e| e.to_string()),
-        _ => Err(format!("Unknown window type: {}", r#type)),
-    }
-}
 
-#[tauri::command]
-pub fn close_window(app: AppHandle, label: String) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window(&label) {
-        win.close().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
 
-#[tauri::command]
-pub fn open_book_window(app: AppHandle, game_name: String, file_name: String) -> Result<(), String> {
-    open_window(&app, WindowOptions {
-        label: &format!("book-{game_name}"),
-        url: &format!("content/book.html?game={game_name}&file={}", urlencoding::encode(&file_name)),
-        title: &format!("{game_name} Book"),
-        width: 300.0, height: 450.0, min_width: 200.0, min_height: 250.0,
-        persist_key: Some(format!("window:book-{game_name}")),
-    }).map(|_| ()).map_err(|e| e.to_string())
-}
 
 #[tauri::command]
 pub fn open_show_position(app: AppHandle, game_name: String, match_id: u32) -> Result<(), String> {
@@ -207,13 +124,6 @@ pub fn open_show_position(app: AppHandle, game_name: String, match_id: u32) -> R
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn show_error_dialog(app: AppHandle, title: String, message: String) -> Result<(), String> {
-    use tauri_plugin_dialog::DialogExt;
-    log::error!("[Dialog] {title}: {message}");
-    app.dialog().message(message).title(title).blocking_show();
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn notify_user(

@@ -19,8 +19,8 @@
 export const PROTOCOL_VERSION = 1;
 
 // Relai HTTP par defaut (etape 1/2 : instance de test jocly-simple-match
-// utilisee pour valider le protocole -- voir README.md § Remote play et
-// ANALYSE-JEU-DISTANCE.md). A rendre choisissable par l'utilisateur dans une
+// utilisee pour valider le protocole -- voir DEVELOPMENT.md § Remote
+// play). A rendre choisissable par l'utilisateur dans une
 // etape ulterieure ; en attendant, le champ "Relay URL" de players.js permet
 // deja de le remplacer manuellement partie par partie.
 export const DEFAULT_RELAY_URL = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
@@ -141,7 +141,7 @@ export function generateMatchId() {
 //     matchdata: <sortie de match.save()>, time, key }
 // Necessaire pour VRAIMENT jouer contre quelqu'un connecte via leur page web
 // (index.php), pas seulement contre une autre instance de Tabulon -- c'est
-// tout l'interet du bouton "Invitation" (voir README.md § Remote play).
+// tout l'interet du bouton "Invitation" (voir DEVELOPMENT.md § Remote play).
 // matchdata est un objet Jocly opaque (mais du meme moteur jocly2 des deux
 // cotes, donc du meme format) ; on ne l'interprete jamais ici, seul
 // matchdata.playedMoves (tableau) est lu pour en extraire le dernier coup.

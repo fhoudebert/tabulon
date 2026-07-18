@@ -142,7 +142,7 @@ reported by the `get_dist_info` command (About panel / Extensions screen). The
 app shell (`content/**`) always comes from the embedded build, so a stale
 external dist cannot break the UI itself.
 
-## Remote play (experimental)
+## Remote play 
 
 Two ways to play a Jocly game against a remote human, both entered through
 the **Invitation** window (hub game panel, next to Quick play / Clocked
@@ -461,9 +461,8 @@ Current inventory (from `lib.rs`'s `generate_handler`):
 - `fs_cmds`: `parse_pjn`, `read_text_file`, `save_text_file`,
   `save_data_uri_file`, `get_dist_info`
 - `hub_cmds`: `get_app_info`, `notify_user_response`
-- `match_cmds`: `new_match`, `match_ended`, `is_favorite`, `set_favorite`,
-  `notify_user`, `open_window_for_match`, `close_window`,
-  `open_book_window`, `open_show_position`, `show_error_dialog`
+- `match_cmds`: `new_match`, `is_favorite`, `set_favorite`,
+  `notify_user`, `open_show_position`
 - `template_cmds`: `play_template`, `save_template`, `remove_template`,
   `is_template_name_valid`
 - `video_cmds`: `start_recording`, `record_frame`, `stop_recording`

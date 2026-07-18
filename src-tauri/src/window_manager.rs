@@ -123,7 +123,7 @@ fn save_geometry(app: &AppHandle, key: &str, win: &WebviewWindow) -> tauri::Resu
 /// Actuellement non appelée : le plugin updater est désactivé dans lib.rs
 /// tant que sa config (pubkey + endpoints) n'est pas définie — l'enregistrer
 /// sans elle fait paniquer l'app au démarrage. Cette fonction sera de nouveau
-/// utile une fois le plugin reconfiguré (voir ARCHITECTURE.md → Travaux restants).
+/// utile une fois le plugin reconfiguré (pubkey + endpoints à définir).
 #[allow(dead_code)]
 pub async fn check_update(app: AppHandle) -> anyhow::Result<()> {
     use tauri_plugin_updater::UpdaterExt;

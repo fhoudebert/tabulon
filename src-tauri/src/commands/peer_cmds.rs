@@ -3,7 +3,7 @@
 // directe entre les deux instances de Tabulon, portee ici cote Rust.
 //
 // Pourquoi Rust et pas la webview (decision verifiee empiriquement, voir
-// README.md § Remote play) : RTCPeerConnection n'existe PAS dans la webview
+// DEVELOPMENT.md § Remote play) : RTCPeerConnection n'existe PAS dans la webview
 // Linux (WebKitGTK des distributions est compile sans WebRTC), et sans
 // serveur STUN/TURN WebRTC n'aurait de toute facon que des candidats *host*
 // -- la meme joignabilite qu'un TCP direct. Cote Rust, le transport est
