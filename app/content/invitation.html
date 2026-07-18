@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+		<link rel="icon" href="data:,">
+	<title>Tabulon</title>
+	<link rel="stylesheet" href="tabulon.css">
+	<script>if (typeof module === 'object') { window.module = module; module = undefined; }</script>
+	<script src="../node_modules/jquery/dist/jquery.js" charset="utf-8"></script>
+	<script src="../browser/jocly.js" charset="utf-8"></script>
+	<script type="module" src="invitation.js"></script>
+</head>
+<body>
+<div class="window window-gray">
+	<div class="window-content">
+		<div class="invitation-container">
+			<h4 data-i18n="invitation.joinHeading"></h4>
+			<p class="invitation-intro" data-i18n="invitation.intro"></p>
+			<div class="form-group">
+				<input type="text" id="invitation-url" class="form-control" data-i18n-placeholder="invitation.placeholder">
+			</div>
+			<p id="invitation-status" class="invitation-status"></p>
+			<div class="invitation-actions">
+				<button id="button-join" class="btn btn-primary"><span data-i18n="invitation.join">Join</span></button>
+			</div>
+
+			<hr>
+
+			<h4 data-i18n="invitation.createHeading"></h4>
+			<p class="invitation-intro" data-i18n="invitation.createIntro"></p>
+			<div class="form-group invitation-link-row">
+				<input type="text" id="invitation-relay-url" class="form-control" data-i18n-placeholder="players.relayUrl">
+				<button id="button-test-relay" class="btn btn-default"><span data-i18n="players.test">Test</span></button>
+			</div>
+			<div class="invitation-actions">
+				<button id="button-create" class="btn btn-default"><span data-i18n="invitation.create">Create</span></button>
+			</div>
+			<div class="form-group invitation-link-row" id="invitation-link-row" style="display:none">
+				<input type="text" id="invitation-link" class="form-control" readonly>
+				<button id="button-copy-link" class="btn btn-default"><span data-i18n="players.copy">Copy</span></button>
+			</div>
+			<p id="invitation-create-status" class="invitation-status"></p>
+
+			<hr>
+
+			<h4 data-i18n="invitation.peerHeading"></h4>
+			<p class="invitation-intro" data-i18n="invitation.peerIntro"></p>
+			<p class="invitation-intro" data-i18n="invitation.peerInternetIntro"></p>
+			<div class="form-group invitation-link-row">
+				<input type="text" id="peer-extra-addr" class="form-control" data-i18n-placeholder="invitation.peerExtraAddr">
+				<input type="text" id="peer-port" class="form-control" data-i18n-placeholder="invitation.peerPort" style="max-width:12em">
+			</div>
+			<div class="invitation-actions">
+				<button id="button-peer-host" class="btn btn-default"><span data-i18n="invitation.peerHost">Create a code</span></button>
+			</div>
+			<div class="form-group invitation-link-row" id="peer-code-row" style="display:none">
+				<input type="text" id="peer-code" class="form-control" readonly>
+				<button id="button-peer-copy" class="btn btn-default"><span data-i18n="players.copy">Copy</span></button>
+			</div>
+			<p id="peer-host-status" class="invitation-status"></p>
+			<div class="form-group">
+				<input type="text" id="peer-code-input" class="form-control" data-i18n-placeholder="invitation.peerCodePlaceholder">
+			</div>
+			<div class="invitation-actions">
+				<button id="button-peer-join" class="btn btn-default"><span data-i18n="invitation.peerJoin">Connect</span></button>
+			</div>
+			<p id="peer-join-status" class="invitation-status"></p>
+		</div>
+	</div>
+	<footer class="toolbar toolbar-footer">
+		<div class="toolbar-actions">
+			<button id="button-cancel" class="btn btn-default"><span data-i18n="common.cancel">Cancel</span></button>
+			<button id="button-start" class="btn btn-positive pull-right" disabled><span data-i18n="invitation.start">Start</span></button>
+		</div>
+	</footer>
+</div>
+</body>
+</html>

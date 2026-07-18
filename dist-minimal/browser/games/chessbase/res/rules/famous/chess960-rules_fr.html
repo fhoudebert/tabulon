@@ -1,0 +1,46 @@
+<style>
+	table.psymbs {
+		text-align: center;
+	}
+	.psymb {
+		background-image: url({GAME}/res/images/wikipedia.png);
+		width: 100px;
+		height: 200px;
+	}
+	.psymbs td {
+		padding: 0 10px 0 10px;
+	}
+	.psymb-bold {
+		font-weight: bold;
+	}
+	.side {
+		float: right;
+		max-width: 100%;
+	}
+	@media screen and (max-width: 520px) {
+		.side {
+			float: none;
+			display: block;
+			max-width: 100%;
+			margin-right: auto;
+			margin-left: auto;
+		}		
+	}
+	h1,h2,h3,h4 {
+		clear: both;
+	}
+</style>
+
+<h2>Position initiale aléatoire</h2>
+
+<p>Chess 960 se joue avec les règles des échecs orthodoxes, mais la position de départ est aléatoire pour toutes les pièces à l'exception des pions.</p>
+
+<p>Restrictions de la randomisation :</p>
+
+<ul>
+	<li>Les 2 tours ne peuvent pas être placées du même côté du roi</li>
+	<li>Les 2 fous doivent être placés sur des cases de couleurs différentes</li>
+	<li>Le plateau final doit être symétrique (les diagrammes des pièces blanches et noires sont des images miroir)</li>
+</ul>
+
+<p>Le roque est possible et conduit toujours aux positions finales du roque des échecs orthodoxes, quelle que soit la position de départ.</p>

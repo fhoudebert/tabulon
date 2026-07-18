@@ -1,0 +1,78 @@
+<style>
+	table.psymbs {
+		text-align: center;
+	}
+	.psymb {
+		background-image: url({GAME}/res/images/wikipedia.png);
+		width: 100px;
+		height: 200px;
+	}
+	.psymbs td {
+		padding: 0 10px 0 10px;
+	}
+	.psymb-bold {
+		font-weight: bold;
+	}
+	.side {
+		float: right;
+		max-width: 100%;
+	}
+	@media screen and (max-width: 520px) {
+		.side {
+			float: none;
+			display: block;
+			max-width: 100%;
+			margin-right: auto;
+			margin-left: auto;
+		}		
+	}
+	h1,h2,h3,h4 {
+		clear: both;
+	}
+</style>
+<h1>Spartan Chess on a 3D battlefield</h1>
+<h2>Inital setup</h2>
+<p>Played on 3 6x8 boards, each player starts with 18 Pawns, 2 Rooks, 4 Bishops, 4 Knights, 1 Queen and 1 King.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/space-spartan2-setup.png"/></p>
+<h2>FIDE Pieces</h2>
+<h3>Pawn</h3>
+<p>Pawns move like orthodox pawns on their current plane, but can go to another plane for captures only (see figure).</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/pawn.png"/></p>
+<h3>Knight</h3>
+<p>Knights move following L shape paths in the 3 dimensions. They land on the opposite color from the starting cell.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/knight.png"/></p>
+<h3>Bishop</h3>
+<p>Bishops move following 3D diagonals always remaining on the same color.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/bishop.png"/></p>
+<h3>Rook</h3>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/rook.png"/></p>
+<h3>Queen</h3>
+<p>The Queen moves like Rook + Bishop + Unicorn.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/queen.png"/></p>
+<h3>King</h3>
+<p>The King moves like orthodox King on its current plane, but can go to another plane for captures only (see figure).</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/king.png"/></p>
+<h2>Spartan Pieces</h2>
+<h3>Hoplit</h3>
+<p>Moves 1 step diagonally forward, and captures one step straight ahead (also above and below). In its initial location it can also jump 2 steps diagonally forward to an empty square.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/hoplit.png"/></p>
+<h3>Captain</h3>
+<p>Moves and captures 1 or 2 steps (jumping) orthogonally or on the column.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/captain.png"/></p>
+<h3>Lieutenant</h3>
+<p>Moves and captures 1 or 2 steps (jumping) orthogonally or diagonally by the upper or lower corners to change level and square color at the same time.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/lieutenant.png"/></p>
+<h3>Cardinal</h3>
+<p>Combines the move of the bishop and the knight.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/cardinal.png"/></p>
+<h3>Crowned rook</h3>
+<p>Combines the move and capture of the rook and the king.</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/crowned-rook.png"/></p>
+<h3>King</h3>
+<p>The King moves like orthodox King on its current plane, but can go to another plane for captures only (see figure).</p>
+<p style='text-align:center'><img style="max-width:100%;" src="{GAME}/res/rules/3dchess/graph/king.png"/></p>
+<h2>Features</h2>
+<p>Double move for Pawns (start): yes.</p>
+<p>Castling: yes.</p>
+<p>"En passant" capture: yes.</p>
+

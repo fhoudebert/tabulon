@@ -228,6 +228,7 @@ html, body {
 .icon-home::before          { content: '\e821'; }
 .icon-info::before          { content: '\e81e'; }
 .icon-plus::before          { content: '\e816'; }
+.icon-box::before           { content: '\e852'; }  /* Extensions (glyphe 'box', vérifié dans la cmap photon-entypo) */
 
 /* ── Formulaires ────────────────────────────────────────────────────────────── */
 .form-group {
@@ -717,6 +718,32 @@ strong { font-weight: 600; }
 .players-container .form-group {
   margin-top: 4px;
 }
+.players-container .remote-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.players-container .remote-fields .match-id {
+  flex: 1 1 100%;
+}
+.players-container .remote-fields .relay-url {
+  flex: 1 1 100%;
+  font-size: 11px;
+}
+.players-container .remote-fields button {
+  flex: 1;
+}
+.players-container .remote-test-status {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: #666;
+}
+.players-container .remote-test-status.ok {
+  color: #1a7f37;
+}
+.players-container .remote-test-status.fail {
+  color: #cf222e;
+}
 
 /* -- view-options.html ------------------------------------------------------ */
 .view-options {
@@ -937,4 +964,56 @@ strong { font-weight: 600; }
 .clock-content .players > div.turn {
   background-color: #000;
   color: #fff;
+}
+
+/* ── Fenêtre extensions.html (gestion des extensions, dist externe) ────────── */
+.ext-item { display: flex; align-items: center; justify-content: space-between; }
+.ext-item-info { min-width: 0; }
+.ext-item-meta { color: #737475; font-size: 12px; }
+.ext-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.ext-dist-label { color: #737475; margin-right: 6px; }
+#ext-status { line-height: 22px; }
+.ext-readonly { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 4px; color: #6b5200; }
+
+/* -- invitation.html --------------------------------------------------------- */
+.invitation-container {
+  padding: 16px;
+}
+.invitation-intro {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 10px 0;
+}
+.invitation-status {
+  font-size: 12px;
+  min-height: 16px;
+}
+.invitation-status.warn {
+  color: #9a6700;
+}
+.invitation-status.fail {
+  color: #cf222e;
+}
+.invitation-container h4 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+.invitation-container hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 14px 0;
+}
+.invitation-actions {
+  text-align: right;
+  margin-bottom: 4px;
+}
+.invitation-link-row {
+  display: flex;
+  gap: 4px;
+}
+.invitation-link-row input {
+  flex: 1;
+  font-size: 11px;
 }

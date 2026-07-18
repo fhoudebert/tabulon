@@ -1,0 +1,85 @@
+<style>
+    .piece-graph {
+        height: auto;
+        max-width: 300px;
+        margin: 0 auto;
+        display: inline-flex;
+    }
+</style>
+<h2>Tenjiku shogi</h2>
+<p>Tenjiku shogi (天竺将棋 tenjiku shōgi, "Indian chess") is a large-board variant of shogi (Japanese chess). The game dates back to the 15th or 16th century and was based on the earlier chu shogi.</p>
+
+<h2>Board</h2>
+
+<p>The board is a 16x16</p>
+
+
+<h2>Initial setup</h2>
+<p style="text-align:center"><img style='max-width:100%' src="{GAME}/res/visuals/tenjiku-600x600-2d.png"/></p>
+
+<h2>Pieces actions and properties</h2>
+<p>This description extends the rules of chu Shogi:</p>
+
+<p><b>Vice General</b>: moves like a Bishop, when capturing, he can jump over an arbitrarily large number of other pieces (except great general).The Vice General can also make upto 3 King steps.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/vice-general.png"/></p>
+
+<p><b>Fire Demon</b>: burns all enemies standing on any of the eight squares next to the one it stands on (as opposed to: moves through). It does this both actively, after it moved, and passively, when an opponent's move lands next to it.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/fireDemon.png"/></p>
+
+<p><b>Water Buffalo</b>: promotes to Fire Demon.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/waterBuffalo.png"/></p>
+
+<p><b>Heavenly Tetrach</b>: The Tetrarchs is a sliding piece that skips the first square in any direction, totally ignoring (and not affecting) what is on it. It can end maximally 3 squares away from its starting square sideway, but can slide arbtrarily far in all other 6 directions. Alternatively the Tetrarchs can annihilate any opponent next to it, without moving.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/heavenlyTetrach.png"/></p>
+
+
+<p><b>Chariot Soldier</b>: promotes to Heavenly Tetrach.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/chariotSoldier.png"/></p>
+
+
+<p><b>Lion Hawk</b>: Can : Jump directly to any square in the 5x5 area surrounding it 
+or annihilate any opponent standing next to it and moving on to an empty square next to that
+or Stay in place without capturing anything.</p>
+
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/lionHawk.png"/></p>
+
+<p><b>Vertical Soldier</b>: promotes to Chariot Soldier.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/verticalSoldier.png"/></p>
+
+<p><b>Horizontal Soldier</b>: promotes to Water Buffalo.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/horizontalSoldier.png"/></p>
+
+
+<p><b>Dog</b>: promotes to multi general.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/dog.png"/></p>
+
+<p><b>Multi general</b></p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/multiGeneral.png"/></p>
+
+
+<p><b>Iron General </b>: promotes to Vertical Soldier.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/ironGeneral.png"/></p>
+
+<p><b>Free Eagle</b>: moves as a Queen with the diagonal move of a lion</p>
+<p>Jump directly to any square in the second square in any direction</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/freeEagle.png"/></p>
+<p>The diagonal move allows to :</p>
+<ul> 
+    <li>Annihilate any opponent standing diagonally next to it, without moving (formally one step, and then a step back) ('Riffle capture'),</li>
+    <li>Annihilate any opponent standing diagonally next to it, moving on to an empty square diagonally next to that ('hit and run'),</li>
+    <li>Annihilate any opponent standing diagonally next to it, and normally capture an opponent standing diagonally next to that ('double capture'),</li>
+    <li>Stay in place without capturing anything if one of the diagonally neighboring squares is empty (effectively passing a turn)</li>
+</ul>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/freeEagle-movediag.png"/></p>
+
+
+
+<p><b>Great general</b>: moves as a Queen, when capturing, he can jump over an arbitrarily large number of other pieces except over king/prince.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/greatGeneral.png"/></p>
+
+<p><b>Rook General</b>: moves as a Rook, when capturing, he can jump over an arbitrarily large number of other pieces except over higher-ranked jumpers or king/prince.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/rookGeneral.png"/></p>
+
+<p><b>Bishop General</b>: moves as a Bishop, when capturing, he can jump over an arbitrarily large number of other pieces except over higher-ranked jumpers or king/prince.</p>
+<p><img class="piece-graph" src="{GAME}/res/rules/shogi/graphs/bishopGeneral.png"/></p>
+

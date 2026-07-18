@@ -87,6 +87,49 @@ tabulon/
 └── dist/                a full jocly2 build (browser/ + games/)
 ```
 
+## Extensions (import/export games)
+
+When an external dist is active, the **Extensions** screen (hub sidebar,
+Configuration group) lets you export any installed game as a single
+`<game>.tabulon-ext` file, import one, or uninstall it. An extension contains
+strictly what the game's config declares: the code bundles
+(`<game>-config/-model/-view.js`), the rules/credits/description pages, the
+thumbnail and the visuals — plus the index declaration in `extension.json`.
+Shared module resources (css, sounds, `res/` sprites/textures, rules graphs,
+fairy-stockfish engines) always stay with the module: importing a game
+requires its module to already exist in the target external dist, and
+uninstalling never removes shared files (nor files still declared by another
+game of the module). Whole **modules** can also be exported/imported (Modules tab): a module
+extension contains the full `games/<module>/` tree plus the index declarations
+of its games; importing it has no prerequisite (the module is the payload) and
+merges over an existing module, uninstalling removes the whole module folder
+and its games. The engine baseline (root `res/`, fairy-stockfish, `scan/` —
+the draughts engine, only useful with checkers but kept at the jocly level)
+never travels in extensions. Extensions can also be built without the app:
+`node scripts/make-extension.mjs <game> [outdir]` or
+`node scripts/make-extension.mjs --module <module> [outdir]` — with a full
+dist or a single-module gulp build
+(`gulp --no-default-games --modules src/games/<module> build`) as source —
+the packaging tool that feeds the downloadable extension catalogue.
+
+A `.tabulon-ext` file **is a standard zip** (rename or open it as one); the
+import dialog accepts both `.tabulon-ext` and `.zip`. The whole catalogue is
+produced in one shot by `node scripts/export-all.mjs [outdir] [--dist path]`:
+it packages **every module** into `outdir/modules/` and **every game** into
+`outdir/games/`, each with a static `index.html` (games grouped by module,
+then alphabetically) plus a small landing page — the `outdir` content is
+published as-is under `ext/`. Published extensions are (or will be)
+downloadable from:
+
+- <https://fhoudebert.github.io/tabulon/ext/> — catalogue
+- <https://fhoudebert.github.io/tabulon/ext/games> — game extensions
+- <https://fhoudebert.github.io/tabulon/ext/modules> — module extensions
+
+The "Get extensions…" link in the Extensions screen opens the page matching
+the active tab. After an import or uninstall, the hub reloads its game list
+automatically (the Jocly script loader caches the games index for the page
+lifetime, so the hub performs a full reload).
+
 At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
 program. For an **AppImage**, "next to the program" means next to the
@@ -98,6 +141,469 @@ missing); otherwise only the bundled games are available. The active source is
 reported by the `get_dist_info` command (About panel / Extensions screen). The
 app shell (`content/**`) always comes from the embedded build, so a stale
 external dist cannot break the UI itself.
+
+## Remote play (experimental, `remoteplay` branch)
+
+Playing a Jocly game against a remote human is being built incrementally on
+the `remoteplay` branch — see `ANALYSE-JEU-DISTANCE.md` for the full design
+(transport options compared: HTTP relay, WebRTC/direct P2P, other).
+
+Step 1 landed the transport building block, developed and validated in
+isolation:
+
+- `app/content/remote-relay-protocol.js` — pure encode/decode logic for the
+  relay's wire format (no fetch, no DOM — plain functions, unit-tested).
+- `app/content/remote-channel.js` — the transport-agnostic `RemoteChannel`
+  interface (`start`/`stop`/`push`/`onRemoteMove`) plus its first
+  implementation, `HttpRelayChannel`: HTTP polling against a relay speaking
+  the same wire protocol as jocly-simple-match's `fileio.php`
+  (<https://framagit.org/jcfrog/jocly-simple-match>) — a dumb key/value
+  store per match id, no server-side validation of the payload. This makes
+  it usable, as-is, against an existing instance such as
+  <https://biscandine.fr/variantes/joclymatch/fileio.php>, or a fresh
+  deployment of the same PHP script.
+- Requests go through `tauri-plugin-http` (`httpFetch` in `tauri-bridge.js`),
+  not the webview's native `fetch` — the relay doesn't send CORS headers, so
+  a browser-side `fetch` would be blocked; the Rust-side HTTP client isn't
+  subject to that. Allowed relay hosts are scoped in
+  `src-tauri/capabilities/default.json` (`http:default` → `allow[].url`);
+  add a host there before pointing `HttpRelayChannel` at it.
+- `scripts/check-remote-relay.mjs` exercises the protocol against a **real**
+  jocly-simple-match instance from plain Node (no CORS there, so no plugin
+  needed) — useful to check compatibility with a given relay before wiring
+  it into the app.
+
+Step 2 wires it into the game window:
+
+- `players[key]` in `play.js` now accepts a third shape alongside `null`
+  (local human) and a level object (AI): `{remote:true, matchId, relayUrl}`.
+  Exactly one side would normally be remote — the other stays a local human
+  (or even an AI, if you want to let it play unattended against a remote
+  friend; nothing enforces "remote implies the other side is human").
+- `gameLoop()` branches three ways: local human turn (`userTurn()`,
+  unchanged), local AI turn (`machineSearch()`+`playMove()`, unchanged), and
+  remote turn (waits for the next move from the active `HttpRelayChannel`,
+  then `playMove()`s it). After any turn played *locally* (human or AI), if
+  a remote channel is active, the move is pushed to it.
+- The **Players** satellite window (`players.html`/`players.js`) gained a
+  "Remote player" option per side, with a match id field (plus a "Generate"
+  button — a non-guessable id, since — like jocly-simple-match — the relay
+  itself has no real authentication, only the id's secrecy — and a "Copy"
+  button to hand it to the other player through whatever channel you like:
+  chat, email...) and a relay URL field (defaults to the same test instance
+  as `check-remote-relay.mjs`).
+- Every existing "abort the current turn" spot (pause, takeback, restart,
+  reconfiguring players, loading a board state, rolling back, playing a move
+  from the "possible moves" window) also cancels a pending wait for a remote
+  move, so the game loop never hangs.
+- **Known limitation, not addressed at this step**: takeback/rollback while
+  a remote channel is active does not "unplay" anything on the relay side —
+  the relay has no such concept (see `ANALYSE-JEU-DISTANCE.md` §6). The
+  local game can desync from the relay's move counter until the next local
+  move is pushed. Fine for now (this is still an experimental branch); a
+  proper fix would mean periodically pushing a full state snapshot for
+  resync, the way jocly-simple-match falls back to a full reload.
+
+Still open: match resume after the window is closed and reopened (the
+remote config isn't persisted anywhere yet — reopening `play.html` for a
+fork/template/store-based resume loses it, same as it does for the players'
+human/AI configuration today). Tabulon has **no general "resume this exact
+match by id" mechanism** even for local games — `new_match` hands out a
+fresh in-memory id every time (`src-tauri/src/commands/match_cmds.rs`), so
+this isn't a remote-play-specific gap to close so much as it's how the app
+already works (Save/Load and templates are the existing way to carry a
+position across sessions). If remote play needs its own resume story later,
+it'll likely piggyback on that Save/Load format rather than inventing a new
+one.
+
+Step 3, smaller correctness/robustness pass on step 2:
+
+- `input-move` (the "Possible moves" satellite window) played moves by
+  calling `playMove()` directly, bypassing `gameLoop()` entirely — so a move
+  played that way during a remote game was never sent to the opponent. Fixed:
+  it now pushes to the active channel exactly like `gameLoop()` does for any
+  locally-played move.
+- Takeback, restart, rollback-to, loading a board state, and loading a saved
+  game file all change the local position **without** going through the
+  relay (this relay has no concept of "unplay a move"). Previously only some
+  of these cancelled a pending wait for the opponent's move; now all of them
+  do, and all of them also call the new `HttpRelayChannel.resetBaseline()`
+  so the channel's own move-count bookkeeping matches the new local
+  position — otherwise it could permanently miss a subsequent opponent move,
+  or misfire on one it had already seen. This does **not** fix the relay
+  desync itself (still a known limitation, see above) — it only keeps our
+  side's tracking consistent with whatever the local position actually is.
+- The Players window's "Remote player" fields gained a **Test** button: a
+  one-off connectivity check against the configured relay URL (independent
+  of whether the match id has any data yet), to catch a wrong URL or a host
+  missing from `capabilities/default.json`'s `http:default` scope before
+  starting to actually play.
+
+Step 4, the invitation screen — and, underneath it, real interop with the
+actual jocly-simple-match web client (not just Tabulon talking to Tabulon):
+
+- New **Invitation** button on the hub's game detail panel, next to Quick
+  play / Clocked play. Opens `invitation.html`/`invitation.js`: paste a link
+  such as
+  `https://biscandine.fr/variantes/joclymatch/index.php?game=knightmate-chess&mid=…&player=a`
+  and Join starts the match already configured with a remote opponent on the
+  correct side.
+- Steps 1–3 used our own JSON envelope for the relay (`encodeEnvelope` /
+  `decodeEnvelope` in `remote-relay-protocol.js`) — deliberately free-form,
+  since `fileio.php` doesn't validate structure, and it was enough for
+  Tabulon talking to Tabulon. An invitation link, though, may well be shared
+  with someone playing through jocly-simple-match's *own* web page
+  (`index.php`/`control.js`) rather than through Tabulon — and their client
+  only understands **their** exact wire format:
+  `{matchDetails:{matchId,gameName,nbTurns,a:{pseudo},b:{pseudo}}, matchdata, time, key}`.
+  `HttpRelayChannel` now takes a `codec` option (`'tabulon'`, the default, or
+  `'jocly-simple-match'`) selecting between the two on both read and write;
+  invitation-based games use `'jocly-simple-match'` automatically. The two
+  clients can share the exact same match on the exact same relay this way —
+  validated live against `biscandine.fr`, both directions
+  (`scripts/check-jocly-compat.mjs`: what Tabulon writes is read back with
+  the exact shape `control.js` expects, and a payload shaped exactly like
+  what `control.js` itself writes is correctly decoded by Tabulon).
+- `matchdata` in that format **is** the full engine state (same jocly2
+  engine both sides, so the same `match.save()`/`match.load()` shape) —
+  pushes now always include it (`joclyMatch.save()`), not just the last
+  move, which the `'jocly-simple-match'` codec requires (their reference
+  client does a full `match.load()` on every change, not an incremental
+  `playMove()`).
+- `players.js`'s Save button doesn't expose `codec`/`gameName` as editable
+  fields (only matchId/relayUrl) — to avoid silently downgrading an
+  invitation-joined side back to the `'tabulon'` codec if the Players window
+  is opened and saved without touching that side, it now preserves the
+  original `codec`/`gameName` whenever the match id in the form is left
+  unchanged from what it received.
+
+Step 5, after joining an invitation-based game against a real jocly-simple-
+match instance confirmed the move exchange itself works: two follow-ups.
+
+- The footer's quick player select (`select-player-a`/`-b`, next to the
+  toolbar) never had a "remote" option, so it kept showing whatever
+  human/AI default it was built with even after a side was actually
+  configured as remote (by an invitation or by the Players window) — the
+  match played correctly, but that dropdown lied about it. It now has a
+  (display-only) "Remote player" entry, kept in sync with the real
+  `players[key]` state from every place that changes it (invitation join/
+  create, Players window save). Picking it manually from the footer just
+  opens the Players window instead of pretending to configure anything —
+  there's no room for a matchId/relayUrl there.
+- **Invitation window can now also create a game**, not just join one: pick
+  a relay (defaults to the same test instance), *Create* generates a match
+  id and shows the link for the other player to open (`player=b` — you play
+  `a`), *Start* launches it. `buildInvitationUrl()` in
+  `remote-relay-protocol.js` is the exact inverse of `parseInvitationUrl()`.
+  No server-side "create match" step is involved — `fileio.php` is a dumb
+  per-id store with no registration, so the id only starts to mean anything
+  once the first move is pushed to it, same as if it had been created
+  through jocly-simple-match's own `gamespanel.php`.
+
+Step 6, a real bug found by testing the Create flow against `biscandine.fr`:
+
+- **The bug**: creating a game (host, playing `a`) and moving first meant
+  that first move was never sent anywhere. `HttpRelayChannel` was only ever
+  created *reactively*, from inside `gameLoop()`'s remote-turn branch — so
+  if the local human's own turn came *before* gameLoop ever reached the
+  remote side's turn, no channel existed yet when that first move resolved,
+  and the `if (playedLocally && remoteChannel)` push was silently skipped.
+  Joining (step 4's original test) happened to always work because in that
+  flow the *other* side moves first, so the channel got created while
+  waiting for their move — before any local move could occur. Fixed:
+  configuring a side as remote (from an invitation or from the Players
+  window) now creates the channel immediately (`activateRemoteSide()`),
+  not lazily on first use.
+- **A related, genuinely pre-existing bug — confirmed live, not ours to
+  fix**: `fileio.php`'s `load()` on a match id that was never `save()`d
+  returns a PHP warning instead of JSON (`fopen(): Failed to open stream`),
+  which is exactly the `JSON.parse` error control.js reported. Their own
+  `gamespanel.php`/`createMatch()` has the identical gap (no initial save
+  either) — it just goes unnoticed there because the creator usually plays
+  quickly. Combined with the bug above, this made the "Create" flow trip it
+  reliably: no move was ever pushed, so a genuinely empty id sat there for
+  the other client to poll. Now that push works, but we've *also* added a
+  direct mitigation on our side regardless: when Tabulon creates the
+  invitation, it publishes the starting position to the relay immediately
+  (`invite.creator` flag, threaded from `invitation.js`'s Create button), so
+  the relay is never empty for whoever opens the link. Verified against
+  `biscandine.fr` in `scripts/check-jocly-compat.mjs`.
+- The footer's quick player select still didn't reflect "remote" correctly
+  in every case that reaches `players[key]` through this new proactive path
+  — `syncFooterSelect()` is now called from the same place.
+- Removed the Players window's **Generate** button for a remote match id —
+  the Invitation window's Create flow supersedes it (generates an id *and*
+  a shareable link, which Generate alone never did); *Copy* and *Test*
+  stay, they're still useful once a match id exists by whatever means.
+- The hub's Invitation button had an icon (`icon-link`) that isn't actually
+  defined in the bundled icon font (`app/tabulon.css` only maps a fixed,
+  deliberately curated set of codepoints — see the comment above that list,
+  itself there because of a past invisible-icon bug of the same kind) — so
+  it silently rendered as nothing. Switched to `icon-users`, already the
+  established icon for multiplayer/player configuration elsewhere
+  (`play.html`'s Players button).
+
+Step 8, peer-to-peer play **without any server** (no game relay, no
+signalling server) — starting with the transport building block, validated
+in isolation like step 1 was:
+
+- **Why not WebRTC — an empirical finding, not a guess.** The original
+  analysis (`ANALYSE-JEU-DISTANCE.md` §4.B) flagged "check that
+  `RTCPeerConnection` exists in the embedded webview on each OS" as an
+  unverified risk. Verified now, and the answer on Linux is **no**:
+  distribution builds of WebKitGTK (Tauri's Linux webview engine — checked
+  on Ubuntu 24.04, WebKitGTK 2.52) are **compiled without WebRTC**.
+  `typeof RTCPeerConnection === 'undefined'`, and it's not a runtime toggle:
+  setting `enable-webrtc=true` and installing the GStreamer WebRTC plugins
+  (`webrtcbin`, `libnice`) changes nothing, because the symbols
+  (`setLocalDescription`, `createDataChannel`, `iceGatheringState`…) are
+  simply absent from `libwebkit2gtk-4.1.so`. Reproduce with
+  `scripts/check-webrtc-webview.py` (needs `python3-gi`,
+  `gir1.2-webkit2-4.1`; the page attempts a full local loopback —
+  offer/answer/ICE without STUN, DataChannel ping/pong — if the API exists).
+- **The decisive observation**: with "no server at all" as the requirement,
+  WebRTC would run without STUN/TURN — which yields only *host* ICE
+  candidates, i.e. exactly the reachability of a plain direct TCP
+  connection. Dropping WebRTC therefore loses no connectivity, and gains a
+  transport that lives in **Rust** (`src-tauri/src/commands/peer_cmds.rs`):
+  identical on all three OSes, independent of what each webview engine
+  ships, and owned by the *application* rather than by a window — so the
+  Invitation window can establish the session and the game window can pick
+  it up afterwards, with no JS object to hand over. As a side effect the
+  manual exchange needs **one** code (host → guest) instead of WebRTC's two
+  (offer, then answer back).
+- The transport: the host listens on an OS-assigned ephemeral TCP port
+  (`peer_host_start`); the guest tries each address from the invitation
+  code (`peer_connect`); a one-line JSON handshake carries a 128-bit
+  session token (generated webview-side, `generatePeerToken()`) which the
+  host verifies — a wrong token is refused *and the host keeps listening*.
+  After that, both sides relay newline-delimited JSON lines — the same
+  `'tabulon'` envelope as the HTTP relay (`encodeEnvelope`, so
+  `JSON.stringify` guarantees no literal newlines). Received lines are
+  broadcast to the webviews (`tabulon-peer://message` event) and the last
+  one is kept (`peer_last_message`) so a game window that subscribes *after*
+  the session was established can catch up — one slot is enough, plies
+  alternate (same "latest state wins" semantics as `fileio.php`).
+- The invitation code (`app/content/remote-peer-protocol.js`, pure logic):
+  `TBP1-<base64url of {v,gameName,ips,port,token}>`, single line,
+  whitespace-tolerant on paste. Local addresses come from the OS default
+  route (UDP-connect trick, no packet sent); multi-interface hosts only
+  advertise the default one — known simplification, `127.0.0.1` is always
+  appended for two instances on the same machine.
+- **Limits, stated plainly** (they are the price of "no server at all"):
+  the guest must be able to route to one of the host's addresses — same
+  LAN, VPN, or a public IP/port-forward. There is **no NAT traversal** (no
+  STUN/TURN — that would be a server), so two strangers behind home
+  routers, without any of the above, will not connect. The stream is
+  **not encrypted** (no TLS); the token gates access to the session but
+  the moves travel in clear — fine for a board game on a trusted network,
+  worth knowing anyway. No automatic reconnection: if the link drops, the
+  session is over (status event) and a fresh code is needed. One peer
+  session at a time (mirrors the single active relay channel in `play.js`).
+- Validation at this step: `cargo test` runs a **real TCP session** on
+  localhost (handshake, bidirectional relay, wrong-token refusal with the
+  listener surviving it, clean-shutdown propagation both ways — the core
+  is deliberately decoupled from Tauri's `AppHandle` to make that
+  possible); `tests/test-remote-peer-protocol.mjs` covers the invitation
+  code (23 assertions). Not wired into any UI yet at this sub-step.
+
+Step 8 (second half), the UI and game wiring on top of that transport:
+
+- `PeerChannel` (`app/content/remote-peer-channel.js`) is the second
+  implementation of the `RemoteChannel` interface after `HttpRelayChannel`
+  — `gameLoop()` in `play.js` is untouched, `ensureRemoteChannel()` just
+  picks the class from the player config (`{remote:true, peer:true,
+  matchId}` vs the relay's `{remote:true, matchId, relayUrl}`). The
+  channel doesn't own the connection: the TCP session lives in Rust,
+  established by the Invitation window *before* the game window exists;
+  `PeerChannel` only attaches (subscribes to `tabulon-peer://message`,
+  sends through `peer_send`). A move received between the two windows is
+  caught up via `peer_last_message` — and the `nbTurns` filter
+  (`hasOpponentMoved`, shared with the relay codec) makes any replay
+  harmless.
+- The **Invitation** window gains a third mode, "peer-to-peer (no server
+  at all)", next to Join and Create: the host clicks *Create a code* and
+  sends the `TBP1-…` block to the other player by whatever channel
+  (copy button provided); the guest pastes it and clicks *Connect* — the
+  match starts on the guest side as soon as the session is established,
+  and on the host side the shared *Start* button unlocks when the
+  connection lands (`tabulon-peer://status`). Host plays A, guest plays B.
+  Both sides are necessarily Tabulon (no jocly-simple-match web client in
+  this mode), so the wire format is the plain `'tabulon'` envelope.
+- The Players window shows a peer side as a "Remote player" with an empty
+  relay field, and — same preservation rule as the relay `codec` — keeps
+  the peer configuration on Save as long as the match id field isn't
+  edited. Editing it *does* silently turn the side into a relay/human
+  config (the form has no peer-to-peer notion); acceptable for now,
+  the Invitation window is the real entry point.
+- Peer disconnection (the opponent closed their app, network drop) is
+  surfaced in the footer (`play.peerDisconnected`); the game cannot sync
+  anymore at that point — there is **no automatic reconnection**, a fresh
+  code is needed for a new session. Closing the game window releases the
+  Rust session via the existing `beforeunload` →
+  `disposeRemoteChannel()` path (best effort: if the process is killed or
+  crashes, the session lingers until the next host/connect or app exit —
+  the remote side then only notices when TCP does).
+- Validation: `tests/test-remote-peer-channel.mjs` (14 assertions —
+  interface parity with `RemoteChannel`, both directions over a mocked
+  Rust bridge, nbTurns filtering and dedupe, catch-up of a move received
+  before `start()`, unreadable payloads ignored, `stop()` releasing the
+  session, status callback), plus the existing protocol/i18n-parity
+  suites. As with steps 2–7, **no live two-instance runtime test was
+  possible in this environment** (no display, no second machine): the
+  Rust transport is exercised for real by `cargo test` over localhost,
+  but the full flow (two Tabulon apps exchanging a code and playing)
+  remains to be validated by hand — same caveat as every previous step,
+  stated rather than hidden. `cargo check` and `cargo test` green;
+  `node --check` on every touched JS file.
+
+Step 8c, making the peer-to-peer mode actually usable **across the
+Internet** (public IP + port forwarding) — the two gaps steps 8a/8b left
+open for that scenario, stated there as limits:
+
+- **Fixed listening port** (optional): `peer_host_start` took no port and
+  always bound an OS-assigned ephemeral one — fine on a LAN, useless with
+  a router port-forwarding rule, which targets one fixed port (an
+  ephemeral port would force redoing the rule every game). The host's
+  peer-to-peer block in the Invitation window gains an optional *Port*
+  field; when set, the listener binds exactly that port, and a port
+  already in use is a **visible error** (shown with the real bind message)
+  rather than a silent fallback to an ephemeral port — a silent fallback
+  would break the forwarding rule without the host knowing.
+- **Public address in the code** (optional): the invitation code only
+  carried the host's *local* addresses (default-route IP + `127.0.0.1`),
+  which mean nothing to a guest across the Internet. The host can now
+  enter their public IP — or a host name (DynDNS-style; `peer_connect`
+  resolves names via `ToSocketAddrs`), several allowed, comma-separated —
+  and these go **first** in the code: a host who fills them in is aiming
+  for an Internet game, so the guest tries them before the local
+  addresses (each unreachable address costs its connect timeout). Local
+  addresses stay in the code as a fallback. IPv6 literals are now
+  bracketed correctly on the guest side (`[addr]:port`).
+- How to actually play over the Internet, end to end: the host finds
+  their public IP (any "what is my IP" service), creates a TCP
+  port-forwarding rule on their router (public port → this machine, same
+  port is simplest), enters that port and the public IP in the two new
+  fields, clicks *Create a code* and sends the code — nothing changes for
+  the guest, who just pastes it. **What this does not solve** (unchanged
+  from 8a/8b, worth restating): the stream is still unencrypted — the
+  token gates access, the moves travel in clear; a forwarded port is an
+  open port for the duration; hosts who can't touch their router (CGNAT,
+  strict corporate/campus NAT) still can't host — that's the "no server
+  at all" trade-off, a VPN (or the HTTP relay mode) remains the way out.
+  The host's public IP also ends up inside the invitation code — share
+  the code accordingly.
+- Validation: `cargo test` gains a fixed-port test (binds the requested
+  port exactly; a taken port errors instead of falling back);
+  `tests/test-remote-peer-channel.mjs` covers `hostPeerMatch` option
+  plumbing (fixed port passed through, public addresses first,
+  whitespace/duplicate cleanup, locals kept as fallback) and the protocol
+  suite covers host names in the code. Same environment caveat as before:
+  no real two-machine Internet test was possible here — the NAT/router
+  part of the flow is exactly what only a manual test can exercise.
+
+Step 8d, fit and finish from the first real-world test of the
+peer-to-peer mode:
+
+- **A truncated code from a double-click copy is now accepted.** Field
+  report: a guest pasted `eyJ2Ijox…` — a valid code minus its `TBP1-`
+  prefix — and got "invalid invitation code". Cause: double-clicking the
+  code field selects only the "word" under the cursor, and the `-` in
+  `TBP1-` breaks word selection, so a manual copy easily loses the
+  prefix. Two fixes: `decodePeerCode()` now accepts a prefix-less code
+  (the prefix is a version marker; the real gate is, and remains, the
+  strict field validation — v, addresses, port, token), with the exact
+  field-reported string kept as a regression fixture; and the read-only
+  code/link fields select their whole content on click, so a manual copy
+  grabs everything. The Copy buttons were always safe — this only bit
+  manual selection.
+- **The Players window drops its Copy and Test buttons** (feedback: not
+  useful there). Since step 4 the Invitation window is the real entry
+  point for remote play — sharing goes through it, so a Copy next to the
+  match id and a relay Test buried in Players had no job left. The match
+  id and relay URL *fields* stay, for manual edits. The relay **Test
+  button moves to the Invitation window** instead, next to the relay URL
+  field of the Create section (same probe as before: a `load` POST on a
+  throwaway id — only reachability matters). It tests whatever URL is in
+  the field, or the default relay when empty; the result lands in the
+  Create status line. No new i18n keys: the button reuses
+  `players.test`/`testChecking`/`testOk`/`testFail`.
+- No Rust change in this step (`src-tauri/` untouched), so no cargo run
+  was needed; validation is the extended protocol suite (26 assertions,
+  including the real-world regression fixture) plus the usual
+  `node --check` and i18n-parity passes on a fresh patched checkout.
+
+Step 8e, one more piece of Players-window cleanup from real use: the
+**relay URL field is gone**. In practice it always showed the default
+relay's `fileio.php` address — noise with no job, since the Invitation
+window is the entry point for remote play and the only way a
+*non-default* relay URL ever arrives is inside a pasted invitation link.
+The URL now lives outside the form: the per-side preserved config
+(`lastReceivedRemote`, the same rule that already protects
+`codec`/`gameName`/peer) additionally keeps `relayUrl`, so saving the
+Players window with an unchanged match id keeps whatever relay the match
+was created on; typing a *new* match id manually falls back to the
+default relay — the only honest option left, and the right one for the
+manual case. Peer-to-peer sides are unaffected (they never had a relay).
+No Rust change; validation is the usual suites plus `node --check` on a
+fresh patched checkout.
+
+Still open, from `ANALYSE-JEU-DISTANCE.md`'s original comparison: push/
+WebSocket instead of polling for the relay transport, and a saved-contact
+address book for peer-to-peer.
+
+## Internationalization (i18n)
+
+`app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the
+source of truth; unknown keys fall back to it). Static HTML text is wired
+with `data-i18n` (`textContent`), `data-i18n-title` (`title`), or
+`data-i18n-placeholder` (`placeholder`) — `translateDom()` applies the
+dictionary to every element carrying one of these on `DOMContentLoaded`,
+automatically, for any page that imports the module (most satellite windows
+already do, for the window title). Dynamic JS text uses `t('key', vars)`
+after `await initI18n()`.
+
+The gap this catches: importing the module and calling `initI18n()` isn't
+enough on its own — a label with no `data-i18n*` attribute just sits there
+in whatever language the HTML was written in, dictionary entry or not. That
+was the actual state of several satellite windows (`clock-setup.html` had
+*none* of its labels wired, despite matching `clockSetup.*`/`common.*`
+dictionary entries already existing and unused; `view-options.html`,
+`open-position.html`, `save-template.html`, `info.html` and the `Close`
+button on four other windows had the same gap for at least one label).
+Fixed by adding the missing attributes — no new mechanism, no JS logic
+touched, just wiring already-existing (or, where genuinely missing, newly
+added) dictionary entries to the elements that were never pointed at them.
+
+One thing `data-i18n` can't reach: AI level labels (`levels[i].label` in the
+Players/footer dropdowns, e.g. "Easy", "Fast [1sec]", "Papa") come from the
+Jocly engine's own game modules, not from Tabulon's HTML — there's nothing
+to put a `data-i18n` attribute on. `translateLevelLabel()` in
+`tabulon-i18n.js` is a small overlay for this specific case: a table of the
+level-label vocabulary found across jocly2's games (surveyed directly in the
+engine source, not guessed), translating the base word and leaving any
+`[Nsec]`/`(Nsec)` duration suffix untouched. A label outside that table
+(a game not covered, or a genuinely new one added later) is returned
+unchanged rather than left blank — no dictionary entry means no visible gap,
+just English where French would be nicer to have.
+
+## Scripts
+
+All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
+
+| Script | Role |
+|---|---|
+| `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
+| `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
+| `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
+| `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
+| `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
+| `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
+
+Environment variables understood by the app itself: `TABULON_DIST`
+(absolute path to an external dist, or `embedded`/empty to force the
+embedded library — handy for testing the fallback), and at build time
+`TABULON_MODULES` (default selection for `make-minimal-dist.mjs`).
 
 ## Running the tests
 

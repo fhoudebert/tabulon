@@ -3,7 +3,7 @@
 
 <head>
 		<link rel="icon" href="data:,">
-	<title>Board state</title>
+	<title data-i18n="btn.boardState">Board state</title>
 
 	<!-- Stylesheets -->
 	<link rel="stylesheet" href="tabulon.css">
@@ -23,15 +23,15 @@
 		<div class="window-content show-position-content">
 			<form>
 				<div class="form-group">
-    				<label>Board state</label>
+    				<label data-i18n="btn.boardState">Board state</label>
     				<textarea type="text" class="form-control" readonly></textarea>
-					<p>The board state format depends on the game implementation</p>
+					<p data-i18n="showPosition.hint">The board state format depends on the game implementation</p>
   				</div>
 			</form>
 		</div>
 		<footer class="toolbar toolbar-footer">
 			<div class="toolbar-actions">
-				<button id="button-cancel" class="btn btn-default pull-right">Close</button>
+				<button id="button-cancel" class="btn btn-default pull-right"><span data-i18n="common.close">Close</span></button>
 			</div>
 		</footer>
 	</div>
