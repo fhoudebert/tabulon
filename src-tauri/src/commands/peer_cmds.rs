@@ -312,10 +312,6 @@ fn install_session(
 /// Demarre l'ecoute cote hote. `token` est genere COTE JS
 /// (generatePeerToken, remote-peer-protocol.js). Renvoie port + adresses
 /// pour construire le code d'invitation.
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6a1ac01 (ip+port)
 ///
 /// `port` (optionnel, etape 8c) : port d'ecoute FIXE plutot qu'ephemere --
 /// indispensable pour jouer a travers Internet via une redirection de port
@@ -325,39 +321,18 @@ fn install_session(
 /// (ou privilegie), l'erreur remonte telle quelle a l'UI plutot que de
 /// retomber silencieusement sur un port ephemere -- un repli silencieux
 /// rendrait la regle de redirection invalide sans que l'hote le sache.
-<<<<<<< HEAD
-=======
->>>>>>> 1a0dc58 (peer to peer via code)
-=======
->>>>>>> 6a1ac01 (ip+port)
 #[tauri::command]
 pub async fn peer_host_start(
     app: AppHandle,
     state: State<'_, PeerState>,
     token: String,
-<<<<<<< HEAD
-<<<<<<< HEAD
     port: Option<u16>,
-=======
->>>>>>> 1a0dc58 (peer to peer via code)
-=======
-    port: Option<u16>,
->>>>>>> 6a1ac01 (ip+port)
 ) -> Result<HostInfo, String> {
     if token.len() < 8 {
         return Err("jeton trop court".to_string());
     }
-<<<<<<< HEAD
-<<<<<<< HEAD
     let listener = TcpListener::bind(("0.0.0.0", port.unwrap_or(0))).await
         .map_err(|e| format!("bind port {} : {e}", port.unwrap_or(0)))?;
-=======
-    let listener = TcpListener::bind("0.0.0.0:0").await.map_err(|e| e.to_string())?;
->>>>>>> 1a0dc58 (peer to peer via code)
-=======
-    let listener = TcpListener::bind(("0.0.0.0", port.unwrap_or(0))).await
-        .map_err(|e| format!("bind port {} : {e}", port.unwrap_or(0)))?;
->>>>>>> 6a1ac01 (ip+port)
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let (events_tx, out_rx, shutdown_rx, _shared) = install_session(&app, &state, "host");
     tauri::async_runtime::spawn(run_host(listener, token, events_tx, out_rx, shutdown_rx));
@@ -378,10 +353,6 @@ pub async fn peer_connect(
 ) -> Result<(), String> {
     let mut last_err = "aucune adresse fournie".to_string();
     for addr in &addrs {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6a1ac01 (ip+port)
         // Une adresse IPv6 litterale contient des ':' et doit etre crochetee
         // ([addr]:port) pour que la resolution "host:port" fonctionne. Les
         // noms d'hote (DNS/DynDNS) passent tels quels -- TcpStream::connect
@@ -392,12 +363,6 @@ pub async fn peer_connect(
         } else {
             format!("{addr}:{port}")
         };
-<<<<<<< HEAD
-=======
-        let target = format!("{addr}:{port}");
->>>>>>> 1a0dc58 (peer to peer via code)
-=======
->>>>>>> 6a1ac01 (ip+port)
         let connected = tokio::time::timeout(
             std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS),
             TcpStream::connect(&target),
@@ -549,10 +514,6 @@ mod tests {
             PeerEvent::Status { connected: true, role: "host", .. }));
     }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6a1ac01 (ip+port)
     /// Port fixe (etape 8c) : le bind respecte le port demande, et un port
     /// deja occupe est une ERREUR visible -- pas un repli ephemere silencieux
     /// (qui invaliderait la regle de redirection de la box sans prevenir).
@@ -571,11 +532,6 @@ mod tests {
         assert!(l2.is_err(), "un port deja pris doit echouer, pas retomber en ephemere");
     }
 
-<<<<<<< HEAD
-=======
->>>>>>> 1a0dc58 (peer to peer via code)
-=======
->>>>>>> 6a1ac01 (ip+port)
     /// Le code d'invitation transporte des adresses : verifie qu'on en
     /// produit toujours au moins une (127.0.0.1 en dernier recours).
     #[test]

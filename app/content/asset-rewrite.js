@@ -8,7 +8,6 @@
 //
 // Ce fichier n'est PAS un module ES : il est injecté tel quel via
 // initialization_script et doit s'exécuter en contexte global, sans import.
-<<<<<<< HEAD
 // Il est aussi ré-injecté à l'identique dans l'<iframe> Jocly (voir plus bas),
 // d'où la forme "fonction nommée + auto-appel" : SELF_SOURCE contient sa
 // propre source pour la ré-injection.
@@ -22,14 +21,10 @@ function __applyDistRewrite() {
   if (window.__distRewriteApplied) return;
   window.__distRewriteApplied = true;
   var SELF_SOURCE = __applyDistRewrite.toString();
-=======
-(function () {
->>>>>>> 20e98f0 (load external dist)
   // Base absolue du protocole custom. Sur Windows, les protocoles custom sont
   // servis via https://<scheme>.localhost/ ; ailleurs via <scheme>://localhost/.
   // On laisse la webview résoudre le host : une URL relative au protocole
   // suffit si on préfixe correctement. Tauri expose le convertisseur.
-<<<<<<< HEAD
   // Le format d'URL d'un protocole custom diffère selon la plateforme :
   //   Linux (WebKitGTK) : tabulon-dist://localhost/<path>
   //   Windows (WebView2) : http://tabulon-dist.localhost/<path>
@@ -49,14 +44,6 @@ function __applyDistRewrite() {
       if (PROTO.charAt(PROTO.length - 1) !== '/') PROTO += '/';
     }
   } catch (e) { /* repli en dur conservé */ }
-=======
-  var PROTO = 'tabulon-dist://localhost/';
-  if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc) {
-    // convertFileSrc(path, protocol) → URL correcte pour la plateforme.
-    PROTO = window.__TAURI__.core.convertFileSrc('', 'tabulon-dist');
-    if (PROTO.charAt(PROTO.length - 1) !== '/') PROTO += '/';
-  }
->>>>>>> 20e98f0 (load external dist)
 
   // Transforme une URL de page (relative ou absolue) contenant /browser/ ou
   // /games/ en URL du protocole custom. Retourne null si non concernée.
@@ -69,7 +56,6 @@ function __applyDistRewrite() {
     } catch (e) { return null; }
   }
 
-<<<<<<< HEAD
   // Exposés globalement (window.*) : distURL pour la réécriture explicite des
   // backgrounds CSS par le code de page (hub.js), et applyDistRewrite pour la
   // ré-injection dans l'iframe Jocly.
@@ -88,16 +74,10 @@ function __applyDistRewrite() {
   // page, la baseURL reste /browser/ et TOUTES les requêtes de fichiers de
   // jeux (jocly.core.js, games/**) passent ensuite par le hook fetch/XHR
   // ci-dessous, qui les redirige correctement vers le dist externe.
-=======
-  // 1. Réécriture des <script src>/<img src>/<link href> présents au parse.
-  //    On agit très tôt (document_start) ; pour le <script src=jocly.js> qui
-  //    suit dans le <head>, on réécrit à la volée via un MutationObserver.
->>>>>>> 20e98f0 (load external dist)
   function rewriteEl(el) {
     var attr = el.tagName === 'LINK' ? 'href' : 'src';
     var v = el.getAttribute && el.getAttribute(attr);
     if (!v) return;
-<<<<<<< HEAD
     if (el.tagName === 'SCRIPT' && /(^|\/)browser\/jocly\.js(\?|$)/.test(v)) return; // laisser tel quel
     var d = toDist(v);
     if (d) {
@@ -128,25 +108,16 @@ function __applyDistRewrite() {
     }
     inject();
     iframe.addEventListener('load', inject);
-=======
-    var d = toDist(v);
-    if (d) el.setAttribute(attr, d);
->>>>>>> 20e98f0 (load external dist)
   }
   try {
     new MutationObserver(function (muts) {
       muts.forEach(function (mu) {
         mu.addedNodes && mu.addedNodes.forEach(function (n) {
           if (n.nodeType !== 1) return;
-<<<<<<< HEAD
           if (n.tagName === 'IFRAME') injectIntoIframe(n);
           if (/^(SCRIPT|IMG|LINK)$/.test(n.tagName)) rewriteEl(n);
           n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href]').forEach(rewriteEl);
           n.querySelectorAll && n.querySelectorAll('iframe').forEach(injectIntoIframe);
-=======
-          if (/^(SCRIPT|IMG|LINK)$/.test(n.tagName)) rewriteEl(n);
-          n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href]').forEach(rewriteEl);
->>>>>>> 20e98f0 (load external dist)
         });
       });
     }).observe(document.documentElement, { childList: true, subtree: true });
@@ -170,7 +141,6 @@ function __applyDistRewrite() {
     if (d) arguments[1] = d;
     return _open.apply(this, arguments);
   };
-<<<<<<< HEAD
 
   // 4. Image().src / <img>.src assignés en JS (préchargement des visuels et
   //    thumbnails, et TEXTURES 3D three.js) : ces affectations ne déclenchent
@@ -338,6 +308,3 @@ function __applyDistRewrite() {
   } catch (e) { /* non redéfinissable : ignore */ }
 }
 __applyDistRewrite();
-=======
-})();
->>>>>>> 20e98f0 (load external dist)
