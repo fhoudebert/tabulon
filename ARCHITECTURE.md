@@ -96,6 +96,27 @@ Clés notables : `nav-last`, `last-game`, `favoriteGames`, `templates`, `view-op
 
 **Fin d'enregistrement** : le MP4 n'est lisible qu'après fermeture du stdin d'ffmpeg (écriture de l'atome moov) — sinon "unrecognized file format". Trois chemins y mènent : re-clic sur le bouton Record video (bascule, état `.recording` rouge), le bouton Stop dédié, et deux filets automatiques si la fenêtre de jeu se ferme en cours d'enregistrement (`beforeunload` côté JS + hook `WindowEvent::Destroyed` sur `play-{id}` dans lib.rs → `video_cmds::finalize_recording`). Prérequis : ffmpeg dans le PATH.
 
+## Dist externe (jeux chargés à côté de l'exécutable)
+
+`frontendDist: ["../app", "../dist"]` embarque `app/` et `dist/` dans le binaire.
+Pour charger un `dist/` **externe** (posé à côté de l'exe) sans rebuild, on ne
+peut pas se reposer sur frontendDist : les pages chargent le moteur/les jeux par
+URL relatives (`../browser/jocly.js`, `../games/…`) résolues sur les assets
+embarqués. Mécanisme (`dist_override.rs` + `asset-rewrite.js`) :
+
+1. `dist_override::external_dist()` cherche un dist utilisable : `TABULON_DIST`,
+   `$APPIMAGE` (dossier du .AppImage, pas le montage temporaire), `<exe>/dist`, remontées pour .app/AppImage (résolu une fois, `OnceLock`).
+2. Si présent, un protocole custom `tabulon-dist://` sert ses fichiers (repli
+   sur `asset_resolver()` embarqué), avec garde anti-traversée (`..` rejeté).
+3. `asset-rewrite.js` (injecté via `initialization_script` sur toutes les
+   fenêtres — main créée par code, satellites via `open_window`) réécrit à la
+   volée `browser/**` et `games/**` (script/img/link + fetch + XHR) vers ce
+   protocole. `content/**` n'est jamais redirigé : le shell UI reste embarqué.
+4. `get_dist_info` expose l'état (externe/embarqué + chemin) à l'UI.
+
+Sans dist externe, le protocole n'est jamais sollicité et le script pas injecté
+— comportement identique à avant.
+
 ## Pièges connus
 
 - **`src-tauri/target/` à supprimer** après tout ajout/suppression de fichier dans `app/` (assets embarqués périmés → symptômes de fichiers « fantômes »).

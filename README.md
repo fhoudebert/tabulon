@@ -71,6 +71,34 @@ npm run build          # bundles in src-tauri/target/release/bundle/
 > remove `src-tauri/target/` before rebuilding: stale embedded assets are the
 > most common cause of "my change has no effect" / broken-page symptoms.
 
+## Bundled games vs full library (externalized dist)
+
+The compiled app embeds a **minimal** dist (`dist-minimal/`: the Jocly engine +
+a few self-contained games), generated from a full `dist/` by
+`scripts/make-minimal-dist.mjs` and produced automatically at build time. This
+keeps the installer small and lets Tabulon run on its own.
+
+To play the **full 125-game library**, drop a complete `dist/` folder next to
+the executable — no rebuild needed:
+
+```
+tabulon/
+├── tabulon.exe          (or tabulon.AppImage, Tabulon.app)
+└── dist/                a full jocly2 build (browser/ + games/)
+```
+
+At startup Tabulon looks for a usable external dist in this order: the
+`TABULON_DIST` environment variable (absolute path), then `dist/` next to the
+program. For an **AppImage**, "next to the program" means next to the
+`.AppImage` file itself (resolved via `$APPIMAGE`), not the temporary mount —
+so place `dist/` in the same folder as `tabulon.AppImage`. For a macOS `.app`
+bundle, place `dist/` next to the bundle. If found, requests for `browser/**` and `games/**` are
+served from it (falling back to the embedded minimal dist for anything
+missing); otherwise only the bundled games are available. The active source is
+reported by the `get_dist_info` command (About panel / Extensions screen). The
+app shell (`content/**`) always comes from the embedded build, so a stale
+external dist cannot break the UI itself.
+
 ## Running the tests
 
 Integration test suites live in [`tests/`](./tests). They exercise the real

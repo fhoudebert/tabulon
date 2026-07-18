@@ -2,6 +2,7 @@
 mod commands;
 mod state;
 mod window_manager;
+mod dist_override;
 
 use commands::{fs_cmds, hub_cmds, match_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
@@ -9,9 +10,14 @@ use hub_cmds::NotifyChannels;
 use state::AppState;
 use tauri_plugin_cli::CliExt;
 
+const ASSET_REWRITE_JS: &str = include_str!("../../app/content/asset-rewrite.js");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("tabulon-dist", |ctx, req| {
+            dist_override::handle_request(ctx.app_handle(), req)
+        })
         // ── Plugins ──────────────────────────────────────────────────────────
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
@@ -41,6 +47,17 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            {
+                use tauri::{WebviewUrl, WebviewWindowBuilder};
+                let mut b = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("content/hub.html".into()))
+                    .title("Tabulon")
+                    .inner_size(800.0, 600.0);
+                if dist_override::has_external_dist() {
+                    log::info!("dist externe actif : réécriture des assets Jocly");
+                    b = b.initialization_script(ASSET_REWRITE_JS);
+                }
+                b.build()?;
+            }
             let cli_matches = app.cli().matches()?;
             if !cli_matches.args.contains_key("no-autoupdate") {
                 #[cfg(not(debug_assertions))]
@@ -98,6 +115,7 @@ pub fn run() {
             video_cmds::record_frame,
             // ── Fichiers ─────────────────────────────────────────────────────
             fs_cmds::read_text_file,
+            fs_cmds::get_dist_info,
             fs_cmds::save_text_file,
             fs_cmds::save_data_uri_file,
             fs_cmds::parse_pjn,

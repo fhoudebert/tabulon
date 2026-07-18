@@ -144,3 +144,13 @@ pub fn save_data_uri_file(path: String, data_uri: String) -> Result<(), String> 
     let bytes = STANDARD.decode(b64).map_err(|e| format!("save_data_uri_file: base64: {e}"))?;
     fs::write(p, bytes).map_err(|e| format!("save_data_uri_file: {e}"))
 }
+
+/// Indique à l'UI si un dist/ externe est chargé et son chemin.
+/// Utilisé par l'écran Extensions / le panneau About.
+#[tauri::command]
+pub fn get_dist_info() -> serde_json::Value {
+    match crate::dist_override::external_dist() {
+        Some(p) => serde_json::json!({ "external": true, "path": p.display().to_string() }),
+        None    => serde_json::json!({ "external": false, "path": null }),
+    }
+}

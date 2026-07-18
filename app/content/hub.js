@@ -8,6 +8,10 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 
+// Réécrit un chemin d'asset vers le dist externe si actif (window.__distURL
+// est fourni par asset-rewrite.js ; sinon chemin inchangé).
+function distURL(u) { return (window.__distURL ? window.__distURL(u) : u); }
+
 let store;
 let gameList = [], gamesMap = {};
 let allGameList = [], favGameList = [], templateList = [];
@@ -145,7 +149,7 @@ async function SelectGame(gameName, opts = {}) {
     document.querySelector('#game-detail .game-title').textContent = config.model['title-en'];
     document.querySelector('#game-detail .game-summary').textContent = config.model.summary;
     document.querySelector('#game-detail .game-thumbnail').style.backgroundImage =
-        `url(${config.view.fullPath}/${config.model.thumbnail})`;
+        `url(${distURL(config.view.fullPath + '/' + config.model.thumbnail)})`;
 
     SetupVisuals(config.view);
     await UpdateDetailFavorite();
@@ -162,7 +166,7 @@ function SetupVisuals(view) {
     container.innerHTML = '';
 
     if (!view.visuals?.['600x600']) return;
-    const visuals = [view.visuals['600x600']].flat().map(v => view.fullPath + '/' + v);
+    const visuals = [view.visuals['600x600']].flat().map(v => distURL(view.fullPath + '/' + v));
 
     visuals.forEach((url, index) => {
         const div = document.createElement('div');
@@ -413,6 +417,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('gamefilter').addEventListener('input', Filter);
     try { InitDetailButtons(); }
     catch (e) { detailAvailable = false; console.error('[hub] InitDetailButtons:', e); }
+
+    // Garde : si ../browser/jocly.js n'a pas chargé (dist/ absent des assets
+    // embarqués — build fait sans dist/ ou avec un src-tauri/target périmé),
+    // afficher la cause dans l'interface au lieu d'une liste vide muette.
+    if (typeof Jocly === 'undefined') {
+        console.error('[hub] window.Jocly absent : ../browser/jocly.js n\'a pas chargé.',
+            'Causes probables : dist/ manquant au moment du build, ou src-tauri/target',
+            'périmé (assets embarqués sans dist) — supprimer target/ et rebuilder.');
+        document.getElementById('game-list-pane').style.display = '';
+        const ul = document.getElementById('game-list');
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.innerHTML = '<div class="media-body"><strong></strong><p></p></div>';
+        li.querySelector('strong').textContent = t('hub.joclyMissing');
+        li.querySelector('p').textContent = t('hub.joclyMissingHint');
+        ul.appendChild(li);
+        RenderAbout();
+        await twu.init(appInfo.name + ' ' + appInfo.version);
+        twu.ready();
+        return;
+    }
 
     console.info('[hub] calling ListGames()');
     await ListGames();
