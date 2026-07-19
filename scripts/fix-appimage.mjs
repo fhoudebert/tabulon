@@ -144,8 +144,15 @@ function main() {
         process.exit(1);
     }
     copyFileSync(appImage, appImage + '.orig');
-    renameSync(rebuilt, appImage);
-    chmodSync(appImage, 0o755);
+    // Remplacement en deux temps : renameSync directement depuis workDir
+    // echoue en EXDEV des que le repertoire temporaire est sur un autre
+    // systeme de fichiers que la cible (/tmp en tmpfs sur Manjaro --
+    // constate en reel, reproduit sur tmpfs). On copie donc d'abord dans le
+    // REPERTOIRE CIBLE, puis rename local : meme peripherique, atomique.
+    const staged = appImage + '.new';
+    copyFileSync(rebuilt, staged);
+    chmodSync(staged, 0o755);
+    renameSync(staged, appImage);
     rmSync(workDir, { recursive: true, force: true });
     console.log(`[fix-appimage] OK : ${appImage} réempaquetée sans libwayland (original : ${basename(appImage)}.orig)`);
 }

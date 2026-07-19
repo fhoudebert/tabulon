@@ -664,7 +664,16 @@ down that road). The official AppImage excludelist
 (AppImageCommunity/pkg2appimage) indeed forbids bundling
 `libwayland-client.so.0`; Tauri's bundler ships it anyway.
 
-**The fix — run after every AppImage build:**
+**The fix — one command, build included (preferred):**
+
+    ./compil.sh
+
+`compil.sh` (repo root) chains `npm run build` → the purge below → a
+**proof step** that re-extracts each produced AppImage and fails loudly
+if any `libwayland-*` remains. It exists because the purge is a
+post-processing step that is otherwise easy to forget — a rebuild without
+it reproduces the exact same `EGL_BAD_PARAMETER` failure, which happened
+in real testing. Manual equivalent, run after every AppImage build:
 
     node scripts/fix-appimage.mjs            # finds the AppImage under
                                              # src-tauri/target/release/bundle/appimage/
