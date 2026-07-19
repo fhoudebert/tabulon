@@ -403,14 +403,17 @@ function BuildPlayerSelect(selectId, playerKey) {
         sel.appendChild(opt);
     });
 
-    // "Joueur distant" : pas de champs ici (matchId/relayUrl) -- choisir
-    // cette option ouvre la fenetre Players (voir plus bas) plutot que de
-    // configurer quoi que ce soit directement. L'option existe surtout pour
-    // que le select puisse REFLETER cet etat quand il est configure par
-    // ailleurs (invitation, fenetre Players) -- voir syncFooterSelect().
+    // "Joueur distant" : entree d'ETAT uniquement, jamais un choix. Le jeu
+    // a distance ne se configure que par la fenetre Invitation (le libelle
+    // "(via Invitation)" le dit dans la liste elle-meme) ; l'option est
+    // desactivee, le navigateur empeche donc de la choisir -- mais
+    // syncFooterSelect() peut toujours la poser programmatiquement pour
+    // refleter un cote devenu distant par l'invitation.
     const optRemote = document.createElement('option');
     optRemote.value = 'remote';
-    optRemote.textContent = t('common.remote');
+    optRemote.disabled = true;
+    optRemote.title = t('common.remoteViaInvitationTip');
+    optRemote.textContent = t('common.remoteViaInvitation');
     sel.appendChild(optRemote);
 
     // Defaut : A = humain, B = premier niveau IA (si disponible)
@@ -425,12 +428,9 @@ function BuildPlayerSelect(selectId, playerKey) {
     sel.addEventListener('change', async () => {
         const v = sel.value;
         if (v === 'remote') {
-            // Pas de champs ici pour matchId/relayUrl -- on ouvre Players et
-            // on remet le select dans l'etat qu'il reflete reellement en
-            // attendant (syncFooterSelect corrigera l'affichage une fois la
-            // config reelle connue, via get-players/set-players ou l'invite).
+            // Inatteignable en principe (option desactivee) -- garde
+            // defensive : on se contente de re-refleter l'etat reel.
             syncFooterSelect(playerKey);
-            tRpc.call('open_players', matchId);
             return;
         }
         const wasRemote = !!players[playerKey]?.remote;

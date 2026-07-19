@@ -26,8 +26,17 @@ function BuildSelect(sel, levels, currentType, currentLevelIndex) {
         opt.textContent = translateLevelLabel(lvl.label) || lvl.name || t('common.level', { n: i + 1 });
         sel.appendChild(opt);
     });
+    // "Joueur distant" : selectionnable UNIQUEMENT si le cote est deja
+    // distant (pour l'afficher, et pour pouvoir y revenir apres un clic
+    // malheureux avant Save -- la conf d'origine est preservee via
+    // lastReceivedRemote). Sinon l'option est desactivee : le jeu a
+    // distance ne se configure que par la fenetre Invitation, et le
+    // libelle "(via Invitation)" l'explique dans la liste elle-meme.
     const optRemote = document.createElement('option');
-    optRemote.value = 'remote'; optRemote.textContent = t('common.remote');
+    optRemote.value = 'remote';
+    optRemote.disabled = currentType !== 'remote';
+    optRemote.title = t('common.remoteViaInvitationTip');
+    optRemote.textContent = t('common.remoteViaInvitation');
     sel.appendChild(optRemote);
 
     sel.value = currentType === 'ai' && currentLevelIndex >= 0 ? 'ai:' + currentLevelIndex

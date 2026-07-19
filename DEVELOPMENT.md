@@ -176,6 +176,14 @@ original design analysis.
   A resync story (e.g. pushing the full engine state on demand, which the
   `'jocly-simple-match'` codec already does on every move) is an open
   item.
+- Remote play can only be *established* from the Invitation window. The
+  player dropdowns (footer quick select and Players window) show a
+  disabled "Remote player (via Invitation)" entry: it exists to display
+  the state of a side made remote by an invitation — the browser refuses
+  to select it, and the label itself says where remote play is set up.
+  The one exception: in the Players window, a side that is *currently*
+  remote keeps the entry selectable, so switching away can be undone
+  before Save (the original config is preserved via `lastReceivedRemote`).
 - The Players window shows a remote side as "Remote player" and
   **preserves** its full configuration (`codec`, `gameName`, `relayUrl`,
   peer flags) on Save as long as the match id field is left unchanged;
