@@ -22,10 +22,12 @@ use tauri_plugin_store::StoreExt;
 /// L'ID est généré ici (compteur atomique dans AppState) et passé en query
 /// string à play.html, qui l'utilise pour s'identifier dans les appels
 /// aux fenêtres satellites (open_history, open_clock, etc.).
+// `async` requis : cree une fenetre webview -- deadlock documente sous
+// Windows dans une commande synchrone (voir la note de window_cmds.rs).
 #[tauri::command]
-pub fn new_match(
+pub async fn new_match(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     game_name: String,
     clock: Option<Value>,
     // String et non u32 : les ids de fork viennent de trois sources JS —
@@ -113,8 +115,9 @@ pub fn set_favorite(
 
 
 
+// `async` requis : cree une fenetre webview (voir la note de window_cmds.rs).
 #[tauri::command]
-pub fn open_show_position(app: AppHandle, game_name: String, match_id: u32) -> Result<(), String> {
+pub async fn open_show_position(app: AppHandle, game_name: String, match_id: u32) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("board-state-{game_name}-{match_id}"),
         url: &format!("content/show-position.html?game={game_name}&id={match_id}"),

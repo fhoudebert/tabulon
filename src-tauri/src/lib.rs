@@ -1,4 +1,6 @@
 // src-tauri/src/lib.rs
+#[cfg(target_os = "linux")]
+mod appimage_compat;
 mod commands;
 mod state;
 mod window_manager;
@@ -14,6 +16,12 @@ const ASSET_REWRITE_JS: &str = include_str!("../../app/content/asset-rewrite.js"
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Contournements AppImage (Linux) -- AVANT toute initialisation
+    // GTK/WebKit, qui lit ces variables a la creation du premier webview.
+    // Sans effet hors AppImage ; voir src/appimage_compat.rs.
+    #[cfg(target_os = "linux")]
+    appimage_compat::apply();
+
     tauri::Builder::default()
         .register_uri_scheme_protocol("tabulon-dist", |ctx, req| {
             dist_override::handle_request(ctx.app_handle(), req)

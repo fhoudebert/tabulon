@@ -5,8 +5,18 @@
 
 /// rpc.call("openClockSetup", gameName) — ouvre la config horloge avant la partie.
 /// clock-setup.js appellera ensuite new_match(gameName, clock) pour lancer la partie.
+// IMPORTANT (Windows) : toutes les commandes de ce fichier qui creent une
+// fenetre webview sont volontairement `async`. La doc de tauri
+// (webview_window.rs) est explicite : "On Windows, this function deadlocks
+// when used in a synchronous command or event handlers" -- constate en
+// reel sur Windows 11 : fenetres secondaires blanches ET figees (a tuer au
+// gestionnaire de taches), la creation WebView2 ayant besoin de pomper la
+// boucle de messages que la commande synchrone bloque. Une commande async
+// s'execute hors du thread principal et la creation est dispatchee
+// proprement. Ne PAS repasser ces commandes en synchrone.
+
 #[tauri::command]
-pub fn open_clock_setup(app: AppHandle, game_name: String) -> Result<(), String> {
+pub async fn open_clock_setup(app: AppHandle, game_name: String) -> Result<(), String> {
     use crate::window_manager::WindowOptions;
     open_window(&app, WindowOptions {
         label: &format!("clock-setup-{game_name}"),
@@ -27,7 +37,7 @@ use serde_json::Value;
 
 /// rpc.call("openHistory", matchId)
 #[tauri::command]
-pub fn open_history(app: AppHandle, match_id: u32) -> Result<(), String> {
+pub async fn open_history(app: AppHandle, match_id: u32) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("history-{match_id}"),
         url:   &format!("content/history.html?id={match_id}"),
@@ -40,7 +50,7 @@ pub fn open_history(app: AppHandle, match_id: u32) -> Result<(), String> {
 
 /// rpc.call("openClock", matchId)
 #[tauri::command]
-pub fn open_clock(app: AppHandle, match_id: u32) -> Result<(), String> {
+pub async fn open_clock(app: AppHandle, match_id: u32) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("clock-{match_id}"),
         url:   &format!("content/clock.html?id={match_id}"),
@@ -53,7 +63,7 @@ pub fn open_clock(app: AppHandle, match_id: u32) -> Result<(), String> {
 
 /// rpc.call("openPlayers", matchId)
 #[tauri::command]
-pub fn open_players(app: AppHandle, match_id: u32) -> Result<(), String> {
+pub async fn open_players(app: AppHandle, match_id: u32) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("players-{match_id}"),
         url:   &format!("content/players.html?id={match_id}"),
@@ -66,7 +76,7 @@ pub fn open_players(app: AppHandle, match_id: u32) -> Result<(), String> {
 
 /// rpc.call("openViewOptions", matchId)
 #[tauri::command]
-pub fn open_view_options(app: AppHandle, match_id: u32) -> Result<(), String> {
+pub async fn open_view_options(app: AppHandle, match_id: u32) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("view-options-{match_id}"),
         url:   &format!("content/view-options.html?id={match_id}"),
@@ -79,7 +89,7 @@ pub fn open_view_options(app: AppHandle, match_id: u32) -> Result<(), String> {
 
 /// rpc.call("openCameraView", matchId)
 #[tauri::command]
-pub fn open_camera_view(app: AppHandle, match_id: u32, game_name: String) -> Result<(), String> {
+pub async fn open_camera_view(app: AppHandle, match_id: u32, game_name: String) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("camera-{match_id}"),
         url:   &format!("content/camera-view.html?id={match_id}&game={game_name}"),
@@ -92,7 +102,7 @@ pub fn open_camera_view(app: AppHandle, match_id: u32, game_name: String) -> Res
 
 /// rpc.call("openSaveTemplate", matchId)
 #[tauri::command]
-pub fn open_save_template(app: AppHandle, match_id: u32) -> Result<(), String> {
+pub async fn open_save_template(app: AppHandle, match_id: u32) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("save-template-{match_id}"),
         url:   &format!("content/save-template.html?id={match_id}"),
@@ -105,7 +115,7 @@ pub fn open_save_template(app: AppHandle, match_id: u32) -> Result<(), String> {
 
 /// rpc.call("openInfo", gameName)
 #[tauri::command]
-pub fn open_info(app: AppHandle, game_name: String) -> Result<(), String> {
+pub async fn open_info(app: AppHandle, game_name: String) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("info-{game_name}"),
         url:   &format!("content/info.html?game={game_name}"),
@@ -121,7 +131,7 @@ pub fn open_info(app: AppHandle, game_name: String) -> Result<(), String> {
 /// une partie a distance. Lance new_match(gameName, ..., inviteId) une fois
 /// le lien valide (voir invitation.js).
 #[tauri::command]
-pub fn open_invitation(app: AppHandle, game_name: String) -> Result<(), String> {
+pub async fn open_invitation(app: AppHandle, game_name: String) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("invitation-{game_name}"),
         url:   &format!("content/invitation.html?game={game_name}"),
@@ -134,7 +144,7 @@ pub fn open_invitation(app: AppHandle, game_name: String) -> Result<(), String> 
 
 /// rpc.call("open_extensions") — écran de gestion des extensions (dist externe)
 #[tauri::command]
-pub fn open_extensions(app: AppHandle) -> Result<(), String> {
+pub async fn open_extensions(app: AppHandle) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: "extensions",
         url:   "content/extensions.html",
@@ -147,7 +157,7 @@ pub fn open_extensions(app: AppHandle) -> Result<(), String> {
 
 /// rpc.call("openBoardState", gameName, matchId?)
 #[tauri::command]
-pub fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>) -> Result<(), String> {
+pub async fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>) -> Result<(), String> {
     let id_str = match_id.map(|i| i.to_string()).unwrap_or_default();
     // JoclyBoard : "Board state" ouvre la fenêtre de SAISIE d'un état
     // (open-position) pour démarrer/recharger une partie — pas la fenêtre
@@ -168,7 +178,7 @@ pub fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>
 /// Pour l'instant : ouvre book.html directement sans données parsées.
 /// TODO : implémenter le parsing côté Rust ou côté JS dans book.html.
 #[tauri::command]
-pub fn open_book(app: AppHandle, game_name: String, file_name: String, _data: String) -> Result<(), String> {
+pub async fn open_book(app: AppHandle, game_name: String, file_name: String, _data: String) -> Result<(), String> {
     use crate::window_manager::WindowOptions;
     open_window(&app, WindowOptions {
         label: &format!("book-{game_name}"),
@@ -181,7 +191,7 @@ pub fn open_book(app: AppHandle, game_name: String, file_name: String, _data: St
 
 /// rpc.call("openMoves", matchId)
 #[tauri::command]
-pub fn open_moves(app: AppHandle, match_id: u32) -> Result<(), String> {
+pub async fn open_moves(app: AppHandle, match_id: u32) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("moves-{match_id}"),
         url:   &format!("content/moves.html?id={match_id}"),
@@ -196,7 +206,7 @@ pub fn open_moves(app: AppHandle, match_id: u32) -> Result<(), String> {
 
 /// rpc.call("openBoardState", gameName, matchId)  →  open-position.html (saisie FEN)
 #[tauri::command]
-pub fn open_position(app: AppHandle, game_name: String, match_id: Option<u32>) -> Result<(), String> {
+pub async fn open_position(app: AppHandle, game_name: String, match_id: Option<u32>) -> Result<(), String> {
     let id_str = match_id.map(|i| i.to_string()).unwrap_or_default();
     open_window(&app, WindowOptions {
         label: &format!("open-position-{game_name}"),

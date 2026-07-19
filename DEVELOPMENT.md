@@ -406,6 +406,54 @@ cargo tauri icon path/to/source.png
 
 ---
 
+## Troubleshooting: on Windows, satellite windows open blank and frozen
+
+Symptom (seen on Windows 11 after a local build): the main hub window
+works, but every window opened afterwards — quick play, help, invitation,
+extensions… — shows an empty page with only its window title, **does not
+respond**, and has to be killed from the Task Manager.
+
+Two distinct Windows-only causes were identified, both now fixed; the
+freeze is the signature of the first one.
+
+**1. Deadlock: webview windows created from synchronous commands (the
+primary cause).** Tauri's own documentation (`webview_window.rs`, for the
+exact version in `Cargo.lock`) states: *"On Windows, this function
+deadlocks when used in a synchronous command or event handlers"* — the
+WebView2 creation needs the main-thread message loop to be pumped, and a
+synchronous command blocks it. All of Tabulon's window-opening commands
+(`open_invitation`, `open_extensions`, `open_info`, `new_match`, …) were
+synchronous: the window shell appeared, the webview never finished
+initializing — blank *and* frozen, unkillable except via Task Manager.
+The hub escapes because it is created in `setup()`, not in a command;
+Linux/macOS escape because their webviews don't depend on that message
+pump. Fix: every command that creates a webview window is now `async`
+(16 commands across `window_cmds.rs` and `match_cmds.rs`) — async
+commands run off the main thread and the creation is dispatched
+properly. Header comments in `window_cmds.rs` explain why; do not make
+these synchronous again.
+
+**2. Injection race: `window.__TAURI__` late in secondary webviews.** A
+separate, known WebView2 race (tauri-apps/tauri#12990, "status:
+upstream"; #12694 for the "second webview window" case): the Tauri
+initialization scripts — including the `withGlobalTauri` injection — can
+run *after* the page's `<script type="module">` for a webview created
+after startup, inconsistently and CPU-load-dependently. Every
+`tauri-bridge.js` call then throws and the page boots into empty
+`data-i18n` skeletons. Fix (`app/content/tauri-bridge.js`): the bridge
+waits for the injection with a top-level `await` before letting any
+importer run — suspending the page's whole module graph and, per the
+HTML spec for deferred module scripts, delaying `DOMContentLoaded`, so
+no page code had to change. The wait only arms inside a real Tauri page
+(`isTauriPage()`: `tauri://localhost`, `http(s)://tauri.localhost`, or
+the dev `localhost` origin — Node test stubs keep the historical
+lazy-error behavior), costs nothing when the injection already happened,
+and after 8 s logs an explicit, *non-fatal* console error — seeing that
+error means the injection never arrived at all, a different problem
+(CSP, `withGlobalTauri` off, broken build) worth reporting as such. Both
+predicates are pure and covered by
+`tests/test-tauri-bridge-injection.mjs`.
+
 ## Internal architecture
 
 > History: a SharedWorker architecture ("one application brain") was
@@ -589,6 +637,51 @@ tabulon/
 Game logic runs in `play.html` (Jocly attached in an iframe); satellite
 windows (history, clock, players, …) are pure views talking to it over Tauri
 events. Details in the "Internal architecture" section above.
+
+## Troubleshooting: AppImage fails with `EGL_BAD_PARAMETER` on some distros
+
+Symptom (seen on Manjaro; the same AppImage runs fine on Debian-based
+hosts):
+
+    Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...
+
+(The `Failed to load module "appmenu-gtk-module"` line that may precede it
+is unrelated host-GTK noise — harmless.)
+
+This is a known failure class of Tauri apps shipped as AppImages
+(tauri-apps/tauri#11988 / #11994, closed upstream as "Not Planned"): the
+AppImage carries libraries built on one distribution, and on a different
+host — typically Arch/Manjaro or Fedora, and especially with the NVIDIA
+proprietary driver — WebKitGTK's DMA-BUF rendering path, or EGL display
+creation itself, fails on the mix of host drivers and bundled libraries.
+Native installs don't mix libraries, which is why the Debian package is
+unaffected.
+
+What Tabulon does automatically (`src-tauri/src/appimage_compat.rs`): when
+— and only when — the process runs from an AppImage (`APPIMAGE` env var set
+by the AppImage runtime), it sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+unless the variable is already set. This is the documented fix for the
+majority of cases; 3D/WebGL keeps working through a less direct rendering
+path. Native installs are never touched, and a user-set value (including
+`0` to deliberately re-enable DMA-BUF inside the AppImage) is never
+overridden.
+
+If the automatic safeguard is not enough (there are Arch-family hosts
+where the EGL failure happens before WebKit reads its variables), escalate
+manually, one lever at a time, and please report which one works:
+
+    WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Tabulon*.AppImage
+    GDK_BACKEND=x11 ./Tabulon*.AppImage         # Wayland session: force XWayland
+    LD_PRELOAD=/usr/lib/libwayland-client.so.0 ./Tabulon*.AppImage
+                                # Arch path; Debian-family: /usr/lib/x86_64-linux-gnu/…
+
+The last one addresses an AppImage/host library-ordering conflict under
+Wayland (the bundled `libwayland-client` predates what the host's Mesa
+expects). Automating it would require a re-exec of the process; that is
+deliberately **not** done until the need is confirmed on an affected
+machine — if `GDK_BACKEND=x11` or the `LD_PRELOAD` turns out to be the
+lever that fixes a real host, that's the signal to automate it in a
+follow-up.
 
 ## License
 
