@@ -590,6 +590,51 @@ Game logic runs in `play.html` (Jocly attached in an iframe); satellite
 windows (history, clock, players, …) are pure views talking to it over Tauri
 events. Details in the "Internal architecture" section above.
 
+## Troubleshooting: AppImage fails with `EGL_BAD_PARAMETER` on some distros
+
+Symptom (seen on Manjaro; the same AppImage runs fine on Debian-based
+hosts):
+
+    Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...
+
+(The `Failed to load module "appmenu-gtk-module"` line that may precede it
+is unrelated host-GTK noise — harmless.)
+
+This is a known failure class of Tauri apps shipped as AppImages
+(tauri-apps/tauri#11988 / #11994, closed upstream as "Not Planned"): the
+AppImage carries libraries built on one distribution, and on a different
+host — typically Arch/Manjaro or Fedora, and especially with the NVIDIA
+proprietary driver — WebKitGTK's DMA-BUF rendering path, or EGL display
+creation itself, fails on the mix of host drivers and bundled libraries.
+Native installs don't mix libraries, which is why the Debian package is
+unaffected.
+
+What Tabulon does automatically (`src-tauri/src/appimage_compat.rs`): when
+— and only when — the process runs from an AppImage (`APPIMAGE` env var set
+by the AppImage runtime), it sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+unless the variable is already set. This is the documented fix for the
+majority of cases; 3D/WebGL keeps working through a less direct rendering
+path. Native installs are never touched, and a user-set value (including
+`0` to deliberately re-enable DMA-BUF inside the AppImage) is never
+overridden.
+
+If the automatic safeguard is not enough (there are Arch-family hosts
+where the EGL failure happens before WebKit reads its variables), escalate
+manually, one lever at a time, and please report which one works:
+
+    WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Tabulon*.AppImage
+    GDK_BACKEND=x11 ./Tabulon*.AppImage         # Wayland session: force XWayland
+    LD_PRELOAD=/usr/lib/libwayland-client.so.0 ./Tabulon*.AppImage
+                                # Arch path; Debian-family: /usr/lib/x86_64-linux-gnu/…
+
+The last one addresses an AppImage/host library-ordering conflict under
+Wayland (the bundled `libwayland-client` predates what the host's Mesa
+expects). Automating it would require a re-exec of the process; that is
+deliberately **not** done until the need is confirmed on an affected
+machine — if `GDK_BACKEND=x11` or the `LD_PRELOAD` turns out to be the
+lever that fixes a real host, that's the signal to automate it in a
+follow-up.
+
 ## License
 
 AGPL-3.0 (see `package.json`).
