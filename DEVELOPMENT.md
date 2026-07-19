@@ -406,36 +406,52 @@ cargo tauri icon path/to/source.png
 
 ---
 
-## Troubleshooting: on Windows, satellite windows open blank (title only)
+## Troubleshooting: on Windows, satellite windows open blank and frozen
 
 Symptom (seen on Windows 11 after a local build): the main hub window
 works, but every window opened afterwards — quick play, help, invitation,
-extensions… — shows an empty page with only its window title.
+extensions… — shows an empty page with only its window title, **does not
+respond**, and has to be killed from the Task Manager.
 
-Cause: a known WebView2/Tauri race (tauri-apps/tauri#12990, marked
-"status: upstream", and #12694 for the "second webview window" case). On
-Windows, the Tauri initialization scripts — including the
-`window.__TAURI__` injection that `withGlobalTauri` relies on — can run
-*after* the page's `<script type="module">` for a webview created after
-startup. The first window (the hub, created in `setup()`) wins the race;
-later windows can lose it, inconsistently and CPU-load-dependently. Every
-`tauri-bridge.js` call then throws, the page's boot dies before
-`initI18n()`, and all `data-i18n` elements stay empty — a visually blank
-page. Linux/macOS WebKit orders the scripts reliably, hence the asymmetry.
+Two distinct Windows-only causes were identified, both now fixed; the
+freeze is the signature of the first one.
 
-Fix in place (`app/content/tauri-bridge.js`): the bridge now *waits* for
-the injection with a top-level `await` before letting any importer run.
-This suspends the whole module graph of the page (and, per the HTML spec
-for deferred module scripts, delays `DOMContentLoaded`), so no page code
-had to change. The wait only arms inside a real Tauri page
-(`isTauriPage()`: `tauri://localhost`, `http(s)://tauri.localhost`, or the
-dev-server `localhost` origin — Node test stubs and other contexts keep
-the historical lazy-error behavior), is free when the injection already
-happened (the nominal case everywhere), polls a few milliseconds in the
-Windows race, and after 8 s logs an explicit, non-fatal console error —
-if you ever see that error, the injection *never* arrived, which is a
-different problem (CSP, `withGlobalTauri` off, broken build) worth
-reporting as such. Both predicates are pure and covered by
+**1. Deadlock: webview windows created from synchronous commands (the
+primary cause).** Tauri's own documentation (`webview_window.rs`, for the
+exact version in `Cargo.lock`) states: *"On Windows, this function
+deadlocks when used in a synchronous command or event handlers"* — the
+WebView2 creation needs the main-thread message loop to be pumped, and a
+synchronous command blocks it. All of Tabulon's window-opening commands
+(`open_invitation`, `open_extensions`, `open_info`, `new_match`, …) were
+synchronous: the window shell appeared, the webview never finished
+initializing — blank *and* frozen, unkillable except via Task Manager.
+The hub escapes because it is created in `setup()`, not in a command;
+Linux/macOS escape because their webviews don't depend on that message
+pump. Fix: every command that creates a webview window is now `async`
+(16 commands across `window_cmds.rs` and `match_cmds.rs`) — async
+commands run off the main thread and the creation is dispatched
+properly. Header comments in `window_cmds.rs` explain why; do not make
+these synchronous again.
+
+**2. Injection race: `window.__TAURI__` late in secondary webviews.** A
+separate, known WebView2 race (tauri-apps/tauri#12990, "status:
+upstream"; #12694 for the "second webview window" case): the Tauri
+initialization scripts — including the `withGlobalTauri` injection — can
+run *after* the page's `<script type="module">` for a webview created
+after startup, inconsistently and CPU-load-dependently. Every
+`tauri-bridge.js` call then throws and the page boots into empty
+`data-i18n` skeletons. Fix (`app/content/tauri-bridge.js`): the bridge
+waits for the injection with a top-level `await` before letting any
+importer run — suspending the page's whole module graph and, per the
+HTML spec for deferred module scripts, delaying `DOMContentLoaded`, so
+no page code had to change. The wait only arms inside a real Tauri page
+(`isTauriPage()`: `tauri://localhost`, `http(s)://tauri.localhost`, or
+the dev `localhost` origin — Node test stubs keep the historical
+lazy-error behavior), costs nothing when the injection already happened,
+and after 8 s logs an explicit, *non-fatal* console error — seeing that
+error means the injection never arrived at all, a different problem
+(CSP, `withGlobalTauri` off, broken build) worth reporting as such. Both
+predicates are pure and covered by
 `tests/test-tauri-bridge-injection.mjs`.
 
 ## Internal architecture
