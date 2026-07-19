@@ -312,7 +312,7 @@ const DICT = {
         'tip.resumeFromPosition': 'Reprendre depuis cette position',
         'view.skin': 'Habillage', 'view.sounds': 'Sons', 'view.notation': 'Notation',
         'view.showMoves': 'Montrer les coups', 'view.autoComplete': 'Compléter les coups',
-        'view.anaglyph': 'Anaglyphe', 'view.viewAs': 'Voir comme',
+        'view.anaglyph': 'Anaglyphe', 'view.viewAs': 'Voir en tant que',
         'template.name': 'Nom du modèle',
         'info.rules': 'Règles', 'info.description': 'Description',
         'info.credits': 'Crédits',

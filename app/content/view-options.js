@@ -64,6 +64,27 @@ function ApplyOptions(data) {
     anaWrap?.classList.remove('hidden');
     const anaInput = anaWrap?.querySelector('input');
     if (anaInput) anaInput.checked = !!options.anaglyph;
+
+    // "Voir en tant que" (comme le select #view-as de l'exemple
+    // examples/browser/control.html de jocly2) : seulement pour les jeux
+    // dont la vue est retournable (config.switchable) -- setViewOptions
+    // n'applique viewAs que dans ce cas, et getViewOptions ne le renvoie
+    // que dans ce cas. Le choix est persiste par jeu via le circuit
+    // existant (play.js enregistre tout le payload de set-view-options).
+    const viewAsWrap = document.getElementById('viewAs');
+    const viewAsSel  = viewAsWrap?.querySelector('select');
+    const PLAYER_A = window.Jocly?.PLAYER_A ?? 1;
+    const PLAYER_B = window.Jocly?.PLAYER_B ?? -1;
+    if (viewAsSel && (config.switchable || typeof options.viewAs !== 'undefined')) {
+        viewAsSel.innerHTML = '';
+        [[PLAYER_A, t('common.playerA')], [PLAYER_B, t('common.playerB')]].forEach(([v, label]) => {
+            const opt = document.createElement('option');
+            opt.value = String(v); opt.textContent = label;
+            viewAsSel.appendChild(opt);
+        });
+        viewAsWrap.classList.remove('hidden');
+        viewAsSel.value = String(options.viewAs ?? PLAYER_A);
+    }
 }
 
 function ReadOptions() {
@@ -76,6 +97,13 @@ function ReadOptions() {
     if (config.useNotation)     opts.notation     = !!document.querySelector('#notation input')?.checked;
     if (config.useAutoComplete) opts.autoComplete = !!document.querySelector('#autoComplete input')?.checked;
     if (config.useShowMoves)    opts.showMoves    = !!document.querySelector('#showMoves input')?.checked;
+    // viewAs : uniquement si le bloc est actif (jeu retournable) -- ne pas
+    // envoyer la cle sinon (cote iframe, un viewAs indefini est ignore par
+    // la garde de setViewOptions, mais autant rester propre).
+    const viewAsWrap = document.getElementById('viewAs');
+    const viewAsVal  = viewAsWrap && !viewAsWrap.classList.contains('hidden')
+        ? parseInt(viewAsWrap.querySelector('select')?.value, 10) : NaN;
+    if (Number.isInteger(viewAsVal)) opts.viewAs = viewAsVal;
     return opts;
 }
 

@@ -451,7 +451,7 @@ cargo tauri icon path/to/source.png
 | `clock-setup.html/js` | Clocked-game configuration → `new_match(game, clock)`. |
 | `clock.html/js` | Clock display (7-segment font); pure view over play.js state. |
 | `history.html/js` | Played-moves navigation (takeback, replay, resume from a position). |
-| `players.html/js`, `view-options.html/js`, `camera-view.html/js`, `save-template.html/js`, `info.html/js`, `book.html/js`, `moves`, `open-position`, `show-position` | Various satellites. `info` loads localized rules/description/credits (see i18n). |
+| `players.html/js`, `view-options.html/js`, `camera-view.html/js`, `save-template.html/js`, `info.html/js`, `book.html/js`, `moves`, `open-position`, `show-position` | Various satellites. `info` loads localized rules/description/credits (see i18n). `view-options` includes a "View as" (player A/B) select for games whose view is switchable (`config.view.switchable`), mirroring the `#view-as` control of jocly2's `examples/browser/control.html`; the choice goes through the regular `set-view-options` round-trip and is persisted per game like every other view option. |
 
 Shared modules: `tauri-bridge.js` (access to `window.__TAURI__`; see its
 header for the `withGlobalTauri` rationale), `tabulon-rpc.js`
