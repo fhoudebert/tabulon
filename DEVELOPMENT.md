@@ -406,6 +406,38 @@ cargo tauri icon path/to/source.png
 
 ---
 
+## Troubleshooting: on Windows, satellite windows open blank (title only)
+
+Symptom (seen on Windows 11 after a local build): the main hub window
+works, but every window opened afterwards — quick play, help, invitation,
+extensions… — shows an empty page with only its window title.
+
+Cause: a known WebView2/Tauri race (tauri-apps/tauri#12990, marked
+"status: upstream", and #12694 for the "second webview window" case). On
+Windows, the Tauri initialization scripts — including the
+`window.__TAURI__` injection that `withGlobalTauri` relies on — can run
+*after* the page's `<script type="module">` for a webview created after
+startup. The first window (the hub, created in `setup()`) wins the race;
+later windows can lose it, inconsistently and CPU-load-dependently. Every
+`tauri-bridge.js` call then throws, the page's boot dies before
+`initI18n()`, and all `data-i18n` elements stay empty — a visually blank
+page. Linux/macOS WebKit orders the scripts reliably, hence the asymmetry.
+
+Fix in place (`app/content/tauri-bridge.js`): the bridge now *waits* for
+the injection with a top-level `await` before letting any importer run.
+This suspends the whole module graph of the page (and, per the HTML spec
+for deferred module scripts, delays `DOMContentLoaded`), so no page code
+had to change. The wait only arms inside a real Tauri page
+(`isTauriPage()`: `tauri://localhost`, `http(s)://tauri.localhost`, or the
+dev-server `localhost` origin — Node test stubs and other contexts keep
+the historical lazy-error behavior), is free when the injection already
+happened (the nominal case everywhere), polls a few milliseconds in the
+Windows race, and after 8 s logs an explicit, non-fatal console error —
+if you ever see that error, the injection *never* arrived, which is a
+different problem (CSP, `withGlobalTauri` off, broken build) worth
+reporting as such. Both predicates are pure and covered by
+`tests/test-tauri-bridge-injection.mjs`.
+
 ## Internal architecture
 
 > History: a SharedWorker architecture ("one application brain") was
