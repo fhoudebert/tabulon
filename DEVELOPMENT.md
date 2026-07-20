@@ -169,13 +169,18 @@ original design analysis.
   a host's first move is always pushed. Every "abort the current turn"
   spot (pause, takeback, restart, player reconfiguration, board/game
   loading, rollback) also cancels a pending wait for a remote move.
-- **Known limitation**: takeback/rollback/restart change the local
+- **Closed limitation**: takeback/rollback/restart change the local
   position without propagating (neither transport has an "unplay"
-  concept). `resetBaseline()` keeps the local channel bookkeeping
-  consistent, but the two sides can desync until the next pushed move.
-  A resync story (e.g. pushing the full engine state on demand, which the
-  `'jocly-simple-match'` codec already does on every move) is an open
-  item.
+  concept), which used to let the two sides desync. The door is now shut
+  upstream: the Take back and Restart buttons (footer quick bar and full
+  bar alike) are **disabled whenever a side is remote**, with a tooltip
+  saying why (`play.remoteRestricted`), and their handlers keep a
+  defensive guard showing the same message in the footer. They come back
+  as soon as no side is remote — quick play, clocked play and local
+  games are unaffected. The single choke point is `syncFooterSelect()`,
+  crossed by every path that reconfigures players (invitation, Players
+  window, footer selects). `resetBaseline()` remains in place for the
+  paths that still resync legitimately (loading a saved game, etc.).
 
 - Remote play can only be *established* from the Invitation window. The
   player dropdowns (footer quick select and Players window) show a
@@ -371,6 +376,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
 | `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
+| `fix-appimage.mjs` | Post-build: strips the bundled `libwayland-*` from the AppImage and repacks it (Arch/Manjaro `EGL_BAD_PARAMETER` fix — see Troubleshooting). Run after every `cargo tauri build` that produces an AppImage. |
 | `check-webrtc-webview.py` | Empirical probe: does the embedded webview (WebKitGTK on Linux) expose `RTCPeerConnection`? Loads an offscreen WebView and, if the API exists, runs a full local WebRTC loopback (offer/answer, ICE without STUN, DataChannel ping/pong) and prints a JSON verdict. Current verdict (Ubuntu 24.04 / WebKitGTK 2.52): **no** — distribution builds are compiled without WebRTC, the finding that steered peer-to-peer play to the Rust TCP transport. **Keep it around to re-evaluate WebRTC in the future**: rerun on new distros/WebKitGTK releases; if it ever reports a working DataChannel, WebRTC (with STUN/TURN) becomes a candidate transport adding the NAT traversal TCP lacks. Needs `python3-gi gir1.2-webkit2-4.1 xvfb`; run: `xvfb-run -a python3 scripts/check-webrtc-webview.py`. Linux-only by nature (WebView2/Chromium on Windows ships WebRTC). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
@@ -640,48 +646,59 @@ events. Details in the "Internal architecture" section above.
 
 ## Troubleshooting: AppImage fails with `EGL_BAD_PARAMETER` on some distros
 
-Symptom (seen on Manjaro; the same AppImage runs fine on Debian-based
-hosts):
+Symptom (diagnosed end-to-end on a Manjaro host, X11 session, where the
+*native* binary runs fine):
 
     Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...
 
 (The `Failed to load module "appmenu-gtk-module"` line that may precede it
 is unrelated host-GTK noise — harmless.)
 
-This is a known failure class of Tauri apps shipped as AppImages
-(tauri-apps/tauri#11988 / #11994, closed upstream as "Not Planned"): the
-AppImage carries libraries built on one distribution, and on a different
-host — typically Arch/Manjaro or Fedora, and especially with the NVIDIA
-proprietary driver — WebKitGTK's DMA-BUF rendering path, or EGL display
-creation itself, fails on the mix of host drivers and bundled libraries.
-Native installs don't mix libraries, which is why the Debian package is
-unaffected.
+**Root cause, established by elimination on an affected machine:** the
+AppImage produced by `cargo tauri build` bundles the whole
+`libwayland-*` family (client, cursor, egl, server) alongside the bundled
+Debian-built WebKitGTK. On Arch-family hosts these bundled wayland
+libraries poison the bundled WebKit's EGL initialisation against the
+host's Mesa — even in an X11 session. The WebKit environment variables
+(`WEBKIT_DISABLE_DMABUF_RENDERER` either way,
+`WEBKIT_DISABLE_COMPOSITING_MODE`) change nothing, because the failure
+precedes them. Removing only the `libwayland-*` files from the extracted
+AppDir fixes it; removing the bundled WebKit instead **breaks** the app
+(the bundled GTK/GLib are incompatible with the host's WebKit — don't go
+down that road). The official AppImage excludelist
+(AppImageCommunity/pkg2appimage) indeed forbids bundling
+`libwayland-client.so.0`; Tauri's bundler ships it anyway.
 
-What Tabulon does automatically (`src-tauri/src/appimage_compat.rs`): when
-— and only when — the process runs from an AppImage (`APPIMAGE` env var set
-by the AppImage runtime), it sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
-unless the variable is already set. This is the documented fix for the
-majority of cases; 3D/WebGL keeps working through a less direct rendering
-path. Native installs are never touched, and a user-set value (including
-`0` to deliberately re-enable DMA-BUF inside the AppImage) is never
-overridden.
+**The fix — one command, build included (preferred):**
 
-If the automatic safeguard is not enough (there are Arch-family hosts
-where the EGL failure happens before WebKit reads its variables), escalate
-manually, one lever at a time, and please report which one works:
+    ./compil.sh
 
-    WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Tabulon*.AppImage
-    GDK_BACKEND=x11 ./Tabulon*.AppImage         # Wayland session: force XWayland
-    LD_PRELOAD=/usr/lib/libwayland-client.so.0 ./Tabulon*.AppImage
-                                # Arch path; Debian-family: /usr/lib/x86_64-linux-gnu/…
+`compil.sh` (repo root) chains `npm run build` → the purge below → a
+**proof step** that re-extracts each produced AppImage and fails loudly
+if any `libwayland-*` remains. It exists because the purge is a
+post-processing step that is otherwise easy to forget — a rebuild without
+it reproduces the exact same `EGL_BAD_PARAMETER` failure, which happened
+in real testing. Manual equivalent, run after every AppImage build:
 
-The last one addresses an AppImage/host library-ordering conflict under
-Wayland (the bundled `libwayland-client` predates what the host's Mesa
-expects). Automating it would require a re-exec of the process; that is
-deliberately **not** done until the need is confirmed on an affected
-machine — if `GDK_BACKEND=x11` or the `LD_PRELOAD` turns out to be the
-lever that fixes a real host, that's the signal to automate it in a
-follow-up.
+    node scripts/fix-appimage.mjs            # finds the AppImage under
+                                             # src-tauri/target/release/bundle/appimage/
+    node scripts/fix-appimage.mjs path/to/Tabulon.AppImage   # or explicit
+
+The script extracts the AppImage (no FUSE needed), removes exactly the
+`libwayland-*` libraries (nothing else — the scope validated on the
+affected machine), repacks it with `appimagetool` **reusing the original
+AppImage's runtime** (no network needed for the runtime; `appimagetool`
+itself is taken from `$APPIMAGETOOL`, the PATH, or downloaded once into
+`~/.cache/tabulon/`), and keeps the untouched original as
+`<name>.AppImage.orig`. Pure logic covered by
+`tests/test-fix-appimage.mjs`; the end-to-end mechanics (extract → strip
+→ repack → still runs) were validated against a synthetic AppImage.
+
+The startup safeguard in `src-tauri/src/appimage_compat.rs`
+(`WEBKIT_DISABLE_DMABUF_RENDERER=1`, AppImage-only, user-overridable)
+remains: it addresses the *other*, driver-level failure mode of the same
+symptom (NVIDIA-proprietary and similar mixes) and was confirmed harmless
+on the machine above.
 
 ## License
 
