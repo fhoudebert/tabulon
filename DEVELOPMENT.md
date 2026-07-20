@@ -169,13 +169,18 @@ original design analysis.
   a host's first move is always pushed. Every "abort the current turn"
   spot (pause, takeback, restart, player reconfiguration, board/game
   loading, rollback) also cancels a pending wait for a remote move.
-- **Known limitation**: takeback/rollback/restart change the local
+- **Closed limitation**: takeback/rollback/restart change the local
   position without propagating (neither transport has an "unplay"
-  concept). `resetBaseline()` keeps the local channel bookkeeping
-  consistent, but the two sides can desync until the next pushed move.
-  A resync story (e.g. pushing the full engine state on demand, which the
-  `'jocly-simple-match'` codec already does on every move) is an open
-  item.
+  concept), which used to let the two sides desync. The door is now shut
+  upstream: the Take back and Restart buttons (footer quick bar and full
+  bar alike) are **disabled whenever a side is remote**, with a tooltip
+  saying why (`play.remoteRestricted`), and their handlers keep a
+  defensive guard showing the same message in the footer. They come back
+  as soon as no side is remote — quick play, clocked play and local
+  games are unaffected. The single choke point is `syncFooterSelect()`,
+  crossed by every path that reconfigures players (invitation, Players
+  window, footer selects). `resetBaseline()` remains in place for the
+  paths that still resync legitimately (loading a saved game, etc.).
 
 - Remote play can only be *established* from the Invitation window. The
   player dropdowns (footer quick select and Players window) show a

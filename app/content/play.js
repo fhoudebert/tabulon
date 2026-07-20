@@ -435,6 +435,7 @@ function BuildPlayerSelect(selectId, playerKey) {
         }
         const wasRemote = !!players[playerKey]?.remote;
         players[playerKey] = v === '' ? null : levels[parseInt(v, 10)];
+        updateRemoteRestrictedButtons();
         await joclyMatch?.abortUserTurn().catch(() => {});
         await joclyMatch?.abortMachineSearch().catch(() => {});
         cancelRemoteWait('players reconfigured (footer)');
@@ -443,11 +444,38 @@ function BuildPlayerSelect(selectId, playerKey) {
     });
 }
 
+function hasRemoteSide() {
+    return [Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote);
+}
+
+// Reculer/recommencer face a un joueur DISTANT desynchronise la partie : le
+// relai (fileio.php) comme le pair TCP n'ont aucune notion de retrait de
+// coup -- c'etait la « limite connue » documentee depuis l'etape 3. On ferme
+// la porte en amont : ces boutons sont GRISES tant qu'un cote est distant
+// (l'infobulle explique pourquoi), et les handlers gardent une garde de
+// fond. Ils redeviennent actifs des que plus aucun cote n'est distant
+// (partie rapide, chronometree, locale...).
+const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart', 'quick-takeback', 'quick-restart'];
+
+function updateRemoteRestrictedButtons() {
+    const remote = hasRemoteSide();
+    for (const id of REMOTE_RESTRICTED_BUTTONS) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.disabled = remote;
+        const normalKey = el.getAttribute('data-i18n-title');
+        el.title = remote ? t('play.remoteRestricted') : (normalKey ? t(normalKey) : el.title);
+    }
+}
+
 // Aligne le select rapide du footer (select-player-a/-b) sur l'etat reel de
 // players[key] -- humain (''), IA (index en string), ou distant ('remote').
 // A appeler chaque fois que players[key] change ailleurs que par ce select
-// lui-meme (invitation, fenetre Players).
+// lui-meme (invitation, fenetre Players). Met aussi a jour les boutons
+// restreints en mode distant : ce point de passage est traverse par TOUS
+// les chemins qui changent players (invitation, fenetre Players, footer).
 function syncFooterSelect(key) {
+    updateRemoteRestrictedButtons();
     const selId = key === Jocly.PLAYER_A ? 'select-player-a' : 'select-player-b';
     const sel = document.getElementById(selId);
     if (!sel) return;
@@ -714,14 +742,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn('button-takeback', async () => {
         if (!joclyMatch) return;
+        // Garde de fond (le bouton est deja grise en mode distant) : reculer
+        // desynchroniserait la partie distante, relai comme pair-a-pair.
+        if (hasRemoteSide()) { UpdateFooter(t('play.remoteRestricted')); return; }
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('takeback');
-        // LIMITE CONNUE : si un canal distant est actif, reculer localement
-        // ne "desjoue" rien cote relai (fileio.php n'a pas de notion de
-        // retrait de coup) -- la partie distante peut se retrouver
-        // desynchronisee du relai jusqu'au prochain coup local repousse.
-        // Pas traite a cette etape (voir DEVELOPMENT.md § Remote play).
 
         const moves = await joclyMatch.getPlayedMoves().catch(() => []);
         const n = moves?.length || 0;
@@ -742,6 +768,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn('button-restart', async () => {
         if (!joclyMatch) return;
+        if (hasRemoteSide()) { UpdateFooter(t('play.remoteRestricted')); return; }
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('restart');
