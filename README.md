@@ -20,17 +20,18 @@ Play **125 board games** on your desktop — chess and its many variants, draugh
 
 ## Getting started
 
-Grab a build (or build from source — see [DEVELOPMENT.md](./DEVELOPMENT.md)) and launch it: Tabulon works out of the box with a starter selection of built-in games.
+**You can get ready-to-use, pre-compiled versions of Tabulon available for Windows and Linux** on the [Releases page](https://github.com/fhoudebert/tabulon/releases). Download the package for your platform, install (or unpack) it, and launch — Tabulon works out of the box with a starter selection of built-in games. (Prefer building from source? See [DEVELOPMENT.md](DEVELOPMENT.md).)
 
-To unlock the **full 125-game library**, either:
+These pre-built versions are not fixed: the game library of any installed Tabulon can be **customized** — up to the **full 125-game library** — in two ways:
 
-1. **Install extensions** — the easiest way. Open the **Extensions** screen (hub sidebar, Configuration group) and import downloaded `.tabulon-ext` files. Browse the catalogue:
+1. **Install extensions (add or remove games)** — the easiest way. Open the **Extensions** screen (hub sidebar, Configuration group) and import downloaded `.tabulon-ext` files. Browse the catalogue:
+
    - [Modules](https://fhoudebert.github.io/tabulon/ext/modules/index.html) — whole game families (a *module* bundles related games and their shared resources; import it with no prerequisite)
    - [Games](https://fhoudebert.github.io/tabulon/ext/games/index.html) — individual games (importing a game requires its module to be installed first)
 
-   The "Get extensions…" link in the Extensions screen takes you straight there. Extensions can also be uninstalled from the same screen.
+   The "Get extensions…" link in the Extensions screen takes you straight there. Extensions can also be **uninstalled** from the same screen, so you can add and remove games at any time.
 
-2. **Drop a full library folder** next to the executable: place a complete Jocly `dist/` build in a `dist/` folder beside the program (or point the `TABULON_DIST` environment variable at one) — no rebuild, no reinstall.
+2. **Replace the game library with a published Jocly `dist`** — ready-made `dist` builds are published on the [jocly2 releases page](https://github.com/fhoudebert/jocly2/releases/). Download one and place the complete Jocly `dist/` folder beside the Tabulon executable (or point the `TABULON_DIST` environment variable at it) — no rebuild, no reinstall: Tabulon picks it up at launch.
 
 ## Playing online
 
@@ -47,7 +48,7 @@ English and French, auto-detected from your system. Game rules pages are shown i
 
 ## For developers
 
-Build instructions, architecture, scripts, extension packaging, the remote-play design history and the test suites are documented in [DEVELOPMENT.md](./DEVELOPMENT.md) (build, internal architecture, remote-play design, scripts, tests).
+Build instructions, architecture, scripts, extension packaging, the remote-play design history and the test suites are documented in [DEVELOPMENT.md](DEVELOPMENT.md) (build, internal architecture, remote-play design, scripts, tests).
 
 ## License
 
