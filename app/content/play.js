@@ -502,6 +502,24 @@ function initSatelliteListeners() {
     listen(prefix + 'set-view-options', async ({ payload }) => {
         if (!joclyMatch) return;
         await joclyMatch.setViewOptions(payload || {}).catch(e => console.warn('[play] setViewOptions:', e));
+        // RE-ARMER LE TOUR EN COURS. setViewOptions() reconstruit la vue
+        // (GameDestroyView/GameInitView/DisplayBoard) mais ne rejoue PAS
+        // HumanTurn() -- or c'est HumanTurn() qui dessine les indices de
+        // coups possibles, avec la valeur de mShowMoves du moment. Sans ce
+        // re-armement, decocher « montrer les coups » ne prend effet qu'au
+        // tour SUIVANT : les indices deja affiches restent a l'ecran jusqu'a
+        // ce qu'on joue (constate par l'utilisateur, puis reproduit au
+        // navigateur : 10 cellules d'indice a l'opacite 1 avant, toujours 10
+        // apres setViewOptions seul, 0 apres re-armement).
+        // abortUserTurn() fait rejeter le userTurn() en attente : gameLoop
+        // attrape, `continue`, et rappelle userTurn() -- donc HumanTurn()
+        // avec les nouvelles options. C'est exactement ce que fait
+        // examples/browser/control.html de jocly (RunMatch() juste apres
+        // setViewOptions()). Sans tour utilisateur en cours (IA en reflexion,
+        // attente d'un coup distant, partie finie), l'appel est sans effet :
+        // on ne touche NI a la recherche de l'IA NI a l'attente distante,
+        // pour ne rien relancer inutilement.
+        await joclyMatch.abortUserTurn().catch(() => {});
         // Persister dans le store pour la prochaine ouverture
         store?.set('view-options:' + gameName, payload || {});
         // Synchroniser le sélecteur de skin du footer et la garde capture 2D/3D
