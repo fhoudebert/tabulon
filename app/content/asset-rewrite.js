@@ -74,6 +74,29 @@ function __applyDistRewrite() {
   // page, la baseURL reste /browser/ et TOUTES les requêtes de fichiers de
   // jeux (jocly.core.js, games/**) passent ensuite par le hook fetch/XHR
   // ci-dessous, qui les redirige correctement vers le dist externe.
+  // Réécrit les url(...) d'un texte CSS. Utilisé pour le TEXTE des <style>
+  // (cas non couvert par les autres hooks : le moteur CSS analyse ce texte
+  // sans passer par le JS) et par le hook CSSOM plus bas.
+  function rewriteCssText(val) {
+    return String(val).replace(/url\((['"]?)([^'")]+)\1\)/g, function (m, q, u) {
+      if (/^(data|blob):/i.test(u)) return m;
+      var d = toDist(u); return d ? 'url(' + q + d + q + ')' : m;
+    });
+  }
+
+  // <style> ajouté au DOM (ex. page de règles d'un jeu injectée par info.js,
+  // dont les icônes de pièces sont des background-image de sprite) : on
+  // réécrit son texte. Sans ça, l'URL part sur les assets embarqués — où le
+  // jeu du dist externe n'existe pas — et la webview répond 500.
+  function rewriteStyleEl(el) {
+    try {
+      var css = el.textContent;
+      if (!css || css.indexOf('url(') === -1) return;
+      var out = rewriteCssText(css);
+      if (out !== css) el.textContent = out;
+    } catch (e) { /* style non modifiable : ignore */ }
+  }
+
   function rewriteEl(el) {
     var attr = el.tagName === 'LINK' ? 'href' : 'src';
     var v = el.getAttribute && el.getAttribute(attr);
@@ -116,7 +139,9 @@ function __applyDistRewrite() {
           if (n.nodeType !== 1) return;
           if (n.tagName === 'IFRAME') injectIntoIframe(n);
           if (/^(SCRIPT|IMG|LINK)$/.test(n.tagName)) rewriteEl(n);
+          if (n.tagName === 'STYLE') rewriteStyleEl(n);
           n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href]').forEach(rewriteEl);
+          n.querySelectorAll && n.querySelectorAll('style').forEach(rewriteStyleEl);
           n.querySelectorAll && n.querySelectorAll('iframe').forEach(injectIntoIframe);
         });
       });
@@ -173,14 +198,9 @@ function __applyDistRewrite() {
   try {
     var SP = window.CSSStyleDeclaration && window.CSSStyleDeclaration.prototype;
     if (SP && SP.setProperty) {
-      var rewriteCssUrls = function (val) {
-        return String(val).replace(/url\((['"]?)([^'")]+)\1\)/g, function (m, q, u) {
-          var d = toDist(u); return d ? 'url(' + q + d + q + ')' : m;
-        });
-      };
       var _setProp = SP.setProperty;
       SP.setProperty = function (prop, val, prio) {
-        if (/background/i.test(prop) && val) val = rewriteCssUrls(val);
+        if (/background/i.test(prop) && val) val = rewriteCssText(val);
         return _setProp.call(this, prop, val, prio);
       };
       ['backgroundImage', 'background'].forEach(function (name) {
@@ -189,7 +209,7 @@ function __applyDistRewrite() {
           Object.defineProperty(SP, name, {
             configurable: true, enumerable: d.enumerable,
             get: function () { return d.get.call(this); },
-            set: function (v) { d.set.call(this, rewriteCssUrls(v)); },
+            set: function (v) { d.set.call(this, rewriteCssText(v)); },
           });
         }
       });
@@ -293,7 +313,9 @@ function __applyDistRewrite() {
       try {
         var n = String(name).toLowerCase();
         var t = this.tagName;
-        if ((n === 'href' && t === 'LINK') ||
+        if (n === 'style' && typeof value === 'string' && value.indexOf('url(') !== -1) {
+          value = rewriteCssText(value);   // style inline avec une image de fond
+        } else if ((n === 'href' && t === 'LINK') ||
             (n === 'src' && (t === 'IMG' ||
               (t === 'SCRIPT' && !/(^|\/)browser\/jocly\.js(\?|$)/.test(String(value)))))) {
           var d = toDist(value);
