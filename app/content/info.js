@@ -2,6 +2,7 @@
 import twu  from './tabulon-winutils.js';
 import { open } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
+import { rewriteCssUrls } from './css-url-rewrite.js';
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);
@@ -55,7 +56,17 @@ async function GetHtml(config, what) {
             } catch { /* candidat suivant */ }
         }
         if (text === null) throw new Error('no readable document among: ' + candidates.join(', '));
-        const html = text.replace(/\{GAME\}/g, config.view.fullPath);
+        let html = text.replace(/\{GAME\}/g, config.view.fullPath);
+        // Dist EXTERNE : les url(...) du CSS de la page de règles (sprites de
+        // pièces, ex. Ultima) doivent viser tabulon-dist://. On les réécrit
+        // AVANT l'insertion : le texte d'un <style> échappe à tous les hooks
+        // d'asset-rewrite.js (le moteur CSS l'analyse sans passer par le JS),
+        // et le réécrire après coup laisserait déjà partir une requête vers
+        // les assets embarqués (→ 500 en console). Sans dist externe,
+        // window.__distURL n'existe pas : rien n'est touché.
+        if (typeof window.__distURL === 'function') {
+            html = rewriteCssUrls(html, (u) => window.__distURL(u));
+        }
 
         const tab     = document.querySelector(`.tab-group .tab-item[data-tab="${what}"]`);
         const content = document.querySelector(`.window-content [data-tab="${what}"]`);

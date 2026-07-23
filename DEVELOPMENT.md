@@ -617,10 +617,29 @@ the mechanism (`dist_override.rs` + `asset-rewrite.js`):
    (falling back to the embedded `asset_resolver()`), with a traversal
    guard (`..` rejected).
 3. `asset-rewrite.js` (injected through `initialization_script` on every
-   window) rewrites `browser/**` and `games/**` on the fly (script/img/
-   link + fetch + XHR) to that protocol. `content/**` is never redirected:
-   the UI shell always stays embedded.
+   window) rewrites `browser/**` and `games/**` on the fly to that
+   protocol: element attributes (script/img/link `src`/`href`, including
+   via `setAttribute`), `fetch`, `XHR`, `Image().src`, the CSSOM
+   (background set from JS), the AI worker, **and CSS text** — the text of
+   a `<style>` element and inline `style="…url(…)…"` attributes.
+   `content/**` is never redirected: the UI shell always stays embedded.
 4. `get_dist_info` exposes the state (external/embedded + path) to the UI.
+
+The CSS-text case (point 3) was a real gap: a game's rules page may
+illustrate its pieces with a **sprite**, i.e. a `background-image` inside a
+`<style>` block (Ultima does; werewolf uses plain `<img>`, which the
+attribute hook already covered). Stylesheet text is parsed by the CSS
+engine without passing through any JS hook, so the URL stayed on the app
+protocol, where the externally-loaded game does not exist — the built-in
+`tauri://` protocol answers **500** for a missing asset, hence the
+`ultima-picto-sprites.png … 500 (Internal Server Error)` seen in the help
+window. Two layers now cover it: `info.js` rewrites the `url(...)` of a
+rules page **before** injecting it (so no request is ever fired at the
+wrong URL), and `asset-rewrite.js` rewrites any `<style>` added to the DOM
+as a general safety net. The shared rewriting logic lives in
+`app/content/css-url-rewrite.js` (pure, tested by
+`tests/test-css-url-rewrite.mjs`, which also guards the inline copy inside
+`asset-rewrite.js` against divergence).
 
 Without an external dist the protocol is never hit and the script not
 injected — behaviour identical to before the feature.
