@@ -505,7 +505,20 @@ predicates are pure and covered by
 | `clock-setup.html/js` | Clocked-game configuration → `new_match(game, clock)`. |
 | `clock.html/js` | Clock display (7-segment font); pure view over play.js state. |
 | `history.html/js` | Played-moves navigation (takeback, replay, resume from a position). |
-| `players.html/js`, `view-options.html/js`, `camera-view.html/js`, `save-template.html/js`, `info.html/js`, `book.html/js`, `moves`, `open-position`, `show-position` | Various satellites. `info` loads localized rules/description/credits (see i18n). `view-options` includes a "View as" (player A/B) select for games whose view is switchable (`config.view.switchable`), mirroring the `#view-as` control of jocly2's `examples/browser/control.html`; the choice goes through the regular `set-view-options` round-trip and is persisted per game like every other view option. |
+| `players.html/js`, `view-options.html/js`, `camera-view.html/js`, `save-template.html/js`, `info.html/js`, `book.html/js`, `moves`, `open-position`, `show-position` | Various satellites. `info` loads localized rules/description/credits (see i18n). `view-options` includes a "View as" (player A/B) select for games whose view is switchable (`config.view.switchable`), mirroring the `#view-as` control of jocly2's `examples/browser/control.html`; the choice goes through the regular `set-view-options` round-trip and is persisted per game like every other view option. On `set-view-options`, `play.js` also re-arms the current user turn (`abortUserTurn()`, which makes `gameLoop()` re-enter `userTurn()`) — see the note below. |
+
+**Why `set-view-options` re-arms the turn.** Jocly's `setViewOptions()`
+rebuilds the view (`GameDestroyView`/`GameInitView`/`DisplayBoard`) but does
+*not* re-run `HumanTurn()` — and `HumanTurn()` is what draws the
+possible-move hints, reading `mShowMoves` at that moment. Unchecking "show
+moves" therefore only took effect on the *next* turn: the hints already on
+screen stayed until a move was played. Measured in a real browser on a
+`classic-chess` 2D board: 10 hint cells at opacity 1 with the turn armed →
+still 10 at opacity 1 after `setViewOptions({showMoves:false})` alone → 0
+after aborting and re-arming the turn. jocly's own
+`examples/browser/control.html` does the same thing by calling `RunMatch()`
+right after `setViewOptions()`. The abort is deliberately limited to the
+user turn: an AI search or a wait for a remote move is left untouched.
 
 Shared modules: `tauri-bridge.js` (access to `window.__TAURI__`; see its
 header for the `withGlobalTauri` rationale), `tabulon-rpc.js`
