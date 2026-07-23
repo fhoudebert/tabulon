@@ -7,6 +7,7 @@ import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
+import { pickLocalized } from './localized-field.js';
 
 // Réécrit un chemin d'asset vers le dist externe si actif (window.__distURL
 // est fourni par asset-rewrite.js ; sinon chemin inchangé).
@@ -97,6 +98,14 @@ function UpdateGameList() {
 
 async function ListGames() {
     const games = await Jocly.listGames();
+    // Le resume d'un jeu peut etre une chaine ou un objet {locale: texte}
+    // (comme le champ "rules" du manifeste). On le reduit A L'ENTREE, une
+    // seule fois : tout ce qui suit -- liste, panneau de detail, filtre
+    // (qui fait .toLowerCase() dessus) -- manipule alors une vraie chaine.
+    const loc = getLocale();
+    for (const n of Object.keys(games)) {
+        games[n] = { ...games[n], summary: pickLocalized(games[n].summary, loc) };
+    }
     gamesMap = games;
     allGameList = Object.keys(games)
         .map(n => ({ gameName: n, ...games[n] }))
@@ -147,7 +156,8 @@ async function SelectGame(gameName, opts = {}) {
     document.getElementById('game-detail-body').style.display  = '';
 
     document.querySelector('#game-detail .game-title').textContent = config.model['title-en'];
-    document.querySelector('#game-detail .game-summary').textContent = config.model.summary;
+    document.querySelector('#game-detail .game-summary').textContent =
+        pickLocalized(config.model.summary, getLocale());
     document.querySelector('#game-detail .game-thumbnail').style.backgroundImage =
         `url(${distURL(config.view.fullPath + '/' + config.model.thumbnail)})`;
 

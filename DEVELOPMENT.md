@@ -343,6 +343,32 @@ automatically, for any page that imports the module (most satellite windows
 already do, for the window title). Dynamic JS text uses `t('key', vars)`
 after `await initI18n()`.
 
+### Localized game manifests (`summary`)
+
+A game's `summary` may be a plain string or an object keyed by locale, the
+same shape the `rules` field already uses:
+
+    "summary": "an Ultima cousin on a 10x10 board with an edge ring"
+    "summary": { "en": "an Ultima cousin…", "fr": "Un cousin de Ultima…" }
+
+Both forms work side by side — existing games keep their string, new ones
+can translate. `pickLocalized()` (`app/content/localized-field.js`, pure,
+tested by `tests/test-localized-field.mjs`) resolves it: exact locale
+(`fr-CA`), then language (`fr`), then English, then any translation
+present rather than nothing, and always returns a string — the hub's
+filter calls `.toLowerCase()` on it, and an object there used to be a
+`TypeError` (the list showed `[object Object]`). `hub.js` reduces the
+field **once**, right out of `Jocly.listGames()`, so the list, the filter
+and the detail panel all see a real string; the detail panel resolves
+`config.model.summary` the same way.
+
+Two places have no UI locale and take English (or any translation
+available) instead: `summary_text()` in `extension_cmds.rs` — the
+extensions list and the `.tabulon-ext` manifest, where a translated
+summary previously came out **empty** because `as_str()` returns `None`
+on an object — and `scripts/export-all.mjs`, whose catalogue pages are
+static artifacts published as-is.
+
 Every satellite window has its static labels wired with `data-i18n*`
 attributes — importing the module and calling `initI18n()` is not enough
 on its own: a label with no attribute just stays in the language the HTML

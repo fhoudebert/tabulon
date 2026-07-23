@@ -1,0 +1,36 @@
+# Required for the Fairy-Stockfish engine (dist/browser/fairy-stockfish/):
+# the WebAssembly build it ships is multi-threaded and needs SharedArrayBuffer,
+# which browsers only expose on pages that are "cross-origin isolated".
+# Without these headers, loading the engine throws:
+#   ReferenceError: SharedArrayBuffer is not defined
+# See: https://web.dev/articles/coop-coep
+#
+# Scoped to this folder (and everything under it) only - nothing elsewhere
+# on the site is affected.
+
+<IfModule mod_headers.c>
+    # Required on every response under this folder, including the top-level
+    # HTML page itself (control.html) - not just stockfish.js/.wasm/.worker.js.
+    Header always set Cross-Origin-Opener-Policy "same-origin"
+    Header always set Cross-Origin-Embedder-Policy "require-corp"
+</IfModule>
+
+# Make sure .wasm is served with the correct MIME type, so the browser can
+# use the faster WebAssembly.instantiateStreaming() path. Most Apache setups
+# already have this globally, but some shared hosts don't.
+<IfModule mod_mime.c>
+    AddType application/wasm .wasm
+</IfModule>
+
+# Note on jQuery (loaded from code.jquery.com in control.html): that script
+# tag already uses integrity="..." + crossorigin="anonymous", which makes it
+# a CORS-mode request - those are allowed under Cross-Origin-Embedder-Policy:
+# require-corp without any extra header on jQuery's CDN side. No change
+# needed there.
+
+# NOTE: this file can NOT fix "ReferenceError: Can't find variable:
+# SharedArrayBuffer". That error means the top-level HTML document is not
+# cross-origin isolated - the Cross-Origin-Opener-Policy/-Embedder-Policy
+# headers must be set on the *page*, e.g. in the site root .htaccess, not
+# here next to the wasm files. See README.md in this directory for the
+# exact snippet and caveats.
