@@ -1,7 +1,7 @@
 {
   "name": "tabulon-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Frontend HTML/JS de Tabulon (WebViews Tauri)",
   "dependencies": {
     "@tauri-apps/api": "^2",
