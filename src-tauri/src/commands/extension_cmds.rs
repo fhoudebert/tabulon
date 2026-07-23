@@ -175,6 +175,27 @@ fn collect_game_files(
 
 // ── Commandes ────────────────────────────────────────────────────────────────
 
+/// Resume d'un jeu tel qu'il figure dans son manifeste : soit une chaine,
+/// soit un objet indexe par locale ({"en": "...", "fr": "..."}), comme le
+/// champ "rules". Cote Rust on ne connait pas la langue de l'interface (ces
+/// deux usages sont la liste des extensions et le manifeste d'un .tabulon-ext,
+/// un artefact de distribution) : on prend l'anglais, sinon n'importe quelle
+/// traduction presente -- mieux qu'une chaine vide, ce que donnait
+/// `as_str()` seul sur un resume traduit. L'affichage localise se fait cote
+/// interface (app/content/localized-field.js).
+fn summary_text(decl: &serde_json::Value) -> String {
+    match decl.get("summary") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Object(map)) => map
+            .get("en")
+            .and_then(|v| v.as_str())
+            .or_else(|| map.values().find_map(|v| v.as_str()))
+            .unwrap_or("")
+            .to_string(),
+        _ => String::new(),
+    }
+}
+
 /// Jeux de l'index du dist externe (pour l'écran Extensions).
 #[tauri::command]
 pub fn list_extension_games() -> Result<serde_json::Value, String> {
@@ -186,7 +207,7 @@ pub fn list_extension_games() -> Result<serde_json::Value, String> {
         out.push(serde_json::json!({
             "name": name,
             "title": decl.get("title").and_then(|v| v.as_str()).unwrap_or(name),
-            "summary": decl.get("summary").and_then(|v| v.as_str()).unwrap_or(""),
+            "summary": summary_text(decl),
             "module": module,
         }));
     }
@@ -211,7 +232,7 @@ pub fn export_extension(app: tauri::AppHandle, game_name: String, dest_path: Str
         "game": game_name,
         "module": module,
         "title": declaration.get("title").and_then(|v| v.as_str()).unwrap_or(&game_name),
-        "summary": declaration.get("summary").and_then(|v| v.as_str()).unwrap_or(""),
+        "summary": summary_text(&declaration),
         "declaration": declaration,
         "files": files,
         "exportedBy": format!("tabulon {}", app.package_info().version),
@@ -485,4 +506,39 @@ pub fn remove_extension(game_name: String) -> Result<serde_json::Value, String> 
     write_index(&dist, &games)?;
     log::info!("extension désinstallée : {game_name} ({removed} fichiers supprimés)");
     Ok(serde_json::json!({ "game": game_name, "removed": removed }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summary_text;
+    use serde_json::json;
+
+    /// Resume en chaine simple : rendu tel quel (manifestes existants).
+    #[test]
+    fn summary_chaine_simple() {
+        assert_eq!(summary_text(&json!({"summary": "an Ultima cousin"})), "an Ultima cousin");
+    }
+
+    /// Resume traduit : l'anglais est retenu cote Rust (artefact de
+    /// distribution), pas une chaine vide comme avec as_str() seul.
+    #[test]
+    fn summary_objet_localise() {
+        let decl = json!({"summary": {"en": "an Ultima cousin", "fr": "Un cousin de Ultima"}});
+        assert_eq!(summary_text(&decl), "an Ultima cousin");
+    }
+
+    /// Pas d'anglais : n'importe quelle traduction plutot que rien.
+    #[test]
+    fn summary_objet_sans_anglais() {
+        assert_eq!(summary_text(&json!({"summary": {"fr": "Un cousin"}})), "Un cousin");
+    }
+
+    /// Absent, vide ou d'un type inattendu : chaine vide, jamais de panique.
+    #[test]
+    fn summary_absent_ou_invalide() {
+        assert_eq!(summary_text(&json!({})), "");
+        assert_eq!(summary_text(&json!({"summary": {}})), "");
+        assert_eq!(summary_text(&json!({"summary": 42})), "");
+        assert_eq!(summary_text(&json!({"summary": null})), "");
+    }
 }

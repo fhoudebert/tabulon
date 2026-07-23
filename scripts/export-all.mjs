@@ -25,6 +25,8 @@ import path from 'path';
 import { readIndex, buildExtension, buildModuleExtension } from './make-extension.mjs';
 
 // ── Plan d'export : modules triés, jeux groupés par module puis par titre ────
+import { pickLocalized } from '../app/content/localized-field.js';
+
 export function planExport(index) {
   const byModule = new Map();
   for (const [name, decl] of Object.entries(index)) {
@@ -32,7 +34,9 @@ export function planExport(index) {
     byModule.get(decl.module).push({
       name,
       title: decl.title || name,
-      summary: decl.summary || '',
+      // Le resume peut etre une chaine ou un objet {locale: texte} : le
+      // catalogue est un artefact statique publie tel quel -> anglais.
+      summary: pickLocalized(decl.summary, 'en'),
     });
   }
   const modules = [...byModule.keys()].sort((a, b) => a.localeCompare(b, 'en'));
