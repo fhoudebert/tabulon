@@ -558,6 +558,7 @@ strong { font-weight: 600; }
 .game-headings { min-width: 0; }
 .game-title   { font-size: 18px; font-weight: 700; }
 .game-summary { margin-top: 2px; font-size: 13px; color: var(--text-muted); }
+.ext-item-summary { margin-top: 2px; font-size: 12px; color: var(--text-muted); }
 
 /* Boutons d'action empilés */
 .game-detail .buttons {

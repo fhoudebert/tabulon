@@ -11,7 +11,8 @@
 // extensionsChanged) pour recharger sa liste de jeux.
 import tRpc from './tabulon-rpc.js';
 import { save as saveDialog, openDialog, ask, open as openExternal } from './tauri-bridge.js';
-import { initI18n, t } from './tabulon-i18n.js';
+import { initI18n, t, getLocale } from './tabulon-i18n.js';
+import { pickLocalized } from './localized-field.js';
 import twu from './tabulon-winutils.js';
 
 // Site où les extensions publiées seront téléchargeables (README « Extensions »).
@@ -82,7 +83,7 @@ function render() {
     const ul = document.getElementById('ext-list');
     ul.textContent = '';
     for (const g of allGames) {
-        if (filter && !(`${g.title} ${g.name} ${g.module}`.toLowerCase().includes(filter))) continue;
+        if (filter && !(`${g.title} ${g.name} ${g.module} ${g.summary}`.toLowerCase().includes(filter))) continue;
         const li = document.createElement('li');
         li.className = 'list-group-item ext-item';
 
@@ -94,6 +95,12 @@ function render() {
         meta.className = 'ext-item-meta';
         meta.textContent = `${g.name} — ${t('ext.module')} ${g.module}`;
         info.append(title, meta);
+        if (g.summary) {
+            const summary = document.createElement('div');
+            summary.className = 'ext-item-summary';
+            summary.textContent = g.summary;
+            info.append(summary);
+        }
 
         const actions = document.createElement('div');
         actions.className = 'ext-item-actions';
@@ -115,7 +122,12 @@ function render() {
 
 async function reload() {
     const r = await tRpc.call('list_extension_games');
-    allGames = (r.games || []).slice()
+    // Le resume d'un jeu peut etre une chaine ou un objet {locale: texte}
+    // (manifeste traduit) : on le reduit A L'ENTREE, comme dans hub.js, pour
+    // que l'affichage et le filtre manipulent une vraie chaine.
+    const loc = getLocale();
+    allGames = (r.games || [])
+        .map(g => ({ ...g, summary: pickLocalized(g.summary, loc) }))
         .sort((a, b) => (a.title || a.name).localeCompare(b.title || b.name));
     document.getElementById('ext-dist-path').textContent = r.path || '';
     render();

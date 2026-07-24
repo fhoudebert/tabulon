@@ -125,6 +125,24 @@ downloadable from:
 - <https://fhoudebert.github.io/tabulon/ext/games> — game extensions
 - <https://fhoudebert.github.io/tabulon/ext/modules> — module extensions
 
+**Reading the dist index.** `read_index()` (`extension_cmds.rs`) parses the
+`exports.games = {…}` literal of `browser/jocly-allgames.js` with json5
+(jocly's own build leaves keys unquoted). One extra step is needed for a
+dist built in **production** mode: terser minifies booleans, so
+`"obsolete": false` becomes `obsolete:!1` — valid JavaScript, but not JSON5,
+and the whole screen used to fail with *"index non parseable (json5)"* on
+such a dist (56 occurrences were enough in a real build).
+`restore_minified_booleans()` turns `!0`/`!1` back into `true`/`false`
+before parsing, leaving string contents untouched (a summary could contain
+"!1"). Covered by unit tests for both a dev-style and a prod-style index.
+
+**Localized summaries.** The command returns the game's `summary` **raw**
+(string or `{locale: text}` object, see the i18n section) and the screen
+localizes it with `pickLocalized()`, exactly like the hub — the summary is
+shown under each game and is searchable. The `.tabulon-ext` manifest keeps
+an English string (`summary_text()`), since it is a distribution artifact;
+the full declaration, translations included, still travels inside it.
+
 The "Get extensions…" link in the Extensions screen opens the page matching
 the active tab. After an import or uninstall, the hub reloads its game list
 automatically (the Jocly script loader caches the games index for the page

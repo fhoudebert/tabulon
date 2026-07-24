@@ -67,6 +67,39 @@ fn index_path(dist: &Path) -> PathBuf {
     dist.join("browser").join("jocly-allgames.js")
 }
 
+/// Terser (`gulp build --prod` cote jocly) minifie les booleens : `false`
+/// devient `!1` et `true` `!0`. C'est du JS valide, mais PAS du JSON5 : un
+/// dist construit en mode prod faisait echouer la lecture de l'index avec
+/// « index non parseable (json5) » -- constate en reel, reproduit ici sur un
+/// build --prod ou 56 champs `obsolete:!1` suffisaient a tout bloquer.
+/// On les retablit avant le parse, en laissant INTACT ce qui est dans une
+/// chaine (un resume pourrait contenir « !1 »).
+fn restore_minified_booleans(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut chars = src.chars().peekable();
+    let mut quote: Option<char> = None;   // guillemet ouvrant courant
+    let mut escaped = false;
+    while let Some(c) = chars.next() {
+        if let Some(q) = quote {
+            out.push(c);
+            if escaped { escaped = false; }
+            else if c == '\\' { escaped = true; }
+            else if c == q { quote = None; }
+            continue;
+        }
+        match c {
+            '"' | '\'' => { quote = Some(c); out.push(c); }
+            '!' => match chars.peek() {
+                Some('0') => { chars.next(); out.push_str("true"); }
+                Some('1') => { chars.next(); out.push_str("false"); }
+                _ => out.push(c),
+            },
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 fn read_index(dist: &Path) -> Result<serde_json::Map<String, serde_json::Value>, String> {
     let p = index_path(dist);
     let raw = fs::read_to_string(&p).map_err(|e| format!("index illisible {}: {e}", p.display()))?;
@@ -74,8 +107,8 @@ fn read_index(dist: &Path) -> Result<serde_json::Map<String, serde_json::Value>,
     let brace = raw[start..].find('{').ok_or("format d'index inattendu ('{' absent)")? + start;
     let end = raw.rfind('}').ok_or("format d'index inattendu ('}' absent)")?;
     let literal = &raw[brace..=end];
-    let v: serde_json::Value =
-        json5::from_str(literal).map_err(|e| format!("index non parseable (json5) : {e}"))?;
+    let v: serde_json::Value = json5::from_str(&restore_minified_booleans(literal))
+        .map_err(|e| format!("index non parseable (json5) : {e}"))?;
     match v {
         serde_json::Value::Object(m) => Ok(m),
         _ => Err("index inattendu : exports.games n'est pas un objet".into()),
@@ -207,7 +240,9 @@ pub fn list_extension_games() -> Result<serde_json::Value, String> {
         out.push(serde_json::json!({
             "name": name,
             "title": decl.get("title").and_then(|v| v.as_str()).unwrap_or(name),
-            "summary": summary_text(decl),
+            // Resume BRUT (chaine ou objet {locale: texte}) : l'ecran
+            // Extensions le localise lui-meme (pickLocalized), comme le hub.
+            "summary": decl.get("summary").cloned().unwrap_or(serde_json::Value::Null),
             "module": module,
         }));
     }
@@ -512,6 +547,76 @@ pub fn remove_extension(game_name: String) -> Result<serde_json::Value, String> 
 mod tests {
     use super::summary_text;
     use serde_json::json;
+    use super::{read_index, restore_minified_booleans};
+
+    /// Booleens minifies par terser : `!0`/`!1` -> true/false, mais JAMAIS
+    /// a l'interieur d'une chaine.
+    #[test]
+    fn booleens_minifies_restaures() {
+        assert_eq!(restore_minified_booleans("{obsolete:!1}"), "{obsolete:false}");
+        assert_eq!(restore_minified_booleans("{a:!0,b:!1}"), "{a:true,b:false}");
+        // contenu de chaine intact (un resume peut contenir "!1")
+        assert_eq!(restore_minified_booleans(r#"{s:"prix !1 euro",o:!1}"#),
+                   r#"{s:"prix !1 euro",o:false}"#);
+        assert_eq!(restore_minified_booleans(r#"{s:'x !0 y'}"#), r#"{s:'x !0 y'}"#);
+        // guillemet echappe : la chaine ne s'arrete pas la
+        assert_eq!(restore_minified_booleans(r#"{s:"il dit \"!1\" ok",o:!0}"#),
+                   r#"{s:"il dit \"!1\" ok",o:true}"#);
+        // un '!' isole n'est pas touche
+        assert_eq!(restore_minified_booleans("{a:!x}"), "{a:!x}");
+        // rien a faire sur un index deja lisible
+        assert_eq!(restore_minified_booleans(r#"{"a":false}"#), r#"{"a":false}"#);
+    }
+
+    fn index_temporaire(contenu: &str, tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("tabulon-idx-{}-{tag}", std::process::id()));
+        std::fs::create_dir_all(dir.join("browser")).unwrap();
+        std::fs::write(dir.join("browser/jocly-allgames.js"), contenu).unwrap();
+        dir
+    }
+
+    /// Index d'un build DEV (non minifie) avec un resume traduit (objet).
+    #[test]
+    fn index_dev_avec_resume_traduit() {
+        let dir = index_temporaire(r#""use strict";
+
+exports.games = {
+  "classic-chess": {
+    "title": "Chess",
+    "summary": "The most popular board game.",
+    "module": "chessbase"
+  },
+  "rococo": {
+    "title": "Rococo",
+    "summary": {
+      "en": "an Ultima cousin on a 10x10 board with an edge ring",
+      "fr": "Un cousin de Ultima sur un tablier de 10x10 avec une bordure externe"
+    },
+    "module": "chessbase"
+  }
+};
+"#, "dev");
+        let r = read_index(&dir);
+        std::fs::remove_dir_all(&dir).ok();
+        let m = r.expect("index dev illisible");
+        assert!(m.get("rococo").unwrap().get("summary").unwrap().is_object());
+    }
+
+    /// REGRESSION : index d'un build PROD (terser) -- `obsolete:!1`, clefs non
+    /// quotees, tout sur une ligne. C'est ce qui provoquait « index non
+    /// parseable » sur l'ecran Extensions.
+    #[test]
+    fn index_prod_minifie_lisible() {
+        let dir = index_temporaire(
+            "\"use strict\";exports.games={\"gardner-chess\":{title:\"Gardner MiniChess\",summary:\"Gardner 5x5 minichess (1969)\",module:\"chessbase\",obsolete:!1},rococo:{title:\"Rococo\",summary:{en:\"an Ultima cousin\",fr:\"Un cousin de Ultima\"},module:\"chessbase\",obsolete:!0}};", "prod");
+        let r = read_index(&dir);
+        std::fs::remove_dir_all(&dir).ok();
+        let m = r.expect("index prod (terser) illisible");
+        assert_eq!(m.get("gardner-chess").unwrap().get("obsolete").unwrap(), &json!(false));
+        assert_eq!(m.get("rococo").unwrap().get("obsolete").unwrap(), &json!(true));
+        assert_eq!(m.get("rococo").unwrap().get("summary").unwrap().get("fr").unwrap(),
+                   &json!("Un cousin de Ultima"));
+    }
 
     /// Resume en chaine simple : rendu tel quel (manifestes existants).
     #[test]
