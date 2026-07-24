@@ -261,6 +261,31 @@ function buildPlayerValue(info) {
     return null;
 }
 
+// Rearme le tour APRES un changement de position (recul, recommencement,
+// chargement d'une partie ou d'une position).
+//
+// L'ORDRE EST ESSENTIEL. Ces handlers commencent par abortUserTurn() pour
+// stopper ce qui est en cours ; gameLoop() attrape l'abandon et rappelle
+// aussitot userTurn() -- donc HumanTurn() -- sur l'ANCIENNE position, en
+// parallele du rollback qui suit. Or rollback() cote jocly redessine bien le
+// plateau (BackTo + DisplayBoard) mais ne rearme RIEN : les elements
+// cliquables construits pour la position precedente survivent. D'ou le
+// symptome constate apres un take back (Ph3i4 sur rococo) : i4 restait
+// selectionnable et h3 inerte, le plateau affichant pourtant la position
+// reculee. examples/browser/control.html de jocly fait l'inverse et n'a pas
+// le probleme : rollback(...) PUIS RunMatch().
+//
+// On rearme donc une fois la position stabilisee : abortUserTurn() fait
+// reboucler gameLoop() sur la BONNE position ; si la boucle s'etait arretee
+// (fin de partie -- loopActive=false), on la relance, sinon reculer apres
+// avoir perdu laissait le plateau muet et « le joueur B gagne » a l'ecran.
+// HumanTurn() n'est jamais appele directement : c'est de l'interne jocly,
+// atteint via userTurn().
+async function rearmAfterPositionChange() {
+    await joclyMatch?.abortUserTurn().catch(() => {});
+    if (!loopActive) gameLoop();
+}
+
 // -- Boucle de jeu ------------------------------------------------------------
 async function gameLoop() {
     loopActive = true;
@@ -637,7 +662,7 @@ function initSatelliteListeners() {
             UpdatePause();
             UpdateFooter('');
             emit(`play-event:${matchId}:move-played`, null).catch(() => {});
-            if (!loopActive) gameLoop();
+            await rearmAfterPositionChange();
         } catch (e) {
             console.warn('[play] load-board-state:', e.message || e);
             UpdateFooter(t('play.loadFailed'));
@@ -782,6 +807,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!players[turn]) break;  // tour humain trouvé
         }
         await resyncRemoteChannelBaseline();
+        UpdateFooter('');
+        emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+        await rearmAfterPositionChange();
     });
 
     btn('button-restart', async () => {
@@ -795,7 +823,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         paused = false;
         UpdatePause();
         UpdateFooter('');
-        if (!loopActive) gameLoop();
+        await rearmAfterPositionChange();
     });
 
     btn('button-pause', () => {
@@ -868,7 +896,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             UpdateFooter('');
             // Rafraîchir les satellites (history) sur la nouvelle position
             emit(`play-event:${matchId}:move-played`, null).catch(() => {});
-            if (!loopActive) gameLoop();
+            await rearmAfterPositionChange();
         };
     });
     btn('button-load', () => fileElem?.click());

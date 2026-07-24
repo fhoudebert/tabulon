@@ -549,6 +549,29 @@ predicates are pure and covered by
 | `clock-setup.html/js` | Clocked-game configuration → `new_match(game, clock)`. |
 | `clock.html/js` | Clock display (7-segment font); pure view over play.js state. |
 | `history.html/js` | Played-moves navigation (takeback, replay, resume from a position). |
+
+**Anything that changes the position ends with `rearmAfterPositionChange()`**
+(take back, restart, load a game, load a position). Two bugs made this
+necessary, both fixed there:
+
+- *Order.* These handlers start with `abortUserTurn()` to stop what is in
+  flight; `gameLoop()` catches the abort and immediately re-enters
+  `userTurn()` — i.e. `HumanTurn()` — on the **old** position, racing the
+  rollback that follows. jocly's `rollback()` redraws the board (`BackTo` +
+  `DisplayBoard`) but re-arms nothing, so the clickable elements built for
+  the previous position survive: after taking back `Ph3i4` in Rococo, `i4`
+  was still selectable and `h3` inert, on a board that showed the rewound
+  position. jocly's own `examples/browser/control.html` does it the other
+  way round — `rollback(...)` **then** `RunMatch()` — and is unaffected.
+  The helper therefore re-arms once the position is settled.
+- *Game over.* `gameLoop()` sets `loopActive = false` when a game ends, so
+  taking back after a loss restored the position but armed no turn — mute
+  board, "player B wins" still on screen. The helper restarts the loop in
+  that case, and the take-back handler now also clears the footer and emits
+  `move-played` (the History window was not refreshed either).
+
+`HumanTurn()` is never called directly — it is jocly-internal, reached
+through `userTurn()`.
 | `players.html/js`, `view-options.html/js`, `camera-view.html/js`, `save-template.html/js`, `info.html/js`, `book.html/js`, `moves`, `open-position`, `show-position` | Various satellites. `info` loads localized rules/description/credits (see i18n). `view-options` includes a "View as" (player A/B) select for games whose view is switchable (`config.view.switchable`), mirroring the `#view-as` control of jocly2's `examples/browser/control.html`; the choice goes through the regular `set-view-options` round-trip and is persisted per game like every other view option. On `set-view-options`, `play.js` also re-arms the current user turn (`abortUserTurn()`, which makes `gameLoop()` re-enter `userTurn()`) — see the note below. |
 
 **Why `set-view-options` re-arms the turn.** Jocly's `setViewOptions()`
