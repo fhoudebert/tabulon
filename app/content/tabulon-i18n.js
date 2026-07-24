@@ -213,7 +213,7 @@ const DICT = {
         'hub.joclyMissingHint': 'dist/ manquait au moment du build, ou src-tauri/target est périmé — supprimer target/ et rebuilder.', 'hub.selectGame': 'Sélectionnez un jeu',
         'hub.back': 'Jeux', 'hub.templates': 'Modèles',
         'btn.quickPlay': 'Partie rapide', 'btn.clockedPlay': 'Partie chronométrée',
-        'btn.openBook': 'Ouvrir un livre', 'btn.boardState': 'État du plateau',
+        'btn.openBook': 'Ouvrir une partie', 'btn.boardState': 'État du plateau',
         'btn.favorite': 'Favori', 'btn.notFavorite': 'Pas favori',
         'btn.rulesCredits': 'Règles, crédits, à propos', 'btn.invitation': 'Invitation',
         'tip.quickPlay': 'Partie rapide', 'tip.clockedPlay': 'Partie chronométrée',
