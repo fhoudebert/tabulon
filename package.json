@@ -1,7 +1,7 @@
 {
   "name": "tabulon",
   "description": "Desktop application for playing board games (Tauri)",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "productName": "Tabulon",
   "keywords": [
     "board games",
