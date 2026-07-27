@@ -60,13 +60,9 @@ function UpdateGameList() {
         li.className = 'list-group-item object-list-item';
         li.dataset.game = game.gameName;
         if (game.gameName === currentGame) li.classList.add('active');
-        const isFav = !!favoritesMap[game.gameName];
         li.innerHTML = `
             <img class="media-object pull-left" src="${game.thumbnail}" width="48" height="48"/>
             <div class="media-body"><strong>${game.title}</strong><p>${game.summary}</p></div>
-            <div title="${isFav ? t('tip.unfavorite') : t('tip.favorite')}" class="media-object pull-right list-shortcut list-shortcut-fav">
-                <span class="icon ${isFav ? 'icon-star' : 'icon-star-empty'}"></span>
-            </div>
             <div title="${t('tip.rules')}" class="media-object pull-right list-shortcut list-shortcut-info">
                 <span class="icon icon-info-circled"></span>
             </div>
@@ -80,18 +76,6 @@ function UpdateGameList() {
         });
         shortcut('.list-shortcut-play',  () => tRpc.call('new_match', game.gameName));
         shortcut('.list-shortcut-info',  () => tRpc.call('open_info', game.gameName));
-        shortcut('.list-shortcut-fav',   async () => {
-            const nowFav = !favoritesMap[game.gameName];
-            // Optimiste : refléter l'étoile tout de suite ; le push
-            // updateFavorites de Rust réconciliera l'état.
-            if (nowFav) favoritesMap[game.gameName] = Date.now();
-            else        delete favoritesMap[game.gameName];
-            const icon = li.querySelector('.list-shortcut-fav .icon');
-            icon.className = 'icon ' + (nowFav ? 'icon-star' : 'icon-star-empty');
-            li.querySelector('.list-shortcut-fav').title = nowFav ? t('tip.unfavorite') : t('tip.favorite');
-            await tRpc.call('set_favorite', game.gameName, nowFav);
-            if (game.gameName === currentGame) UpdateDetailFavorite();
-        });
         ul.appendChild(li);
     });
 }

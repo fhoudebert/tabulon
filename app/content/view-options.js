@@ -60,11 +60,6 @@ function ApplyOptions(data) {
         if (inp) inp.checked = !!options.showMoves;
     }
 
-    const anaWrap = document.getElementById('anaglyph');
-    anaWrap?.classList.remove('hidden');
-    const anaInput = anaWrap?.querySelector('input');
-    if (anaInput) anaInput.checked = !!options.anaglyph;
-
     // "Voir en tant que" (comme le select #view-as de l'exemple
     // examples/browser/control.html de jocly2) : seulement pour les jeux
     // dont la vue est retournable (config.switchable) -- setViewOptions
@@ -92,7 +87,6 @@ function ReadOptions() {
     const opts = {
         skin:     document.querySelector('#skin select')?.value,
         sounds:   !!document.querySelector('#sounds input')?.checked,
-        anaglyph: !!document.querySelector('#anaglyph input')?.checked,
     };
     if (config.useNotation)     opts.notation     = !!document.querySelector('#notation input')?.checked;
     if (config.useAutoComplete) opts.autoComplete = !!document.querySelector('#autoComplete input')?.checked;

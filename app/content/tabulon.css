@@ -445,7 +445,6 @@ strong { font-weight: 600; }
 .object-list-item .list-shortcut .icon { font-size: 17px; color: #fff; }
 .object-list-item:hover .list-shortcut { display: flex; }
 .object-list-item .list-shortcut-info  { background-color: #667; }
-.object-list-item .list-shortcut-fav   { background-color: #d90; }
 .object-list-item .list-shortcut-del {
   width: 20px;
   height: 20px;
