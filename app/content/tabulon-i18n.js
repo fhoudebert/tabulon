@@ -25,6 +25,7 @@ const DICT = {
     en: {
         // hub — navigation
         'nav.games': 'Games', 'nav.all': 'All', 'nav.favorites': 'Favorites',
+        'nav.invitation': 'Invitation',
         'nav.configuration': 'Configuration', 'nav.templates': 'Templates',
         'nav.about': 'About',
         // hub — liste et détail
@@ -131,7 +132,7 @@ const DICT = {
         'players.testOk': 'Relay reachable', 'players.testFail': 'Unreachable (network/CORS?)',
         'invitation.title': 'Remote game', 'invitation.join': 'Join',
         'invitation.joinHeading': 'Join a game',
-        'invitation.intro': 'Paste a link received from a jocly-simple-match instance (e.g. biscandine.fr) to join that game as the player it was sent to.',
+        'invitation.intro': 'Paste a link received from a jocly-match instance (e.g. biscandine.fr) to join that game as the player it was sent to.',
         'invitation.placeholder': 'https://.../index.php?game=...&mid=...&player=a',
         'invitation.invalidLink': 'Not a recognized invitation link (needs game, mid and player).',
         'invitation.gameMismatch': 'This link is for "{game}" — opening that game instead.',
@@ -182,6 +183,7 @@ const DICT = {
     },
     fr: {
         'nav.games': 'Jeux', 'nav.all': 'Tous', 'nav.favorites': 'Favoris',
+        'nav.invitation': 'Invitation',
         'nav.configuration': 'Configuration', 'nav.templates': 'Modèles',
         'nav.about': 'À propos',
         'hub.search': 'Rechercher un jeu',
@@ -282,7 +284,7 @@ const DICT = {
         'players.testOk': 'Relai joignable', 'players.testFail': 'Injoignable (réseau/CORS ?)',
         'invitation.title': 'Partie à distance', 'invitation.join': 'Rejoindre',
         'invitation.joinHeading': 'Rejoindre une partie',
-        'invitation.intro': 'Collez un lien reçu d’une instance jocly-simple-match (ex. biscandine.fr) pour rejoindre cette partie en tant que joueur destinataire du lien.',
+        'invitation.intro': 'Collez un lien reçu d’une instance jocly-match (ex. biscandine.fr) pour rejoindre cette partie en tant que joueur destinataire du lien.',
         'invitation.placeholder': 'https://.../index.php?game=...&mid=...&player=a',
         'invitation.invalidLink': 'Lien d’invitation non reconnu (il faut game, mid et player).',
         'invitation.gameMismatch': 'Ce lien concerne « {game} » — ouverture de ce jeu à la place.',

@@ -8,6 +8,8 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
+import { parseInvitationUrl } from './remote-relay-protocol.js';
+import { joinPeerMatch } from './remote-peer-channel.js';
 
 // Réécrit un chemin d'asset vers le dist externe si actif (window.__distURL
 // est fourni par asset-rewrite.js ; sinon chemin inchangé).
@@ -337,6 +339,63 @@ function RenderAbout() {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
+// ── Panneau Invitation (côté invité) ──────────────────────────────────────────
+//
+// Sous-ensemble INVITÉ de la fenêtre Invitation (invitation.js) : rejoindre
+// une partie dont l'identifiant vient d'ailleurs. Les deux chemins ci-dessous
+// tirent le nom du jeu de la saisie elle-même -- aucun jeu n'a besoin d'être
+// sélectionné, ce qui est justement le cas d'usage d'un invité.
+// Les chemins CRÉATEUR (Create sur le relai, hébergement d'un code p2p)
+// restent dans la fenêtre Invitation : ils exigent un jeu choisi.
+function InitInvitationPane() {
+    const urlInput      = document.getElementById('hub-invitation-url');
+    const joinStatus    = document.getElementById('hub-invitation-status');
+    const codeInput     = document.getElementById('hub-peer-code-input');
+    const peerStatus    = document.getElementById('hub-peer-join-status');
+    if (!urlInput || !codeInput) return;   // hub.html obsolète : mode dégradé
+
+    const setStatus = (el, text, cls) => {
+        if (!el) return;
+        el.textContent = text || '';
+        el.className = 'invitation-status' + (cls ? ' ' + cls : '');
+    };
+
+    // Même dépôt "invite:{id}" + new_match(..., inviteId) que invitation.js :
+    // play.js lit ce store au démarrage.
+    async function startMatch({ gameName, matchId, relayUrl, player, peer }) {
+        const inviteId = 'inv-' + Date.now();
+        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: false, peer: !!peer });
+        await tRpc.call('new_match', gameName, null, undefined, inviteId);
+    }
+
+    document.getElementById('hub-button-join')?.addEventListener('click', async () => {
+        const parsed = parseInvitationUrl(urlInput.value || '');
+        if (!parsed) { setStatus(joinStatus, t('invitation.invalidLink'), 'fail'); return; }
+        setStatus(joinStatus, '');
+        try { await startMatch(parsed); }
+        catch (e) {
+            console.warn('[hub] join invitation failed:', e.message || e);
+            setStatus(joinStatus, String(e.message || e), 'fail');
+        }
+    });
+
+    document.getElementById('hub-button-peer-join')?.addEventListener('click', async () => {
+        const raw = codeInput.value || '';
+        if (!raw.trim()) { setStatus(peerStatus, t('invitation.peerInvalidCode'), 'fail'); return; }
+        setStatus(peerStatus, t('invitation.peerConnecting'), '');
+        try {
+            const { gameName, token } = await joinPeerMatch(raw);
+            await startMatch({ gameName, matchId: 'p2p:' + token.slice(0, 12), player: 'b', peer: true });
+            setStatus(peerStatus, '');
+        } catch (e) {
+            console.warn('[hub] peer join failed:', e.message || e);
+            setStatus(peerStatus,
+                e.message === 'code d\'invitation invalide'
+                    ? t('invitation.peerInvalidCode') : t('invitation.peerConnectFail'), 'fail');
+        }
+    });
+}
+
 function SetNav(which) {
     document.querySelectorAll('.sidebar .nav-group-item').forEach(el => el.classList.remove('active'));
     document.getElementById('nav-' + which)?.classList.add('active');
@@ -415,6 +474,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         SetNav('templates'); document.getElementById('template-list').style.display = '';
         await UpdateTemplates(); UpdateTemplateList();
     });
+    document.getElementById('nav-invitation').addEventListener('click', () => {
+        SetNav('invitation'); document.getElementById('invitation-pane').style.display = '';
+    });
     // Écran Extensions : fenêtre dédiée, pas un panneau du hub (la nav
     // courante ne change pas).
     document.getElementById('nav-extensions').addEventListener('click', () => {
@@ -427,6 +489,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('gamefilter').addEventListener('input', Filter);
+    try { InitInvitationPane(); }
+    catch (e) { console.error('[hub] InitInvitationPane:', e); }
     try { InitDetailButtons(); }
     catch (e) { detailAvailable = false; console.error('[hub] InitDetailButtons:', e); }
 
