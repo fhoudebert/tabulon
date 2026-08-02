@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-minimal
+src-tauri/Cargo.lock
 *.local
 
 # Editor directories and files
