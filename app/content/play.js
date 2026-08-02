@@ -337,6 +337,16 @@ async function gameLoop() {
                     const result = await joclyMatch.machineSearch({ level });
                     UpdateFooter('');
 
+                    // Repli Fairy-Stockfish -> IA native : jocly pose
+                    // result.fairyFallback quand un niveau "ai: fairy-stockfish"
+                    // n'a pas pu demarrer son moteur (typiquement : page non
+                    // cross-origin isolated, donc pas de SharedArrayBuffer).
+                    // Sans ce bandeau le joueur croit affronter Expert alors
+                    // qu'il joue contre l'IA native. jocly ne signale QUE le
+                    // coup concerne, mais il replie a CHAQUE coup : on
+                    // n'avertit donc qu'une fois par partie.
+                    ShowFairyFallback(result?.fairyFallback);
+
                     if (!result?.move) {
                         // Le niveau demande n'est pas disponible pour ce jeu
                         // ou cette position (ex. expert fairy-stockfish sur un
@@ -399,6 +409,39 @@ async function gameLoop() {
 function UpdateFooter(text) {
     const el = document.getElementById('board-footer-text');
     if (el) el.textContent = text || '';
+}
+
+// ── Bandeau d'avertissement ───────────────────────────────────────────────────
+
+function ShowWarning(text) {
+    const bar = document.getElementById('play-warning');
+    const el  = document.getElementById('play-warning-text');
+    if (!bar || !el) { console.warn('[play]', text); return; }
+    el.textContent = text;
+    bar.classList.remove('hidden');
+}
+
+function HideWarning() {
+    document.getElementById('play-warning')?.classList.add('hidden');
+}
+
+// Signale une seule fois par partie que le niveau demande a ete degrade.
+// info = {engine, reason, level} pose par jocly (null si pas de repli).
+// Champ absent d'un dist jocly anterieur au support de fairyFallback : dans
+// ce cas info est undefined et rien ne s'affiche -- pas de regression.
+let fairyFallbackWarned = false;
+function ShowFairyFallback(info) {
+    if (!info || fairyFallbackWarned) return;
+    fairyFallbackWarned = true;
+    let msg = t('play.fairyFallback', { level: translateLevelLabel(info.level) || '?' });
+    // Le conseil "servir la page en cross-origin isolated" n'a de sens que
+    // si l'environnement peut effectivement l'obtenir. Sous WebKitGTK le
+    // schema tauri:// n'accorde pas l'isolation : inviter l'utilisateur a
+    // corriger des en-tetes ne l'avancerait a rien.
+    msg += ' ' + (typeof SharedArrayBuffer === 'function'
+        ? t('play.fairyFallbackIsolate')
+        : t('play.fairyFallbackUnsupported'));
+    ShowWarning(msg);
 }
 
 function UpdatePause() {
@@ -754,6 +797,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const btn = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
 
+    document.getElementById('play-warning-close')?.addEventListener('click', HideWarning);
+
     // Bouton '…' : montre/masque la barre de boutons (état persisté).
     // Remplace le survol .ephemeral-actions:hover de JoclyBoard, inutilisable
     // sur tablette.
@@ -823,6 +868,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         paused = false;
         UpdatePause();
         UpdateFooter('');
+        // Nouvelle partie : le moteur peut redevenir disponible, l'avertissement
+        // doit pouvoir se represente s'il replie a nouveau.
+        fairyFallbackWarned = false;
+        HideWarning();
         await rearmAfterPositionChange();
     });
 

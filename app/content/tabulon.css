@@ -417,6 +417,27 @@ strong { font-weight: 600; }
   text-decoration: underline;
 }
 
+/* Bandeau d'avertissement de la fenêtre de jeu (repli d'un moteur d'IA, etc.).
+   Placé entre le plateau et la barre du bas ; masqué tant qu'il n'y a rien à
+   signaler, et refermable par le joueur. */
+.play-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px;
+  background: #8a6d00;
+  color: #fff;
+  font-size: 12px;
+}
+.play-warning.hidden { display: none; }
+.play-warning-text { flex: 1 1 auto; }
+.play-warning-close {
+  flex: 0 0 auto;
+  color: #fff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .object-list-item .media-object { flex: 0 0 auto; border-radius: var(--radius); }
 
 /* ── Raccourcis dans les listes (portés de JoclyBoard, adaptés en flex) ─────── */
