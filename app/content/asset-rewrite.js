@@ -132,6 +132,15 @@ function __applyDistRewrite() {
     inject();
     iframe.addEventListener('load', inject);
   }
+  // On observe `document` et NON `document.documentElement` : ce script tourne
+  // en initialization_script, donc a document_start. Sous WebView2 (Windows)
+  // l'analyseur HTML n'a pas encore cree <html> a cet instant et
+  // document.documentElement vaut null -> observe() levait une TypeError,
+  // AVALEE par le catch : l'observateur n'etait jamais installe. Sous
+  // WebKitGTK l'element existait deja, d'ou une panne visible seulement sous
+  // Windows (icones de la liste des jeux servies par le protocole d'app, donc
+  // 500 pour les jeux presents uniquement dans le dist externe).
+  // `document` existe toujours et subtree:true couvre tout l'arbre.
   try {
     new MutationObserver(function (muts) {
       muts.forEach(function (mu) {
@@ -145,8 +154,8 @@ function __applyDistRewrite() {
           n.querySelectorAll && n.querySelectorAll('iframe').forEach(injectIntoIframe);
         });
       });
-    }).observe(document.documentElement, { childList: true, subtree: true });
-  } catch (e) { /* pas de DOM encore : les autres hooks couvrent */ }
+    }).observe(document, { childList: true, subtree: true });
+  } catch (e) { console.warn('[dist-rewrite] MutationObserver non installe:', e); }
 
   // 2. fetch() — les règles/descriptions/crédits et data des jeux.
   var _fetch = window.fetch;
