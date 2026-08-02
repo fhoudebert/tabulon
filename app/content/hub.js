@@ -63,7 +63,7 @@ function UpdateGameList() {
         li.dataset.game = game.gameName;
         if (game.gameName === currentGame) li.classList.add('active');
         li.innerHTML = `
-            <img class="media-object pull-left" src="${game.thumbnail}" width="48" height="48"/>
+            <img class="media-object pull-left" src="${distURL(game.thumbnail)}" width="48" height="48"/>
             <div class="media-body"><strong>${game.title}</strong><p>${game.summary}</p></div>
             <div title="${t('tip.rules')}" class="media-object pull-right list-shortcut list-shortcut-info">
                 <span class="icon icon-info-circled"></span>
@@ -306,7 +306,7 @@ function UpdateTemplateList() {
         li.className = 'list-group-item object-list-item';
         li.dataset.template = template.templateName;
         li.innerHTML = `
-            <img class="media-object pull-left" src="${game.thumbnail || ''}" width="48" height="48"/>
+            <img class="media-object pull-left" src="${distURL(game.thumbnail || '')}" width="48" height="48"/>
             <div class="media-body"><strong>${template.templateName}</strong><p>${game.title || ''}</p></div>
             <div title="${t('tip.removeTemplate')}" class="media-object pull-right list-shortcut list-shortcut-del">
                 <span class="icon icon-cancel"></span>
