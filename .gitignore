@@ -9,6 +9,7 @@ lerna-debug.log*
 tabulon
 node_modules
 dist
+ext
 dist-ssr
 dist-minimal
 src-tauri/Cargo.lock

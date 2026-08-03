@@ -7,7 +7,7 @@
 //
 // Aucun binaire ni webview requis : le RPC est injecte.
 
-import { installInWindow, NativeFairyWorker } from '../app/content/engine-native.js';
+import { installInWindow, NativeFairyWorker, NativeScanWorker } from '../app/content/engine-native.js';
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
@@ -187,6 +187,77 @@ console.log('Test 8 - compte rendu NNUE dans la console');
     } finally {
         console.info = realInfo;
     }
+}
+
+console.log('Test 9 - moteur de dames (scan)');
+{
+    // Init : moteur present
+    let rpc = makeRpc({ scan_probe: () => Promise.resolve('Scan 3.1') });
+    let w = new NativeScanWorker(rpc);
+    let seen = listen(w);
+    w.postMessage({ type: 'Init' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Ready', 'scan present -> Ready');
+    ok(rpc.calls[0].method === 'scan_probe', 'Init interroge scan_probe');
+
+    // Init : moteur absent -> repli, comme pour fairy
+    rpc = makeRpc({ scan_probe: new Error('moteur Scan introuvable') });
+    w = new NativeScanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Init' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Error',
+       'scan absent -> Error (jocly se rabat sur son IA native)');
+
+    // Search : le coup remonte sous data.bestMove (PAS bestMoveUci)
+    rpc = makeRpc({ scan_search: () => Promise.resolve({ bestMove: '33-28', lastInfo: 'info depth=21' }) });
+    w = new NativeScanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', fen: 'W:W31-50:B1-20', moveTimeMs: 1000, bookEnabled: false });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Done', 'recherche -> Done');
+    ok(seen[0].data && seen[0].data.bestMove === '33-28',
+       'le coup est rendu sous data.bestMove (contrat de jocly.scan.js)');
+    const sent = rpc.calls[0].args[0];
+    ok(sent.fen === 'W:W31-50:B1-20' && sent.moveTimeMs === 1000 && sent.bookEnabled === false,
+       'les champs de niveau sont relayes sans traduction');
+
+    // Position terminale : « done » sans coup n'est pas une erreur.
+    rpc = makeRpc({ scan_search: () => Promise.resolve({ bestMove: null }) });
+    w = new NativeScanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', fen: 'W:W50:B1' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Done' && seen[0].data.bestMove === null,
+       'position terminale -> Done sans coup, pas Error');
+
+    // Stop pendant une recherche -> Aborted
+    let reject;
+    rpc = makeRpc({
+        scan_search: () => new Promise((_, rj) => { reject = rj; }),
+        scan_stop: () => Promise.resolve(null),
+    });
+    w = new NativeScanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', fen: 'W:W31-50:B1-20' });
+    w.postMessage({ type: 'Stop' });
+    ok(rpc.calls.some((c) => c.method === 'scan_stop'), 'Stop interrompt cote Rust');
+    reject(new Error('engine exited unexpectedly'));
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
+}
+
+console.log('Test 10 - les deux moteurs cohabitent');
+{
+    class FakeWorker { constructor(url) { this.url = url; } }
+    const created = [];
+    const win = { Worker: function (url) { created.push(url); return new FakeWorker(url); } };
+    installInWindow(win, makeRpc());
+
+    ok(new win.Worker('/browser/jocly.fairyworker.js') instanceof NativeFairyWorker,
+       'fairyworker -> shim echecs');
+    ok(new win.Worker('/browser/jocly.scanworker.js') instanceof NativeScanWorker,
+       'scanworker -> shim dames');
+    // Le worker d'IA native reste au hook d'asset-rewrite.
+    const ai = new win.Worker('/browser/jocly.aiworker.js');
+    ok(!(ai instanceof NativeFairyWorker) && !(ai instanceof NativeScanWorker) && created.length === 1,
+       'aiworker passe au Worker precedent');
 }
 
 console.log('');

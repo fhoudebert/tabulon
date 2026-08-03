@@ -526,6 +526,46 @@ what was actually loaded, and `engine-native.js` logs it once per variant —
 otherwise there is no way for a player to tell whether Expert is running with
 its network or without.
 
+## Native engine (Scan, draughts "Expert" levels)
+
+Same rationale, same shape and the same fallback as the Fairy-Stockfish
+driver above, for the draughts/checkers family: `scan_cmds.rs` drives a
+native **Scan** binary (Fabien Letouzey), `engine-native.js` stands in for
+`jocly.scanworker.js`. Put the binary in `engine/scan`
+(`engine\scan.exe` on Windows), or point `TABULON_SCAN` at it. Official
+builds: <https://hjetten.home.xs4all.nl/scan/scan.html> (GPLv3).
+
+Without it nothing breaks: the probe fails, Jocly marks the engine
+unavailable and plays with its native AI — the console says so explicitly
+(`moteur de dames indisponible — …`), as it does on success
+(`moteur de dames natif : Scan 3.1`).
+
+Three things differ from Fairy-Stockfish and each one is a trap:
+
+- **Scan speaks the Hub 2 protocol, not UCI**, and only if launched with a
+  `hub` command-line argument — without it, it starts in interactive text
+  mode and never answers. Sequence: `hub` → `id …`/`param …`/`wait` →
+  `init` → `ready`, then `pos` / `level` / `go think` → `info …` →
+  `done move=32-28`. Parameters (`variant`, `book`) must be set *before*
+  `init`, since they drive what data gets loaded.
+- **The position format is not the one Jocly sends.** `jocly.scan.js`
+  builds `fen.cpp`'s dialect (`W:W31-50:B1-20`); Hub wants 51 characters —
+  the side to move plus one letter per square (`e`/`w`/`W`/`b`/`B`).
+  `fen_to_hub_pos()` does the conversion and is the one place where a bug
+  would produce a silently *wrong move* rather than a visible failure, so
+  it is heavily tested (kings, ranges, isolated squares, empty side) and
+  rejects anything it does not fully understand.
+- **Scan reads `scan.ini` and its `data/` directory relative to its working
+  directory**, so the child process is started with the binary's own folder
+  as CWD. Otherwise it cannot find its evaluation weights and fails at
+  `init`.
+
+Two more details: `level move-time` is in **seconds** (Jocly supplies
+milliseconds), and a `done` line with no `move=` is a *terminal position*,
+not a failure — it is passed through as `bestMove: null`, which is what
+`jocly.scan.js` expects. No move-notation translation is needed at all:
+Scan's natural notation is already what `checkersbase-model.js` produces.
+
 ## Internationalization (i18n)
 
 `app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the

@@ -31,6 +31,7 @@
 // l'ordre d'installation n'a donc pas d'importance.
 
 const FAIRY_WORKER_RE = /(^|\/)jocly\.fairyworker\.js(\?|$)/;
+const SCAN_WORKER_RE  = /(^|\/)jocly\.scanworker\.js(\?|$)/;
 
 // Une trace par variante : le joueur doit pouvoir constater si Expert tourne
 // avec son reseau NNUE ou en evaluation classique, sans lire les logs de
@@ -148,6 +149,99 @@ class NativeFairyWorker {
 }
 
 /**
+ * Faux Worker pour le moteur de DAMES natif Scan. Même contrat que
+ * NativeFairyWorker, mais le protocole de jocly.scan.js diffère sur un point :
+ * la réponse « Done » porte `data.bestMove` (notation naturelle de Scan,
+ * « 33-28 », « 28x19x23 ») et non `data.bestMoveUci`.
+ *
+ * Une position terminale est un `done` SANS coup : jocly l'interprète en
+ * vidant sa liste de coups, ce n'est pas une erreur — on transmet donc
+ * `bestMove: null` plutôt que d'échouer.
+ */
+class NativeScanWorker {
+    constructor(rpc) {
+        this._rpc = rpc;
+        this.onmessage = null;
+        this.onerror = null;
+        this._searching = false;
+        this._stopped = false;
+        this._dead = false;
+    }
+
+    _post(msg) {
+        if (this._dead) return;
+        Promise.resolve().then(() => {
+            if (this._dead) return;
+            try { if (this.onmessage) this.onmessage({ data: msg }); }
+            catch (e) { console.error('[engine-native] onmessage:', e); }
+        });
+    }
+
+    _fail(err) {
+        this._post({ type: 'Error', error: String((err && err.message) || err) });
+    }
+
+    postMessage(msg) {
+        const type = msg && msg.type;
+        if (type === 'Init')   return this._init();
+        if (type === 'Search') return this._search(msg);
+        if (type === 'Stop')   return this._stop();
+        console.warn('[engine-native] message ignoré (scan):', type);
+    }
+
+    terminate() {
+        this._dead = true;
+        if (this._searching) this._rpc.call('scan_stop').catch(() => {});
+    }
+
+    _init() {
+        this._rpc.call('scan_probe')
+            .then((name) => {
+                console.info('[engine-native] moteur de dames natif :', name);
+                this._post({ type: 'Ready' });
+            })
+            .catch((err) => {
+                // Chemin NORMAL quand `engine/scan` n'est pas installé : jocly
+                // marque le moteur indisponible et joue avec son IA native.
+                const why = (err && err.message) || err;
+                console.warn('[engine-native] moteur de dames indisponible — ' +
+                    'le niveau Expert des dames se rabat sur l’IA native :', why);
+                this._fail(err);
+            });
+    }
+
+    _search(msg) {
+        this._stopped = false;
+        this._searching = true;
+        this._rpc.call('scan_search', {
+            fen:         msg.fen,
+            depth:       msg.depth,
+            moveTimeMs:  msg.moveTimeMs,
+            bookEnabled: msg.bookEnabled,
+            variant:     msg.variant,
+        })
+            .then((res) => {
+                this._searching = false;
+                if (this._stopped) return this._post({ type: 'Aborted' });
+                this._post({ type: 'Done', data: { bestMove: res && res.bestMove } });
+            })
+            .catch((err) => {
+                this._searching = false;
+                if (this._stopped) return this._post({ type: 'Aborted' });
+                console.warn('[engine-native] recherche de dames échouée :',
+                    (err && err.message) || err);
+                this._fail(err);
+            });
+    }
+
+    _stop() {
+        if (!this._searching) return;
+        this._stopped = true;
+        this._rpc.call('scan_stop').catch(() => {});
+    }
+}
+
+/**
  * Remplace `Worker` dans une fenêtre donnée pour intercepter la seule
  * création du worker fairy-stockfish. Idempotent.
  */
@@ -161,6 +255,7 @@ export function installInWindow(win, rpc) {
     function PatchedWorker(url, opts) {
         const s = (typeof url === 'string') ? url : String(url || '');
         if (FAIRY_WORKER_RE.test(s)) return new NativeFairyWorker(rpc);
+        if (SCAN_WORKER_RE.test(s))  return new NativeScanWorker(rpc);
         return new Previous(url, opts);
     }
     PatchedWorker.prototype = Previous.prototype;
@@ -192,4 +287,4 @@ export function installNativeEngine(root, rpc) {
     }
 }
 
-export { NativeFairyWorker };
+export { NativeFairyWorker, NativeScanWorker };
