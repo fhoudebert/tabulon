@@ -147,9 +147,9 @@ function __applyDistRewrite() {
         mu.addedNodes && mu.addedNodes.forEach(function (n) {
           if (n.nodeType !== 1) return;
           if (n.tagName === 'IFRAME') injectIntoIframe(n);
-          if (/^(SCRIPT|IMG|LINK)$/.test(n.tagName)) rewriteEl(n);
+          if (/^(SCRIPT|IMG|LINK|SOURCE|AUDIO|VIDEO)$/.test(n.tagName)) rewriteEl(n);
           if (n.tagName === 'STYLE') rewriteStyleEl(n);
-          n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href]').forEach(rewriteEl);
+          n.querySelectorAll && n.querySelectorAll('script[src],img[src],link[href],source[src],audio[src],video[src]').forEach(rewriteEl);
           n.querySelectorAll && n.querySelectorAll('style').forEach(rewriteStyleEl);
           n.querySelectorAll && n.querySelectorAll('iframe').forEach(injectIntoIframe);
         });
@@ -318,6 +318,11 @@ function __applyDistRewrite() {
   //    aucune requête ne part sur l'embarqué.
   try {
     var _setAttribute = window.Element.prototype.setAttribute;
+    // AUDIO/SOURCE/VIDEO : jocly cree ses sons dans UpdateSounds()
+    // (jocly.game.js) via $("<source/>").attr("src", ...), donc par
+    // setAttribute sur un <source> DETACHE, avant d'inserer le <audio> parent.
+    // Sans ces tags ici ET dans le selecteur du MutationObserver, les .ogg/.mp3
+    // partaient sur le protocole d'app -> 500 pour les jeux du dist externe.
     window.Element.prototype.setAttribute = function (name, value) {
       try {
         var n = String(name).toLowerCase();
@@ -325,7 +330,7 @@ function __applyDistRewrite() {
         if (n === 'style' && typeof value === 'string' && value.indexOf('url(') !== -1) {
           value = rewriteCssText(value);   // style inline avec une image de fond
         } else if ((n === 'href' && t === 'LINK') ||
-            (n === 'src' && (t === 'IMG' ||
+            (n === 'src' && (t === 'IMG' || t === 'SOURCE' || t === 'AUDIO' || t === 'VIDEO' ||
               (t === 'SCRIPT' && !/(^|\/)browser\/jocly\.js(\?|$)/.test(String(value)))))) {
           var d = toDist(value);
           if (d) {
