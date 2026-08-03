@@ -346,6 +346,180 @@ explains *why* the current shape was chosen.
   only as private as its HTTPS and its operator; the peer stream is plain
   TCP).
 
+## Native engine (Fairy-Stockfish "Expert" levels)
+
+**Status: wired up.** The Rust driver and the JavaScript bridge are both in
+place; supply a binary (see below) and Expert levels run on it. Without one,
+nothing changes: Jocly falls back to its native AI exactly as before.
+
+### Why a native binary at all
+
+Jocly ships a **multi-threaded** (Emscripten pthreads) wasm build of
+Fairy-Stockfish. Inside a Tauri webview that build cannot run a search:
+
+- On Linux/WebKitGTK the page is not cross-origin isolated under the
+  `tauri://` scheme (measured: `crossOriginIsolated === false`,
+  `SharedArrayBuffer` undefined, while `isSecureContext === true`), so
+  pthreads — which hard-require `SharedArrayBuffer` — are unavailable and
+  Jocly falls back to its native AI with a warning.
+- On Windows/WebView2 the isolation *does* work, the engine reports
+  `engine ready` — and then the first search hangs forever. The network
+  panel shows the pthread worker `stockfish.worker.js` stuck at **pending
+  with no status**, under both the embedded and the external dist, i.e.
+  including through Tauri's *built-in* protocol. No thread starts, no UCI
+  line is ever printed, and `RunSearch` waits for a `bestmove` that never
+  comes.
+
+A native binary has no worker, no wasm and no custom protocol to go
+through: it removes the cause instead of working around it, and it is
+considerably stronger and faster than any wasm build.
+
+### Why not `externalBin` (Tauri's real "sidecar")
+
+Declaring the binary in `tauri.conf.json` makes it **mandatory at build
+time** — verified here: `tauri-build` fails with
+`resource path binaries/fairy-stockfish-<triple> doesn't exist`. Every
+Tabulon build would then depend on shipping one binary per platform, even
+for people who do not care about Expert levels. The engine is therefore
+resolved **at runtime**, exactly like the external dist
+(`dist_override::external_dist`). Switching to real bundling later needs no
+change to `engine_cmds.rs`.
+
+### Where the binary is looked up
+
+In order (`commands::engine_cmds::engine_path`):
+
+1. `TABULON_ENGINE` — full path to the executable. Escape hatch for tests
+   and for using a custom build without reinstalling.
+2. `engine/fairy-stockfish[.exe]`, then `fairy-stockfish[.exe]`, next to the
+   application — same base directories as the external dist (`$APPIMAGE`
+   for AppImages, the `.app` bundle on macOS).
+3. Nothing found: Expert degrades to Jocly's native AI, and the play window
+   shows the existing `#play-warning` banner.
+
+The `PATH` is deliberately **not** searched: silently running an arbitrary
+executable found in the environment would be an unpleasant surprise.
+
+You must supply the binary yourself: take it from the
+[Fairy-Stockfish releases](https://github.com/fairy-stockfish/Fairy-Stockfish/releases)
+(pick the build matching your CPU) or compile it. Rename it to
+`fairy-stockfish` (`fairy-stockfish.exe` on Windows) and drop it next to the
+application, or point `TABULON_ENGINE` at it. It is GPLv3, like Jocly's own
+copy; redistributing it in a bundle carries the usual source-availability
+obligation.
+
+### Process model
+
+One process per search. Deliberate: a long-lived engine's state (current
+variant, options, position) is a classic source of hard bugs, while a
+sub-second `go` makes start-up cost irrelevant for a board game. The child
+handle is kept only so `engine_stop` can interrupt a search.
+
+Every search has a **finite budget** (`search_budget`). This is the central
+guarantee of the module: unlike the wasm path it replaces, no search can
+freeze the UI, whatever the engine does — including going silent.
+
+### Commands
+
+| Command | Role |
+|---|---|
+| `engine_probe` | Is a usable engine present? Returns its UCI name. |
+| `engine_search` | One search; takes exactly the fields Jocly already sends its wasm worker. |
+| `engine_stop` | Kills the search in flight, if any. |
+
+The UCI logic proper (`classify`, `search_commands`, `search_budget`) is
+pure and covered by unit tests — including the ordering constraint that
+`VariantPath` must precede `UCI_Variant`, and the detection of
+`info string ERROR:`, which is how Stockfish reports a fatal configuration
+failure (typically an invalid NNUE network) right before exiting without
+ever printing a `bestmove`.
+
+### The JavaScript bridge
+
+`app/content/engine-native.js` makes Jocly use the commands above **without
+any change to Jocly itself**. Jocly builds its engine with
+`new Worker(baseURL + "jocly.fairyworker.js")` and then speaks a small message
+protocol to it, so supplying an object with the same interface is enough:
+
+| Jocly sends | The bridge replies |
+|---|---|
+| `Init` | `Ready`, or `Error` when no binary is installed |
+| `Search` | `Done` with the move, `Error`, or `Aborted` |
+| `Stop` | `Aborted` |
+
+That `Error` on `Init` is the *normal* path when no engine is present: Jocly
+tags the engine unavailable, falls back to its strongest native level, and
+`play.js` shows the `#play-warning` banner.
+
+Jocly runs inside an iframe, so it is the **iframe's** `Worker` that gets
+replaced (`play.js` installs the bridge right after `attachElement`). The
+iframe is same-origin and the installed function still belongs to the top
+window's realm, so the shim keeps access to Tauri without depending on
+`window.__TAURI__` being present inside the iframe — which is not established.
+
+`asset-rewrite.js` also wraps `Worker` (to redirect `jocly.aiworker.js` to the
+external dist). Both wrappers delegate to the previous one and match disjoint
+URLs, so installation order does not matter.
+
+`tests/test-engine-native.mjs` covers the protocol with an injected RPC — no
+binary and no webview needed (20 assertions).
+
+### Optional NNUE networks
+
+`evalFile` (e.g. `nnue/shako.nnue`) is resolved **relative to the engine
+binary's own directory**, not to the dist: with the binary in `engine/`, the
+network goes to `engine/nnue/shako.nnue`. Absolute paths and any `..` are
+rejected — the value comes from a game's config, so possibly from a
+third-party extension.
+
+A missing network is never an error: it is logged and the search runs on
+classical evaluation, exactly like the wasm worker did.
+
+One subtlety is worth knowing. Fairy-Stockfish only activates a network when
+the **file name starts with the variant name** (`on_eval_file_change` in
+`evaluate.cpp`) — which is why Jocly's wasm worker always writes the network
+into its virtual FS as `/<variant>.nnue` rather than under its original name,
+so that one net can serve several same-piece-set variants. The native path
+applies the same rule: if the file name already matches, it is used as is;
+otherwise a copy named `<variant>.nnue` is placed in the temp directory
+(cached by size, since these files can be tens of megabytes and there is one
+process per search). Without this, NNUE would stay silently inactive for any
+generically-named network.
+
+`EvalFile` is set **after** `UCI_Variant`, since changing the variant is what
+triggers the engine's network re-check.
+
+**A network can exist and still be unusable by *this* build** — networks are
+tied to the engine's architecture, so a net built for the standard board is
+rejected by a largeboard binary. The engine then stops, sometimes with
+`info string ERROR: If the UCI option "Use NNUE" is set to true, network
+evaluation parameters compatible with the engine must be available.`, and
+sometimes by simply exiting with no message at all. Observed for real:
+xiangqi and losing-chess (explicit error), spartan (silent exit), while
+capablanca-chess, kyoto-shogi, shako and shogi loaded fine.
+
+A search is therefore **retried once with NNUE switched off** whenever an
+attempt that used a network fails that way (`looks_like_nnue_failure`). A
+strength upgrade must never cost the game. The retry has to set
+`Use NNUE value false` explicitly: Fairy-Stockfish defaults that option to
+`true`, so merely *not* mentioning NNUE is not enough — which is exactly why
+the failures survived the first fix.
+
+**Never set `Use NNUE` to true.** Forcing it to `true` makes a missing or
+incompatible network *fatal*: the engine prints
+`info string ERROR: If the UCI option "Use NNUE" is set to true, network
+evaluation parameters compatible with the engine must be available.` and
+exits, so the search fails instead of quietly running on classical
+evaluation. Observed for real on losing-chess. Jocly's wasm worker sets only
+`EvalFile`; the native path does the same, and a test guards against the
+option coming back.
+
+Note that this module's `log::info!` output goes to the application's log,
+**not** to the webview console. `SearchResult.evalFileUsed` therefore reports
+what was actually loaded, and `engine-native.js` logs it once per variant —
+otherwise there is no way for a player to tell whether Expert is running with
+its network or without.
+
 ## Internationalization (i18n)
 
 `app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the

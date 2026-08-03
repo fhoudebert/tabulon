@@ -146,6 +146,10 @@ function buildPayload(method, args) {
     remove_extension:    ([gameName])              => ({ gameName }),
     export_module:       ([moduleName, destPath])  => ({ moduleName, destPath }),
     remove_module:       ([moduleName])            => ({ moduleName }),
+    // moteur natif (Fairy-Stockfish) — voir app/content/engine-native.js
+    engine_probe:        ()                        => ({}),
+    engine_search:       ([request])               => ({ request }),
+    engine_stop:         ()                        => ({}),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),

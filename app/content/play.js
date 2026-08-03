@@ -12,6 +12,7 @@ import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
+import { installNativeEngine } from './engine-native.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -1090,6 +1091,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const attachOptions = { viewOptions };
     if (clockConfig) attachOptions.clock = clockConfig;
     await joclyMatch.attachElement(gameArea, attachOptions);
+
+    // Niveaux « Expert » : router fairy-stockfish vers le moteur NATIF plutot
+    // que vers la build wasm multi-thread, qui ne peut pas rendre de coup dans
+    // une webview Tauri (voir engine-native.js). Sans binaire installe, Jocly
+    // se rabat sur son IA native et le bandeau #play-warning s'affiche.
+    installNativeEngine(gameArea, tRpc);
 
     // Sélecteur de skin (2D/3D) du footer, à côté des joueurs A/B — visible
     // seulement quand la barre de boutons est masquée (classe
