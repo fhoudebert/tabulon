@@ -489,7 +489,23 @@ generically-named network.
 `EvalFile` is set **after** `UCI_Variant`, since changing the variant is what
 triggers the engine's network re-check.
 
-**Never set `Use NNUE`.** Forcing it to `true` makes a missing or
+**A network can exist and still be unusable by *this* build** — networks are
+tied to the engine's architecture, so a net built for the standard board is
+rejected by a largeboard binary. The engine then stops, sometimes with
+`info string ERROR: If the UCI option "Use NNUE" is set to true, network
+evaluation parameters compatible with the engine must be available.`, and
+sometimes by simply exiting with no message at all. Observed for real:
+xiangqi and losing-chess (explicit error), spartan (silent exit), while
+capablanca-chess, kyoto-shogi, shako and shogi loaded fine.
+
+A search is therefore **retried once with NNUE switched off** whenever an
+attempt that used a network fails that way (`looks_like_nnue_failure`). A
+strength upgrade must never cost the game. The retry has to set
+`Use NNUE value false` explicitly: Fairy-Stockfish defaults that option to
+`true`, so merely *not* mentioning NNUE is not enough — which is exactly why
+the failures survived the first fix.
+
+**Never set `Use NNUE` to true.** Forcing it to `true` makes a missing or
 incompatible network *fatal*: the engine prints
 `info string ERROR: If the UCI option "Use NNUE" is set to true, network
 evaluation parameters compatible with the engine must be available.` and

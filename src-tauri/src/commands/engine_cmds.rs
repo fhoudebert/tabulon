@@ -275,10 +275,24 @@ pub(crate) fn classify(line: &str) -> UciLine {
 /// impose par le moteur : VariantPath AVANT UCI_Variant (c'est au moment de
 /// `setoption name UCI_Variant` que la variante est resolue contre la liste
 /// des variantes connues + chargees). Fonction pure.
+/// Reglage NNUE d'une tentative de recherche.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Nnue<'a> {
+    /// Rien n'est impose : le moteur garde son comportement par defaut.
+    Default,
+    /// Reseau explicite (chemin absolu).
+    Use(&'a str),
+    /// NNUE explicitement coupe. Indispensable en reprise : le defaut de
+    /// Fairy-Stockfish est `Use NNUE = true`, donc ne PAS parler de NNUE ne
+    /// suffit pas a l'eviter -- constate en conditions reelles (xiangqi,
+    /// losing-chess, spartan) apres avoir deja retire le forcage a `true`.
+    Disable,
+}
+
 pub(crate) fn search_commands(
     req: &SearchRequest,
     variant_path: Option<&str>,
-    eval_path: Option<&str>,
+    nnue: Nnue<'_>,
 ) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(p) = variant_path {
@@ -289,15 +303,14 @@ pub(crate) fn search_commands(
     // re-verification du reseau cote moteur ; regler EvalFile avant serait
     // annule.
     //
-    // On ne pose SURTOUT PAS `setoption name Use NNUE value true` : forcer
-    // cette option rend FATALE l'indisponibilite d'un reseau compatible
-    // (« If the UCI option "Use NNUE" is set to true, network evaluation
-    // parameters compatible with the engine must be available. »), le moteur
-    // s'arrete et la recherche echoue au lieu de se rabattre sur l'evaluation
-    // classique. Le worker wasm de jocly ne regle que EvalFile : on fait
-    // pareil, et un reseau absent ou incompatible reste sans consequence.
-    if let Some(p) = eval_path {
-        out.push(format!("setoption name EvalFile value {}", p));
+    // On ne pose JAMAIS `Use NNUE value true` : forcer cette option rend
+    // FATALE l'indisponibilite d'un reseau compatible (le moteur s'arrete au
+    // lieu de jouer en evaluation classique). Le worker wasm de jocly ne
+    // regle que EvalFile ; on fait pareil.
+    match nnue {
+        Nnue::Default => {}
+        Nnue::Use(p) => out.push(format!("setoption name EvalFile value {}", p)),
+        Nnue::Disable => out.push("setoption name Use NNUE value false".to_string()),
     }
     if let Some(s) = req.skill_level {
         out.push(format!("setoption name Skill Level value {}", s));
@@ -438,9 +451,70 @@ pub async fn engine_search(
             prepare_nnue(&cand, &request.variant)
         });
 
+    let variant_str = variant_file.as_ref().map(|p| p.to_string_lossy().to_string());
+    let eval_str = eval_path.as_ref().map(|p| p.to_string_lossy().to_string());
+
+    let first = match eval_str.as_deref() {
+        Some(p) => Nnue::Use(p),
+        None => Nnue::Default,
+    };
+    let result = search_once(&app, &state, &request, &path, variant_str.as_deref(), first).await;
+
+    // REPRISE SANS NNUE. Un reseau peut exister et rester inutilisable par
+    // CETTE build du moteur (les reseaux sont lies a son architecture) : le
+    // moteur s'arrete alors, avec ou sans ligne d'erreur explicite. Constate
+    // en conditions reelles : xiangqi et losing-chess (« Use NNUE ... must be
+    // available »), spartan (sortie sans message). Un simple gain de force ne
+    // doit jamais couter la partie : on rejoue une fois, NNUE coupe.
+    let result = match result {
+        Err(e) if eval_str.is_some() && looks_like_nnue_failure(&e) => {
+            log::warn!(
+                "reseau NNUE inutilisable par cette build ({e}) — nouvelle tentative \
+                 en evaluation classique"
+            );
+            search_once(
+                &app,
+                &state,
+                &request,
+                &path,
+                variant_str.as_deref(),
+                Nnue::Disable,
+            )
+            .await
+            .map(|mut r| {
+                r.eval_file_used = None;
+                r
+            })
+        }
+        other => other,
+    };
+
+    if let Some(p) = variant_file {
+        let _ = std::fs::remove_file(p);
+    }
+    result
+}
+
+/// Symptomes d'un moteur qui refuse son reseau NNUE. La sortie sans message
+/// compte : elle a ete observee (spartan) et un moteur mort ne rendra jamais
+/// de coup, donc reessayer sans NNUE est toujours preferable a abandonner.
+pub(crate) fn looks_like_nnue_failure(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    e.contains("use nnue") || e.contains("nnue") || e.contains("exited unexpectedly")
+}
+
+/// Une tentative de recherche : un processus, une poignee de main, un `go`.
+async fn search_once(
+    app: &AppHandle,
+    state: &State<'_, EngineState>,
+    request: &SearchRequest,
+    path: &Path,
+    variant_path: Option<&str>,
+    nnue: Nnue<'_>,
+) -> Result<SearchResult, String> {
     let (mut rx, mut child) = app
         .shell()
-        .command(&path)
+        .command(path)
         .spawn()
         .map_err(|e| format!("moteur non demarrable ({}): {}", path.display(), e))?;
 
@@ -451,15 +525,13 @@ pub async fn engine_search(
     })
     .await?;
 
-    let path_str = variant_file.as_ref().map(|p| p.to_string_lossy().to_string());
-    let eval_str = eval_path.as_ref().map(|p| p.to_string_lossy().to_string());
-    for c in search_commands(&request, path_str.as_deref(), eval_str.as_deref()) {
+    for c in search_commands(request, variant_path, nnue) {
         child
             .write(format!("{}\n", c).as_bytes())
             .map_err(|e| e.to_string())?;
     }
 
-    let budget = search_budget(&request);
+    let budget = search_budget(request);
     // Le handle est publie APRES l'envoi du `go` : engine_stop ne peut pas
     // tuer un processus qui n'a pas encore recu son ordre de recherche.
     state.set(child);
@@ -482,16 +554,16 @@ pub async fn engine_search(
     if let Some(c) = state.take() {
         let _ = c.kill();
     }
-    if let Some(p) = variant_file {
-        let _ = std::fs::remove_file(p);
-    }
 
     let (best_move_uci, ponder_uci) = outcome?;
     Ok(SearchResult {
         best_move_uci,
         ponder_uci,
         last_info,
-        eval_file_used: eval_str,
+        eval_file_used: match nnue {
+            Nnue::Use(p) => Some(p.to_string()),
+            _ => None,
+        },
     })
 }
 
@@ -605,7 +677,7 @@ mod tests {
 
     #[test]
     fn go_depth_par_defaut_quand_aucun_budget() {
-        let c = search_commands(&req(), None, None);
+        let c = search_commands(&req(), None, Nnue::Default);
         assert_eq!(c.last().unwrap(), "go depth 12");
         assert!(c.iter().any(|l| l == "setoption name UCI_Variant value chess"));
         assert!(c.iter().any(|l| l == "isready"));
@@ -617,7 +689,7 @@ mod tests {
         let mut r = req();
         r.depth = Some(20);
         r.move_time_ms = Some(1500);
-        assert_eq!(search_commands(&r, None, None).last().unwrap(), "go movetime 1500");
+        assert_eq!(search_commands(&r, None, Nnue::Default).last().unwrap(), "go movetime 1500");
     }
 
     #[test]
@@ -625,12 +697,12 @@ mod tests {
         let mut r = req();
         r.depth = Some(8);
         r.move_time_ms = Some(0);
-        assert_eq!(search_commands(&r, None, None).last().unwrap(), "go depth 8");
+        assert_eq!(search_commands(&r, None, Nnue::Default).last().unwrap(), "go depth 8");
     }
 
     #[test]
     fn variant_path_precede_uci_variant() {
-        let c = search_commands(&req(), Some("/tmp/v.ini"), None);
+        let c = search_commands(&req(), Some("/tmp/v.ini"), Nnue::Default);
         let ip = c.iter().position(|l| l.contains("VariantPath")).unwrap();
         let iv = c.iter().position(|l| l.contains("UCI_Variant")).unwrap();
         assert!(ip < iv, "VariantPath doit preceder UCI_Variant");
@@ -638,14 +710,14 @@ mod tests {
 
     #[test]
     fn options_facultatives_absentes_par_defaut() {
-        let c = search_commands(&req(), None, None);
+        let c = search_commands(&req(), None, Nnue::Default);
         assert!(!c.iter().any(|l| l.contains("Skill Level")));
         assert!(!c.iter().any(|l| l.contains("UCI_Chess960")));
 
         let mut r = req();
         r.skill_level = Some(7);
         r.chess960 = Some(true);
-        let c = search_commands(&r, None, None);
+        let c = search_commands(&r, None, Nnue::Default);
         assert!(c.iter().any(|l| l == "setoption name Skill Level value 7"));
         assert!(c.iter().any(|l| l == "setoption name UCI_Chess960 value true"));
     }
@@ -680,7 +752,7 @@ mod tests {
     fn eval_file_est_pose_apres_uci_variant() {
         // Regler EvalFile avant UCI_Variant serait annule par le changement
         // de variante cote moteur.
-        let c = search_commands(&req(), None, Some("/tmp/shako.nnue"));
+        let c = search_commands(&req(), None, Nnue::Use("/tmp/shako.nnue"));
         let iv = c.iter().position(|l| l.contains("UCI_Variant")).unwrap();
         let ie = c.iter().position(|l| l.contains("EvalFile")).unwrap();
         assert!(iv < ie, "EvalFile doit suivre UCI_Variant");
@@ -696,9 +768,34 @@ mod tests {
 
     #[test]
     fn aucune_option_nnue_sans_reseau() {
-        let c = search_commands(&req(), None, None);
+        let c = search_commands(&req(), None, Nnue::Default);
         assert!(!c.iter().any(|l| l.contains("EvalFile")));
         assert!(!c.iter().any(|l| l.contains("Use NNUE")));
+    }
+
+    #[test]
+    fn nnue_peut_etre_explicitement_coupe() {
+        // Le defaut de Fairy-Stockfish est « Use NNUE = true » : se taire ne
+        // suffit PAS a l'eviter. C'est ce qui a fait echouer xiangqi et
+        // losing-chess alors qu'on ne posait deja plus l'option a true.
+        let c = search_commands(&req(), None, Nnue::Disable);
+        assert!(c.iter().any(|l| l == "setoption name Use NNUE value false"));
+        assert!(!c.iter().any(|l| l.contains("EvalFile")));
+    }
+
+    #[test]
+    fn reconnait_les_echecs_imputables_au_reseau() {
+        assert!(looks_like_nnue_failure(
+            "le moteur a rejete sa configuration et s'est arrete: info string ERROR: \
+             If the UCI option \"Use NNUE\" is set to true, network evaluation \
+             parameters compatible with the engine must be available."
+        ));
+        // Sortie sans message : observee sur spartan. Un moteur mort ne rendra
+        // jamais de coup, donc reessayer sans NNUE vaut mieux qu'abandonner.
+        assert!(looks_like_nnue_failure("engine exited unexpectedly"));
+        // Ne doit PAS declencher une reprise inutile.
+        assert!(!looks_like_nnue_failure("engine timed out"));
+        assert!(!looks_like_nnue_failure("moteur non demarrable (permission denied)"));
     }
 
     #[test]
