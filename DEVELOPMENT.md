@@ -348,9 +348,9 @@ explains *why* the current shape was chosen.
 
 ## Native engine (Fairy-Stockfish "Expert" levels)
 
-**Status: step 1 of 2.** The Rust driver below is in place and unit-tested;
-the JavaScript bridge that routes Jocly's Expert levels to it is not written
-yet, so at runtime nothing has changed so far.
+**Status: wired up.** The Rust driver and the JavaScript bridge are both in
+place; supply a binary (see below) and Expert levels run on it. Without one,
+nothing changes: Jocly falls back to its native AI exactly as before.
 
 ### Why a native binary at all
 
@@ -400,9 +400,11 @@ In order (`commands::engine_cmds::engine_path`):
 The `PATH` is deliberately **not** searched: silently running an arbitrary
 executable found in the environment would be an unpleasant surprise.
 
-You must supply the binary yourself — build it from
-[fairy-stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish) or drop
-in an official release for your platform. It is GPLv3, like Jocly's own
+You must supply the binary yourself: take it from the
+[Fairy-Stockfish releases](https://github.com/fairy-stockfish/Fairy-Stockfish/releases)
+(pick the build matching your CPU) or compile it. Rename it to
+`fairy-stockfish` (`fairy-stockfish.exe` on Windows) and drop it next to the
+application, or point `TABULON_ENGINE` at it. It is GPLv3, like Jocly's own
 copy; redistributing it in a bundle carries the usual source-availability
 obligation.
 
@@ -432,17 +434,43 @@ pure and covered by unit tests — including the ordering constraint that
 failure (typically an invalid NNUE network) right before exiting without
 ever printing a `bestmove`.
 
-### Step 2 (not done)
+### The JavaScript bridge
 
-A JavaScript bridge must make Jocly use these commands instead of its wasm
-worker. Jocly creates the engine with
-`new Worker(baseURL + "jocly.fairyworker.js")` **inside the Jocly iframe**
-and speaks a small message protocol to it (`Init` → `Ready`/`Error`,
-`Search` → `Done`/`Error`/`Aborted`/`Progress`, `Stop`). Providing an object
-with the same interface, backed by the commands above, needs no change to
-Jocly at all. Note that the shim runs in the iframe, where `window.__TAURI__`
-availability is not established — routing through the top window by
-`postMessage` avoids depending on it.
+`app/content/engine-native.js` makes Jocly use the commands above **without
+any change to Jocly itself**. Jocly builds its engine with
+`new Worker(baseURL + "jocly.fairyworker.js")` and then speaks a small message
+protocol to it, so supplying an object with the same interface is enough:
+
+| Jocly sends | The bridge replies |
+|---|---|
+| `Init` | `Ready`, or `Error` when no binary is installed |
+| `Search` | `Done` with the move, `Error`, or `Aborted` |
+| `Stop` | `Aborted` |
+
+That `Error` on `Init` is the *normal* path when no engine is present: Jocly
+tags the engine unavailable, falls back to its strongest native level, and
+`play.js` shows the `#play-warning` banner.
+
+Jocly runs inside an iframe, so it is the **iframe's** `Worker` that gets
+replaced (`play.js` installs the bridge right after `attachElement`). The
+iframe is same-origin and the installed function still belongs to the top
+window's realm, so the shim keeps access to Tauri without depending on
+`window.__TAURI__` being present inside the iframe — which is not established.
+
+`asset-rewrite.js` also wraps `Worker` (to redirect `jocly.aiworker.js` to the
+external dist). Both wrappers delegate to the previous one and match disjoint
+URLs, so installation order does not matter.
+
+`tests/test-engine-native.mjs` covers the protocol with an injected RPC — no
+binary and no webview needed (20 assertions).
+
+### Known gap
+
+`evalFile` (optional NNUE networks) is **not** forwarded to the native engine:
+the wasm worker fetched it over HTTP, whereas a native binary wants a real
+file path. Expert therefore runs on classical evaluation, which is logged once
+per window. Wiring it up means resolving a path next to the binary and passing
+`EvalFile` through `SearchRequest`.
 
 ## Internationalization (i18n)
 
