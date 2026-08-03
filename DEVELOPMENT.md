@@ -85,6 +85,9 @@ the executable — no rebuild needed:
 tabulon/
 ├── tabulon.exe          (or tabulon.AppImage, Tabulon.app)
 └── dist/                a full jocly2 build (browser/ + games/)
+└── engine  (expert mode)
+    └── nnue  (optionnal)
+    └── fairy-stockfish[.exe]  (expert engine)
 ```
 
 ## Extensions (import/export games)
@@ -219,8 +222,8 @@ original design analysis.
 ### HTTP relay mode
 
 - `HttpRelayChannel` polls a relay speaking the wire protocol of
-  jocly-simple-match's `fileio.php`
-  (<https://framagit.org/jcfrog/jocly-simple-match>) — a dumb per-match-id
+  joclymatch's `fileio.php`
+  (<https://github.com/fhoudebert/joclymatch/> or <https://github.com/fhoudebert/mogichex/>) — a dumb per-match-id
   key/value store. Any existing instance works as-is (default: the
   biscandine.fr test instance). Requests go through `tauri-plugin-http`
   (`httpFetch` in `tauri-bridge.js`), not the webview's `fetch` (the relay
