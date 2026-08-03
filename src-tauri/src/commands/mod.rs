@@ -1,4 +1,5 @@
 // src-tauri/src/commands/mod.rs
+pub mod engine_cmds;
 pub mod extension_cmds;
 pub mod fs_cmds;
 pub mod hub_cmds;

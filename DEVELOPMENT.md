@@ -346,6 +346,104 @@ explains *why* the current shape was chosen.
   only as private as its HTTPS and its operator; the peer stream is plain
   TCP).
 
+## Native engine (Fairy-Stockfish "Expert" levels)
+
+**Status: step 1 of 2.** The Rust driver below is in place and unit-tested;
+the JavaScript bridge that routes Jocly's Expert levels to it is not written
+yet, so at runtime nothing has changed so far.
+
+### Why a native binary at all
+
+Jocly ships a **multi-threaded** (Emscripten pthreads) wasm build of
+Fairy-Stockfish. Inside a Tauri webview that build cannot run a search:
+
+- On Linux/WebKitGTK the page is not cross-origin isolated under the
+  `tauri://` scheme (measured: `crossOriginIsolated === false`,
+  `SharedArrayBuffer` undefined, while `isSecureContext === true`), so
+  pthreads — which hard-require `SharedArrayBuffer` — are unavailable and
+  Jocly falls back to its native AI with a warning.
+- On Windows/WebView2 the isolation *does* work, the engine reports
+  `engine ready` — and then the first search hangs forever. The network
+  panel shows the pthread worker `stockfish.worker.js` stuck at **pending
+  with no status**, under both the embedded and the external dist, i.e.
+  including through Tauri's *built-in* protocol. No thread starts, no UCI
+  line is ever printed, and `RunSearch` waits for a `bestmove` that never
+  comes.
+
+A native binary has no worker, no wasm and no custom protocol to go
+through: it removes the cause instead of working around it, and it is
+considerably stronger and faster than any wasm build.
+
+### Why not `externalBin` (Tauri's real "sidecar")
+
+Declaring the binary in `tauri.conf.json` makes it **mandatory at build
+time** — verified here: `tauri-build` fails with
+`resource path binaries/fairy-stockfish-<triple> doesn't exist`. Every
+Tabulon build would then depend on shipping one binary per platform, even
+for people who do not care about Expert levels. The engine is therefore
+resolved **at runtime**, exactly like the external dist
+(`dist_override::external_dist`). Switching to real bundling later needs no
+change to `engine_cmds.rs`.
+
+### Where the binary is looked up
+
+In order (`commands::engine_cmds::engine_path`):
+
+1. `TABULON_ENGINE` — full path to the executable. Escape hatch for tests
+   and for using a custom build without reinstalling.
+2. `engine/fairy-stockfish[.exe]`, then `fairy-stockfish[.exe]`, next to the
+   application — same base directories as the external dist (`$APPIMAGE`
+   for AppImages, the `.app` bundle on macOS).
+3. Nothing found: Expert degrades to Jocly's native AI, and the play window
+   shows the existing `#play-warning` banner.
+
+The `PATH` is deliberately **not** searched: silently running an arbitrary
+executable found in the environment would be an unpleasant surprise.
+
+You must supply the binary yourself — build it from
+[fairy-stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish) or drop
+in an official release for your platform. It is GPLv3, like Jocly's own
+copy; redistributing it in a bundle carries the usual source-availability
+obligation.
+
+### Process model
+
+One process per search. Deliberate: a long-lived engine's state (current
+variant, options, position) is a classic source of hard bugs, while a
+sub-second `go` makes start-up cost irrelevant for a board game. The child
+handle is kept only so `engine_stop` can interrupt a search.
+
+Every search has a **finite budget** (`search_budget`). This is the central
+guarantee of the module: unlike the wasm path it replaces, no search can
+freeze the UI, whatever the engine does — including going silent.
+
+### Commands
+
+| Command | Role |
+|---|---|
+| `engine_probe` | Is a usable engine present? Returns its UCI name. |
+| `engine_search` | One search; takes exactly the fields Jocly already sends its wasm worker. |
+| `engine_stop` | Kills the search in flight, if any. |
+
+The UCI logic proper (`classify`, `search_commands`, `search_budget`) is
+pure and covered by unit tests — including the ordering constraint that
+`VariantPath` must precede `UCI_Variant`, and the detection of
+`info string ERROR:`, which is how Stockfish reports a fatal configuration
+failure (typically an invalid NNUE network) right before exiting without
+ever printing a `bestmove`.
+
+### Step 2 (not done)
+
+A JavaScript bridge must make Jocly use these commands instead of its wasm
+worker. Jocly creates the engine with
+`new Worker(baseURL + "jocly.fairyworker.js")` **inside the Jocly iframe**
+and speaks a small message protocol to it (`Init` → `Ready`/`Error`,
+`Search` → `Done`/`Error`/`Aborted`/`Progress`, `Stop`). Providing an object
+with the same interface, backed by the commands above, needs no change to
+Jocly at all. Note that the shim runs in the iframe, where `window.__TAURI__`
+availability is not established — routing through the top window by
+`postMessage` avoids depending on it.
+
 ## Internationalization (i18n)
 
 `app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the

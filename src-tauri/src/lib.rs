@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{extension_cmds, fs_cmds, hub_cmds, match_cmds, peer_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, extension_cmds, fs_cmds, hub_cmds, match_cmds, peer_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -39,6 +39,7 @@ pub fn run() {
         .manage(NotifyChannels::default())
         .manage(VideoState::default())
         .manage(peer_cmds::PeerState::default())
+        .manage(engine_cmds::EngineState::default())
         // ── Setup ─────────────────────────────────────────────────────────────
         // Filet de sécurité vidéo : si une fenêtre de jeu est détruite pendant
         // un enregistrement (fermeture, fin d'app), finaliser le MP4 — sinon
@@ -134,6 +135,9 @@ pub fn run() {
             extension_cmds::remove_module,
             window_cmds::open_extensions,
             // ── Jeu a distance pair-a-pair (aucun serveur) ───────────────────
+            engine_cmds::engine_probe,
+            engine_cmds::engine_search,
+            engine_cmds::engine_stop,
             peer_cmds::peer_host_start,
             peer_cmds::peer_connect,
             peer_cmds::peer_send,
