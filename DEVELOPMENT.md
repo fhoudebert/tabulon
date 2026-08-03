@@ -489,6 +489,21 @@ generically-named network.
 `EvalFile` is set **after** `UCI_Variant`, since changing the variant is what
 triggers the engine's network re-check.
 
+**Never set `Use NNUE`.** Forcing it to `true` makes a missing or
+incompatible network *fatal*: the engine prints
+`info string ERROR: If the UCI option "Use NNUE" is set to true, network
+evaluation parameters compatible with the engine must be available.` and
+exits, so the search fails instead of quietly running on classical
+evaluation. Observed for real on losing-chess. Jocly's wasm worker sets only
+`EvalFile`; the native path does the same, and a test guards against the
+option coming back.
+
+Note that this module's `log::info!` output goes to the application's log,
+**not** to the webview console. `SearchResult.evalFileUsed` therefore reports
+what was actually loaded, and `engine-native.js` logs it once per variant —
+otherwise there is no way for a player to tell whether Expert is running with
+its network or without.
+
 ## Internationalization (i18n)
 
 `app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the

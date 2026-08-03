@@ -32,6 +32,19 @@
 
 const FAIRY_WORKER_RE = /(^|\/)jocly\.fairyworker\.js(\?|$)/;
 
+// Une trace par variante : le joueur doit pouvoir constater si Expert tourne
+// avec son reseau NNUE ou en evaluation classique, sans lire les logs de
+// l'application.
+const evalReported = new Set();
+function ReportEval(variant, asked, used) {
+    if (evalReported.has(variant)) return;
+    evalReported.add(variant);
+    if (used) console.info(`[engine-native] ${variant} : reseau NNUE ${used}`);
+    else if (asked) console.info(
+        `[engine-native] ${variant} : reseau NNUE "${asked}" introuvable a cote du ` +
+        `binaire (ou refuse) — evaluation classique`);
+}
+
 /**
  * Faux Worker : même surface que celle utilisée par jocly.fairy.js
  * (postMessage, onmessage, onerror, terminate).
@@ -108,6 +121,10 @@ class NativeFairyWorker {
         })
             .then((res) => {
                 this._searching = false;
+                // Les logs de resolution NNUE sont cote Rust (sortie de
+                // l'application), donc INVISIBLES dans cette console : on dit
+                // ici, une fois par variante, ce qui a reellement ete charge.
+                ReportEval(msg.variant, msg.evalFile, res && res.evalFileUsed);
                 // Une recherche interrompue se termine côté Rust par un
                 // processus tué, donc par une erreur OU par un résultat
                 // partiel : dans les deux cas c'est « Aborted » qu'attend

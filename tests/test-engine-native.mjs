@@ -149,6 +149,46 @@ console.log('Test 7 - interception de Worker');
     ok(abs instanceof NativeFairyWorker, 'URL absolue avec parametre reconnue aussi');
 }
 
+console.log('Test 8 - compte rendu NNUE dans la console');
+{
+    const logs = [];
+    const realInfo = console.info;
+    console.info = (...a) => logs.push(a.join(' '));
+    try {
+        // Reseau charge
+        let rpc = makeRpc({ engine_search: () => Promise.resolve({ bestMoveUci: 'e2e4', evalFileUsed: '/opt/engine/nnue/shako.nnue' }) });
+        let w = new NativeFairyWorker(rpc); listen(w);
+        w.postMessage({ type: 'Search', variant: 'shako', fen: 'F', evalFile: 'nnue/shako.nnue' });
+        await settle();
+        ok(logs.some(l => /shako.*reseau NNUE.*shako\.nnue/.test(l)),
+           'reseau charge -> trace visible dans la console');
+
+        // Meme variante : on ne repete pas a chaque coup.
+        const before = logs.length;
+        w.postMessage({ type: 'Search', variant: 'shako', fen: 'F', evalFile: 'nnue/shako.nnue' });
+        await settle();
+        ok(logs.length === before, 'une seule trace par variante (pas a chaque coup)');
+
+        // Demande mais introuvable : le joueur doit savoir qu'il joue sans.
+        rpc = makeRpc({ engine_search: () => Promise.resolve({ bestMoveUci: 'e2e4', evalFileUsed: null }) });
+        w = new NativeFairyWorker(rpc); listen(w);
+        w.postMessage({ type: 'Search', variant: 'shogi', fen: 'F', evalFile: 'nnue/shogi.nnue' });
+        await settle();
+        ok(logs.some(l => /shogi.*evaluation classique/.test(l)),
+           'reseau demande mais absent -> trace explicite');
+
+        // Aucun reseau demande : rien a signaler.
+        const before2 = logs.length;
+        rpc = makeRpc({ engine_search: () => Promise.resolve({ bestMoveUci: 'e2e4', evalFileUsed: null }) });
+        w = new NativeFairyWorker(rpc); listen(w);
+        w.postMessage({ type: 'Search', variant: 'chess', fen: 'F' });
+        await settle();
+        ok(logs.length === before2, 'aucun reseau demande -> aucune trace');
+    } finally {
+        console.info = realInfo;
+    }
+}
+
 console.log('');
 console.log(`RESULTAT engine-native: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

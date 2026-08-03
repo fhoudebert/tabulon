@@ -211,6 +211,12 @@ pub struct SearchResult {
     pub best_move_uci: String,
     pub ponder_uci: Option<String>,
     pub last_info: Option<String>,
+    /// Reseau NNUE effectivement passe au moteur, ou None si la recherche a
+    /// tourne en evaluation classique. Les log::info! de ce module partent
+    /// dans la sortie de l'application, PAS dans la console de la webview :
+    /// ce champ est ce qui permet au front de dire au joueur ce qui a ete
+    /// reellement charge.
+    pub eval_file_used: Option<String>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -282,8 +288,15 @@ pub(crate) fn search_commands(
     // APRES UCI_Variant : c'est le changement de variante qui declenche la
     // re-verification du reseau cote moteur ; regler EvalFile avant serait
     // annule.
+    //
+    // On ne pose SURTOUT PAS `setoption name Use NNUE value true` : forcer
+    // cette option rend FATALE l'indisponibilite d'un reseau compatible
+    // (« If the UCI option "Use NNUE" is set to true, network evaluation
+    // parameters compatible with the engine must be available. »), le moteur
+    // s'arrete et la recherche echoue au lieu de se rabattre sur l'evaluation
+    // classique. Le worker wasm de jocly ne regle que EvalFile : on fait
+    // pareil, et un reseau absent ou incompatible reste sans consequence.
     if let Some(p) = eval_path {
-        out.push("setoption name Use NNUE value true".to_string());
         out.push(format!("setoption name EvalFile value {}", p));
     }
     if let Some(s) = req.skill_level {
@@ -478,6 +491,7 @@ pub async fn engine_search(
         best_move_uci,
         ponder_uci,
         last_info,
+        eval_file_used: eval_str,
     })
 }
 
@@ -670,7 +684,11 @@ mod tests {
         let iv = c.iter().position(|l| l.contains("UCI_Variant")).unwrap();
         let ie = c.iter().position(|l| l.contains("EvalFile")).unwrap();
         assert!(iv < ie, "EvalFile doit suivre UCI_Variant");
-        assert!(c.iter().any(|l| l == "setoption name Use NNUE value true"));
+        // Forcer « Use NNUE » rendrait FATALE l'absence d'un reseau
+        // compatible : le moteur s'arrete au lieu de jouer en evaluation
+        // classique. Constate en conditions reelles sur losing-chess.
+        assert!(!c.iter().any(|l| l.contains("Use NNUE")),
+            "ne jamais forcer Use NNUE");
         assert!(c
             .iter()
             .any(|l| l == "setoption name EvalFile value /tmp/shako.nnue"));
