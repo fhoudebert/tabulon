@@ -168,10 +168,8 @@ external dist cannot break the UI itself.
 Two ways to play a Jocly game against a remote human, both entered through
 the **Invitation** window (hub game panel, next to Quick play / Clocked
 play): a shared **HTTP relay**, or **peer-to-peer with no server at all**.
-The sections below describe the **current state**, not the development
-history (that history is in the branch's commit log); the "Design
-background" subsection at the end keeps the still-relevant parts of the
-original design analysis.
+The sections below describe the **current state**; the commit log holds
+the development history.
 
 ### Common architecture
 
@@ -203,14 +201,19 @@ original design analysis.
   window, footer selects). `resetBaseline()` remains in place for the
   paths that still resync legitimately (loading a saved game, etc.).
 
-- Remote play can only be *established* from the Invitation window. The
-  player dropdowns (footer quick select and Players window) show a
-  disabled "Remote player (via Invitation)" entry: it exists to display
-  the state of a side made remote by an invitation — the browser refuses
-  to select it, and the label itself says where remote play is set up.
-  The one exception: in the Players window, a side that is *currently*
-  remote keeps the entry selectable, so switching away can be undone
-  before Save (the original config is preserved via `lastReceivedRemote`).
+- Remote play is **set up** in the Invitation window (both roles: join or
+  create) and, for a guest only, from the **Invitation** entry in the hub
+  sidebar — paste a relay link or a peer code and connect, without having
+  to pick a game first (the game name comes from the invitation itself).
+  Host-side actions stay in the Invitation window, since they need a
+  selected game. The player dropdowns (footer quick select and Players
+  window) show a disabled "Remote player (via Invitation)" entry: it
+  exists to display the state of a side made remote by an invitation —
+  the browser refuses to select it, and the label itself says where
+  remote play is set up. The one exception: in the Players window, a side
+  that is *currently* remote keeps the entry selectable, so switching
+  away can be undone before Save (the original config is preserved via
+  `lastReceivedRemote`).
 
 - The Players window shows a remote side as "Remote player" and
   **preserves** its full configuration (`codec`, `gameName`, `relayUrl`,
@@ -222,10 +225,15 @@ original design analysis.
 ### HTTP relay mode
 
 - `HttpRelayChannel` polls a relay speaking the wire protocol of
-  joclymatch's `fileio.php`
-  (<https://github.com/fhoudebert/joclymatch/> or <https://github.com/fhoudebert/mogichex/>) — a dumb per-match-id
-  key/value store. Any existing instance works as-is (default: the
-  biscandine.fr test instance). Requests go through `tauri-plugin-http`
+  joclymatch's `fileio.php` — a dumb per-match-id key/value store. Any
+  existing instance works as-is (default: the biscandine.fr test
+  instance). Two projects provide one, and either can host a Tabulon
+  match:
+  [joclymatch](https://github.com/fhoudebert/joclymatch/) (`fileio.php`)
+  and [mogichex](https://github.com/fhoudebert/mogichex/), whose
+  `deploy/match.php` serves the same purpose for its own games — so a
+  mogichex deployment doubles as a relay for Tabulon, alongside the
+  browser games it already hosts. Requests go through `tauri-plugin-http`
   (`httpFetch` in `tauri-bridge.js`), not the webview's `fetch` (the relay
   sends no CORS headers); allowed relay hosts are scoped in
   `src-tauri/capabilities/default.json` (`http:default` → `allow[].url`).
@@ -332,17 +340,12 @@ explains *why* the current shape was chosen.
   verified — security rests entirely on the match id being unguessable.
   That contract (matchId + serialized `match.save()` + move detection by
   turn count) is exactly what `HttpRelayChannel` reproduces.
-- **Transports considered, and why these two**: a relay (polling now,
-  push/WebSocket as an upgrade path) is the shortest path and can reuse
-  any existing jocly-simple-match instance — its cost is that *someone*
-  hosts it, and the relay sees the moves. Peer-to-peer avoids any server;
-  WebRTC was ruled out empirically (see above), and without STUN/TURN it
-  would not have connected anything plain TCP cannot reach anyway.
-  Also considered and set aside: a synced folder (Dropbox/Syncthing) as a
-  mailbox — zero network code but latency and tooling assumptions on both
-  sides; move-per-message over email/XMPP/Matrix — correspondence-play
-  UX, no live feel. Both remain possible `RemoteChannel` implementations
-  if ever wanted, which is the point of the interface.
+- **Why these two transports**: a relay is the shortest path and reuses
+  any existing instance — its cost is that *someone* hosts it, and the
+  relay sees the moves. Peer-to-peer needs no server at all; WebRTC was
+  ruled out empirically (see above). Other mailboxes (a synced folder, a
+  message per move over email or XMPP) would fit behind `RemoteChannel`
+  too — that is the point of the interface.
 - **Minimal security posture, stated**: unguessable match ids (UUID-class)
   for the relay, the 128-bit token for peer sessions, and no claim of
   confidentiality — neither transport encrypts by itself (the relay is
@@ -633,59 +636,49 @@ cargo tauri icon path/to/source.png
 
 ---
 
-## Troubleshooting: on Windows, satellite windows open blank and frozen
+## Windows-only traps (all fixed — keep them fixed)
 
-Symptom (seen on Windows 11 after a local build): the main hub window
-works, but every window opened afterwards — quick play, help, invitation,
-extensions… — shows an empty page with only its window title, **does not
-respond**, and has to be killed from the Task Manager.
+Three Windows/WebView2 behaviours have each cost a debugging session. The
+fixes are in place; the point of this section is that they must not be
+undone.
 
-Two distinct Windows-only causes were identified, both now fixed; the
-freeze is the signature of the first one.
+**1. Never create a webview window from a synchronous command.** Tauri's
+own documentation states: *"On Windows, this function deadlocks when used
+in a synchronous command or event handlers"* — WebView2 creation needs the
+main-thread message loop, which a synchronous command blocks. Symptom:
+every window opened after the hub is blank **and frozen**, killable only
+from the Task Manager. All 16 window-opening commands
+(`window_cmds.rs`, `match_cmds.rs`) are therefore `async`. The hub escapes
+because it is created in `setup()`; Linux/macOS escape because their
+webviews do not depend on that message pump.
 
-**1. Deadlock: webview windows created from synchronous commands (the
-primary cause).** Tauri's own documentation (`webview_window.rs`, for the
-exact version in `Cargo.lock`) states: *"On Windows, this function
-deadlocks when used in a synchronous command or event handlers"* — the
-WebView2 creation needs the main-thread message loop to be pumped, and a
-synchronous command blocks it. All of Tabulon's window-opening commands
-(`open_invitation`, `open_extensions`, `open_info`, `new_match`, …) were
-synchronous: the window shell appeared, the webview never finished
-initializing — blank *and* frozen, unkillable except via Task Manager.
-The hub escapes because it is created in `setup()`, not in a command;
-Linux/macOS escape because their webviews don't depend on that message
-pump. Fix: every command that creates a webview window is now `async`
-(16 commands across `window_cmds.rs` and `match_cmds.rs`) — async
-commands run off the main thread and the creation is dispatched
-properly. Header comments in `window_cmds.rs` explain why; do not make
-these synchronous again.
+**2. `window.__TAURI__` can arrive late in secondary webviews**
+(tauri-apps/tauri#12990, #12694): initialization scripts may run *after* a
+page's `<script type="module">`, inconsistently and CPU-load-dependent.
+Every `tauri-bridge.js` call then throws and the page boots into empty
+`data-i18n` skeletons. The bridge waits for the injection with a top-level
+`await`, which suspends the whole module graph and delays
+`DOMContentLoaded` — so no page code had to change. The wait only arms in
+a real Tauri page (`isTauriPage()`; Node test stubs must keep the lazy
+behaviour and never wait), and after 8 s logs a *non-fatal* error meaning
+the injection never arrived at all — a different problem (CSP,
+`withGlobalTauri` off, broken build). Both predicates are pure and covered
+by `tests/test-tauri-bridge-injection.mjs`.
 
-**2. Injection race: `window.__TAURI__` late in secondary webviews.** A
-separate, known WebView2 race (tauri-apps/tauri#12990, "status:
-upstream"; #12694 for the "second webview window" case): the Tauri
-initialization scripts — including the `withGlobalTauri` injection — can
-run *after* the page's `<script type="module">` for a webview created
-after startup, inconsistently and CPU-load-dependently. Every
-`tauri-bridge.js` call then throws and the page boots into empty
-`data-i18n` skeletons. Fix (`app/content/tauri-bridge.js`): the bridge
-waits for the injection with a top-level `await` before letting any
-importer run — suspending the page's whole module graph and, per the
-HTML spec for deferred module scripts, delaying `DOMContentLoaded`, so
-no page code had to change. The wait only arms inside a real Tauri page
-(`isTauriPage()`: `tauri://localhost`, `http(s)://tauri.localhost`, or
-the dev `localhost` origin — Node test stubs keep the historical
-lazy-error behavior), costs nothing when the injection already happened,
-and after 8 s logs an explicit, *non-fatal* console error — seeing that
-error means the injection never arrived at all, a different problem
-(CSP, `withGlobalTauri` off, broken build) worth reporting as such. Both
-predicates are pure and covered by
-`tests/test-tauri-bridge-injection.mjs`.
+**3. At `document_start`, `document.documentElement` can be `null`.** The
+external-dist rewriter used to call
+`observe(document.documentElement, …)` inside a `try/catch` that swallowed
+the resulting `TypeError`, so on Windows its `MutationObserver` was simply
+never installed — silently, and only there (WebKitGTK already had the
+element). Anything inserted with `innerHTML` then escaped rewriting, since
+the other hooks only see `.src` assignments and `setAttribute`: game
+thumbnails came back **500** from the app protocol for externally-loaded
+games. It now observes `document` (always present, `subtree: true` covers
+everything) and the `catch` logs instead of hiding. Two lessons worth
+keeping: a silent `catch` around setup code buys nothing, and a hook set
+matters less than the *insertion paths* it actually covers.
 
 ## Internal architecture
-
-> History: a SharedWorker architecture ("one application brain") was
-> explored and **abandoned**. In the current architecture, each match's
-> business core lives in its own `play.html` window.
 
 ```
 ┌────────────────────────────┐
@@ -719,7 +712,7 @@ predicates are pure and covered by
 
 | File (app/content/) | Role |
 |---|---|
-| `hub.html/js` | Main window: sidebar (All/Favorites/Templates/Extensions/About), game list with shortcuts (favorite, rules, quick play), detail panel (animated visuals, action buttons — including Invitation — and the game's templates). Tablet-responsive (icon sidebar < 900 px, list **or** detail view < 680 px). |
+| `hub.html/js` | Main window: sidebar (All/Favorites/Invitation/Templates/Extensions/About), game list with Quick play and Rules shortcuts, detail panel (animated visuals, action buttons — including Invitation — and the game's templates). Tablet-responsive (icon sidebar < 900 px, list **or** detail view < 680 px). |
 | `play.html/js` | The board + the match's brain: game loop (`userTurn`/`machineSearch`/remote channel), clock state, JSON save/load, snapshot, fork, pause, A/B player and skin (2D/3D) selectors in the footer. The `…` button toggles button bar ⟷ selectors. |
 | `invitation.html/js` | Remote-play entry point: join a relay match from a link, create one (id + shareable link, relay Test button), or peer-to-peer host/connect with a `TBP1-…` code. See "Remote play" above. |
 | `extensions.html/js` | Import/export/uninstall of game and module extensions (Games/Modules tabs); the hub is notified through `relay_to_window('main','extensionsChanged')` and reloads its list. |
@@ -875,11 +868,12 @@ the mechanism (`dist_override.rs` + `asset-rewrite.js`):
    guard (`..` rejected).
 3. `asset-rewrite.js` (injected through `initialization_script` on every
    window) rewrites `browser/**` and `games/**` on the fly to that
-   protocol: element attributes (script/img/link `src`/`href`, including
-   via `setAttribute`), `fetch`, `XHR`, `Image().src`, the CSSOM
-   (background set from JS), the AI worker, **and CSS text** — the text of
-   a `<style>` element and inline `style="…url(…)…"` attributes.
-   `content/**` is never redirected: the UI shell always stays embedded.
+   protocol: element attributes (`src`/`href` on script/img/link **and on
+   audio/source/video**, including via `setAttribute`), `fetch`, `XHR`,
+   `Image().src`, the CSSOM (background set from JS), the AI worker,
+   **and CSS text** — the text of a `<style>` element and inline
+   `style="…url(…)…"` attributes. `content/**` is never redirected: the
+   UI shell always stays embedded.
 4. `get_dist_info` exposes the state (external/embedded + path) to the UI.
 
 The CSS-text case (point 3) was a real gap: a game's rules page may
@@ -897,6 +891,15 @@ as a general safety net. The shared rewriting logic lives in
 `app/content/css-url-rewrite.js` (pure, tested by
 `tests/test-css-url-rewrite.mjs`, which also guards the inline copy inside
 `asset-rewrite.js` against divergence).
+
+Sounds were the same gap in a different disguise: jocly builds them in
+`UpdateSounds()` with `$("<source/>").attr("src", …)` on a **detached**
+element, and neither the tag list of the `setAttribute` hook nor the
+observer's selector included `source`/`audio`/`video` — so `.ogg`/`.mp3`
+came back 500 for externally-loaded games. Both lists now cover them.
+**A 500 is the signature of this whole family**: `dist_override.rs` only
+ever answers 200 or 404, so a 500 means the asset was never rewritten and
+went to the app protocol.
 
 Without an external dist the protocol is never hit and the script not
 injected — behaviour identical to before the feature.
