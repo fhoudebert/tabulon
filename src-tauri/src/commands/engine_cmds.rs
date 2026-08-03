@@ -113,6 +113,43 @@ pub fn engine_path() -> Option<PathBuf> {
     None
 }
 
+/// Fairy-Stockfish n'active un reseau NNUE que si le NOM DU FICHIER commence
+/// par le nom de la variante (evaluate.cpp, `on_eval_file_change`). C'est la
+/// raison pour laquelle le worker wasm de jocly ecrit toujours le reseau sous
+/// `/<variante>.nnue` dans son FS virtuel plutot que sous son nom d'origine :
+/// un meme reseau peut ainsi servir plusieurs variantes au meme materiel.
+/// On applique ici la meme regle, sinon NNUE resterait silencieusement
+/// inactif pour tout fichier au nom « generique ». Fonction pure.
+pub(crate) fn nnue_name_matches(file_name: &str, variant: &str) -> bool {
+    if variant.is_empty() {
+        return false;
+    }
+    file_name
+        .to_ascii_lowercase()
+        .starts_with(&variant.to_ascii_lowercase())
+}
+
+/// Resout un `evalFile` relatif au repertoire du binaire du moteur.
+/// Refuse tout chemin absolu ou remontant : la valeur vient de la config d'un
+/// jeu, donc potentiellement d'une extension tierce. Fonction pure (ne touche
+/// pas au disque : l'existence est verifiee par l'appelant).
+pub(crate) fn eval_file_candidate(engine_dir: &Path, eval_file: &str) -> Option<PathBuf> {
+    let rel = eval_file.trim();
+    if rel.is_empty() {
+        return None;
+    }
+    let p = Path::new(rel);
+    if p.is_absolute() {
+        return None;
+    }
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::Prefix(_)))
+    {
+        return None;
+    }
+    Some(engine_dir.join(p))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Etat
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +199,10 @@ pub struct SearchRequest {
     pub chess960: Option<bool>,
     #[serde(default)]
     pub custom_variant_ini: Option<String>,
+    /// Reseau NNUE optionnel, tel que declare dans la config du jeu
+    /// (ex. "nnue/shako.nnue"). Chemin RELATIF AU BINAIRE du moteur.
+    #[serde(default)]
+    pub eval_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -228,12 +269,23 @@ pub(crate) fn classify(line: &str) -> UciLine {
 /// impose par le moteur : VariantPath AVANT UCI_Variant (c'est au moment de
 /// `setoption name UCI_Variant` que la variante est resolue contre la liste
 /// des variantes connues + chargees). Fonction pure.
-pub(crate) fn search_commands(req: &SearchRequest, variant_path: Option<&str>) -> Vec<String> {
+pub(crate) fn search_commands(
+    req: &SearchRequest,
+    variant_path: Option<&str>,
+    eval_path: Option<&str>,
+) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(p) = variant_path {
         out.push(format!("setoption name VariantPath value {}", p));
     }
     out.push(format!("setoption name UCI_Variant value {}", req.variant));
+    // APRES UCI_Variant : c'est le changement de variante qui declenche la
+    // re-verification du reseau cote moteur ; regler EvalFile avant serait
+    // annule.
+    if let Some(p) = eval_path {
+        out.push("setoption name Use NNUE value true".to_string());
+        out.push(format!("setoption name EvalFile value {}", p));
+    }
     if let Some(s) = req.skill_level {
         out.push(format!("setoption name Skill Level value {}", s));
     }
@@ -347,6 +399,32 @@ pub async fn engine_search(
     }
 
     let path = engine_path().ok_or_else(|| "moteur natif introuvable".to_string())?;
+
+    // Reseau NNUE optionnel, cherche A COTE DU BINAIRE. Jamais bloquant :
+    // son absence signifie « evaluation classique », pas un echec de recherche.
+    let eval_path: Option<PathBuf> = request
+        .eval_file
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .and_then(|rel| {
+            let dir = path.parent()?;
+            let cand = match eval_file_candidate(dir, rel) {
+                Some(c) => c,
+                None => {
+                    log::warn!("evalFile ignore (chemin non relatif) : {}", rel);
+                    return None;
+                }
+            };
+            if !cand.is_file() {
+                log::info!(
+                    "reseau NNUE absent ({}) — evaluation classique",
+                    cand.display()
+                );
+                return None;
+            }
+            prepare_nnue(&cand, &request.variant)
+        });
+
     let (mut rx, mut child) = app
         .shell()
         .command(&path)
@@ -361,7 +439,8 @@ pub async fn engine_search(
     .await?;
 
     let path_str = variant_file.as_ref().map(|p| p.to_string_lossy().to_string());
-    for c in search_commands(&request, path_str.as_deref()) {
+    let eval_str = eval_path.as_ref().map(|p| p.to_string_lossy().to_string());
+    for c in search_commands(&request, path_str.as_deref(), eval_str.as_deref()) {
         child
             .write(format!("{}\n", c).as_bytes())
             .map_err(|e| e.to_string())?;
@@ -408,6 +487,36 @@ fn req_ini(req: &SearchRequest) -> Option<&str> {
         .filter(|s| !s.trim().is_empty())
 }
 
+/// Rend un chemin utilisable comme `EvalFile` pour cette variante.
+///
+/// Si le nom du fichier commence deja par le nom de la variante, on le passe
+/// tel quel. Sinon Fairy-Stockfish refuserait d'activer le reseau (voir
+/// `nnue_name_matches`) : on en depose une copie nommee `<variante>.nnue`
+/// dans le repertoire temporaire. La copie est mise en cache — meme taille,
+/// on ne recopie pas — car il y a un processus par recherche et ces fichiers
+/// peuvent peser plusieurs dizaines de megaoctets.
+///
+/// Ne renvoie None que si la copie echoue : on joue alors en evaluation
+/// classique plutot que d'echouer la recherche pour un gain de force.
+fn prepare_nnue(src: &Path, variant: &str) -> Option<PathBuf> {
+    let name = src.file_name()?.to_string_lossy().to_string();
+    if nnue_name_matches(&name, variant) {
+        return Some(src.to_path_buf());
+    }
+    let mut dest = std::env::temp_dir();
+    dest.push(format!("tabulon-nnue-{}.nnue", variant));
+    let src_len = std::fs::metadata(src).ok()?.len();
+    let fresh = std::fs::metadata(&dest).map(|m| m.len() == src_len).unwrap_or(false);
+    if !fresh {
+        if let Err(e) = std::fs::copy(src, &dest) {
+            log::warn!("copie du reseau NNUE impossible ({e}) — evaluation classique");
+            return None;
+        }
+        log::info!("reseau NNUE {} publie sous {}", name, dest.display());
+    }
+    Some(dest)
+}
+
 /// Interrompt la recherche en cours, s'il y en a une. Tuer le processus est
 /// suffisant et plus sur qu'un `stop` UCI : le modele est un processus par
 /// recherche, il n'y a donc aucun etat a preserver.
@@ -434,6 +543,7 @@ mod tests {
             skill_level: None,
             chess960: None,
             custom_variant_ini: None,
+            eval_file: None,
         }
     }
 
@@ -481,7 +591,7 @@ mod tests {
 
     #[test]
     fn go_depth_par_defaut_quand_aucun_budget() {
-        let c = search_commands(&req(), None);
+        let c = search_commands(&req(), None, None);
         assert_eq!(c.last().unwrap(), "go depth 12");
         assert!(c.iter().any(|l| l == "setoption name UCI_Variant value chess"));
         assert!(c.iter().any(|l| l == "isready"));
@@ -493,7 +603,7 @@ mod tests {
         let mut r = req();
         r.depth = Some(20);
         r.move_time_ms = Some(1500);
-        assert_eq!(search_commands(&r, None).last().unwrap(), "go movetime 1500");
+        assert_eq!(search_commands(&r, None, None).last().unwrap(), "go movetime 1500");
     }
 
     #[test]
@@ -501,12 +611,12 @@ mod tests {
         let mut r = req();
         r.depth = Some(8);
         r.move_time_ms = Some(0);
-        assert_eq!(search_commands(&r, None).last().unwrap(), "go depth 8");
+        assert_eq!(search_commands(&r, None, None).last().unwrap(), "go depth 8");
     }
 
     #[test]
     fn variant_path_precede_uci_variant() {
-        let c = search_commands(&req(), Some("/tmp/v.ini"));
+        let c = search_commands(&req(), Some("/tmp/v.ini"), None);
         let ip = c.iter().position(|l| l.contains("VariantPath")).unwrap();
         let iv = c.iter().position(|l| l.contains("UCI_Variant")).unwrap();
         assert!(ip < iv, "VariantPath doit preceder UCI_Variant");
@@ -514,16 +624,63 @@ mod tests {
 
     #[test]
     fn options_facultatives_absentes_par_defaut() {
-        let c = search_commands(&req(), None);
+        let c = search_commands(&req(), None, None);
         assert!(!c.iter().any(|l| l.contains("Skill Level")));
         assert!(!c.iter().any(|l| l.contains("UCI_Chess960")));
 
         let mut r = req();
         r.skill_level = Some(7);
         r.chess960 = Some(true);
-        let c = search_commands(&r, None);
+        let c = search_commands(&r, None, None);
         assert!(c.iter().any(|l| l == "setoption name Skill Level value 7"));
         assert!(c.iter().any(|l| l == "setoption name UCI_Chess960 value true"));
+    }
+
+    #[test]
+    fn nnue_actif_seulement_si_le_nom_commence_par_la_variante() {
+        // Regle de Fairy-Stockfish (evaluate.cpp, on_eval_file_change) : c'est
+        // le NOM DU FICHIER qui autorise l'activation, pas son contenu.
+        assert!(nnue_name_matches("shako.nnue", "shako"));
+        assert!(nnue_name_matches("Shako-v2.nnue", "shako")); // insensible a la casse
+        assert!(!nnue_name_matches("capablanca.nnue", "shako"));
+        assert!(!nnue_name_matches("net.nnue", "shako"));
+        assert!(!nnue_name_matches("shako.nnue", "")); // variante vide : jamais
+    }
+
+    #[test]
+    fn eval_file_reste_sous_le_repertoire_du_binaire() {
+        let dir = Path::new("/opt/tabulon/engine");
+        assert_eq!(
+            eval_file_candidate(dir, "nnue/shako.nnue"),
+            Some(PathBuf::from("/opt/tabulon/engine/nnue/shako.nnue"))
+        );
+        // La valeur vient de la config d'un jeu, donc possiblement d'une
+        // extension tierce : ni remontee, ni chemin absolu.
+        assert_eq!(eval_file_candidate(dir, "../../etc/passwd"), None);
+        assert_eq!(eval_file_candidate(dir, "nnue/../../secret"), None);
+        assert_eq!(eval_file_candidate(dir, "/etc/passwd"), None);
+        assert_eq!(eval_file_candidate(dir, "   "), None);
+    }
+
+    #[test]
+    fn eval_file_est_pose_apres_uci_variant() {
+        // Regler EvalFile avant UCI_Variant serait annule par le changement
+        // de variante cote moteur.
+        let c = search_commands(&req(), None, Some("/tmp/shako.nnue"));
+        let iv = c.iter().position(|l| l.contains("UCI_Variant")).unwrap();
+        let ie = c.iter().position(|l| l.contains("EvalFile")).unwrap();
+        assert!(iv < ie, "EvalFile doit suivre UCI_Variant");
+        assert!(c.iter().any(|l| l == "setoption name Use NNUE value true"));
+        assert!(c
+            .iter()
+            .any(|l| l == "setoption name EvalFile value /tmp/shako.nnue"));
+    }
+
+    #[test]
+    fn aucune_option_nnue_sans_reseau() {
+        let c = search_commands(&req(), None, None);
+        assert!(!c.iter().any(|l| l.contains("EvalFile")));
+        assert!(!c.iter().any(|l| l.contains("Use NNUE")));
     }
 
     #[test]

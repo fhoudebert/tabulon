@@ -464,13 +464,30 @@ URLs, so installation order does not matter.
 `tests/test-engine-native.mjs` covers the protocol with an injected RPC — no
 binary and no webview needed (20 assertions).
 
-### Known gap
+### Optional NNUE networks
 
-`evalFile` (optional NNUE networks) is **not** forwarded to the native engine:
-the wasm worker fetched it over HTTP, whereas a native binary wants a real
-file path. Expert therefore runs on classical evaluation, which is logged once
-per window. Wiring it up means resolving a path next to the binary and passing
-`EvalFile` through `SearchRequest`.
+`evalFile` (e.g. `nnue/shako.nnue`) is resolved **relative to the engine
+binary's own directory**, not to the dist: with the binary in `engine/`, the
+network goes to `engine/nnue/shako.nnue`. Absolute paths and any `..` are
+rejected — the value comes from a game's config, so possibly from a
+third-party extension.
+
+A missing network is never an error: it is logged and the search runs on
+classical evaluation, exactly like the wasm worker did.
+
+One subtlety is worth knowing. Fairy-Stockfish only activates a network when
+the **file name starts with the variant name** (`on_eval_file_change` in
+`evaluate.cpp`) — which is why Jocly's wasm worker always writes the network
+into its virtual FS as `/<variant>.nnue` rather than under its original name,
+so that one net can serve several same-piece-set variants. The native path
+applies the same rule: if the file name already matches, it is used as is;
+otherwise a copy named `<variant>.nnue` is placed in the temp directory
+(cached by size, since these files can be tens of megabytes and there is one
+process per search). Without this, NNUE would stay silently inactive for any
+generically-named network.
+
+`EvalFile` is set **after** `UCI_Variant`, since changing the variant is what
+triggers the engine's network re-check.
 
 ## Internationalization (i18n)
 

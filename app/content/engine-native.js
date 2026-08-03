@@ -32,9 +32,6 @@
 
 const FAIRY_WORKER_RE = /(^|\/)jocly\.fairyworker\.js(\?|$)/;
 
-// Un seul avertissement par fenêtre pour les options non transmises.
-let evalFileWarned = false;
-
 /**
  * Faux Worker : même surface que celle utilisée par jocly.fairy.js
  * (postMessage, onmessage, onerror, terminate).
@@ -94,11 +91,6 @@ class NativeFairyWorker {
     }
 
     _search(msg) {
-        if (msg.evalFile && !evalFileWarned) {
-            evalFileWarned = true;
-            console.info('[engine-native] réseau NNUE non transmis au moteur natif ' +
-                '(évaluation classique) :', msg.evalFile);
-        }
         this._stopped = false;
         this._searching = true;
         this._rpc.call('engine_search', {
@@ -109,6 +101,10 @@ class NativeFairyWorker {
             skillLevel:       msg.skillLevel,
             chess960:         msg.chess960,
             customVariantIni: msg.customVariantIni,
+            // Reseau NNUE optionnel : cote natif il est cherche A COTE DU
+            // BINAIRE du moteur (le worker wasm, lui, le telechargeait depuis
+            // le dist). Absent => evaluation classique, jamais un echec.
+            evalFile:         msg.evalFile,
         })
             .then((res) => {
                 this._searching = false;

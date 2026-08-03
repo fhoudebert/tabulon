@@ -69,6 +69,7 @@ console.log('Test 3 - Search');
     w.postMessage({
         type: 'Search', variant: 'chess', fen: 'FEN', depth: 12,
         moveTimeMs: 1000, skillLevel: 5, chess960: true, customVariantIni: 'ini',
+        evalFile: 'nnue/chess.nnue',
     });
     await settle();
     ok(seen.length === 1 && seen[0].type === 'Done', 'recherche -> Done');
@@ -79,6 +80,8 @@ console.log('Test 3 - Search');
        sent.skillLevel === 5 && sent.chess960 === true && sent.customVariantIni === 'ini' &&
        sent.depth === 12,
        'tous les champs de niveau sont relayes sans traduction');
+    ok(sent.evalFile === 'nnue/chess.nnue',
+       'evalFile est relaye (resolu cote Rust, relatif au binaire)');
 }
 
 console.log('Test 4 - Stop pendant une recherche');
