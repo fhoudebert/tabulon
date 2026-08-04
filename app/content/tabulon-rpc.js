@@ -150,6 +150,9 @@ function buildPayload(method, args) {
     engine_probe:        ()                        => ({}),
     engine_search:       ([request])               => ({ request }),
     engine_stop:         ()                        => ({}),
+    scan_probe:          ()                        => ({}),
+    scan_search:         ([request])               => ({ request }),
+    scan_stop:           ()                        => ({}),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),

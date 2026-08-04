@@ -53,15 +53,6 @@ const SEARCH_GRACE: Duration = Duration::from_secs(20);
 // Localisation du binaire
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Nom de fichier attendu selon la plateforme.
-fn engine_file_name() -> String {
-    if cfg!(target_os = "windows") {
-        format!("{}.exe", ENGINE_BIN)
-    } else {
-        ENGINE_BIN.to_string()
-    }
-}
-
 /// Cherche le binaire du moteur, dans l'ordre :
 ///   1. `TABULON_ENGINE` (chemin complet) — echappatoire de test et moyen
 ///      d'utiliser une build maison sans reinstaller ;
@@ -74,15 +65,26 @@ fn engine_file_name() -> String {
 /// Volontairement PAS de recherche dans le PATH : lancer un binaire
 /// arbitraire trouve dans l'environnement serait une surprise desagreable.
 pub fn engine_path() -> Option<PathBuf> {
-    let name = engine_file_name();
+    binary_path(ENGINE_BIN, "TABULON_ENGINE")
+}
 
-    if let Ok(p) = std::env::var("TABULON_ENGINE") {
+/// Meme logique de recherche pour n'importe quel moteur natif (fairy-stockfish,
+/// scan...) : variable d'environnement dediee, puis `engine/<nom>` et `<nom>`
+/// a cote de l'executable.
+pub(crate) fn binary_path(stem: &str, env_var: &str) -> Option<PathBuf> {
+    let name = if cfg!(target_os = "windows") {
+        format!("{}.exe", stem)
+    } else {
+        stem.to_string()
+    };
+
+    if let Ok(p) = std::env::var(env_var) {
         if !p.is_empty() {
             let p = PathBuf::from(p);
             if p.is_file() {
                 return Some(p);
             }
-            log::warn!("TABULON_ENGINE ne designe pas un fichier : {}", p.display());
+            log::warn!("{} ne designe pas un fichier : {}", env_var, p.display());
             return None;
         }
     }
@@ -104,12 +106,12 @@ pub fn engine_path() -> Option<PathBuf> {
     for base in bases {
         for cand in [base.join("engine").join(&name), base.join(&name)] {
             if cand.is_file() {
-                log::info!("moteur natif : {}", cand.display());
+                log::info!("moteur natif {} : {}", stem, cand.display());
                 return Some(cand);
             }
         }
     }
-    log::info!("aucun moteur natif trouve — le niveau Expert se rabattra sur l'IA native");
+    log::info!("aucun binaire {} trouve — le niveau Expert se rabattra sur l'IA native", stem);
     None
 }
 
@@ -161,7 +163,7 @@ pub struct EngineState {
 }
 
 impl EngineState {
-    fn set(&self, child: CommandChild) {
+    pub(crate) fn set(&self, child: CommandChild) {
         if let Ok(mut slot) = self.current.lock() {
             // Une recherche deja en vol est remplacee : on tue l'ancienne
             // plutot que de laisser un processus orphelin consommer un cœur.
@@ -172,7 +174,7 @@ impl EngineState {
         }
     }
 
-    fn take(&self) -> Option<CommandChild> {
+    pub(crate) fn take(&self) -> Option<CommandChild> {
         self.current.lock().ok().and_then(|mut s| s.take())
     }
 }
@@ -342,7 +344,7 @@ pub(crate) fn search_budget(req: &SearchRequest) -> Duration {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Lit les lignes du moteur jusqu'a ce que `f` renvoie Some, ou expiration.
-async fn read_until<T, F>(
+pub(crate) async fn read_until<T, F>(
     rx: &mut tauri::async_runtime::Receiver<CommandEvent>,
     timeout: Duration,
     mut f: F,
