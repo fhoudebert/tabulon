@@ -32,6 +32,12 @@ function UpdateButtons() {
     dis('stepback',    currentIndex >= 0);
     dis('stepforward', currentIndex < moveCount - 1);
     dis('end',         currentIndex < moveCount - 1);
+    // Jouer/Pause : comme dans JoclyBoard, un seul des deux est VISIBLE, et
+    // "Jouer" est DESACTIVE quand il n'y a plus rien a derouler.
+    vis('play',  !playing);
+    vis('pause',  playing);
+    dis('play',  currentIndex < moveCount - 1);
+    dis('resume', true);
 }
 
 function SelectMove(index) {
@@ -60,11 +66,7 @@ function UpdateHistory(data) {
         span.className = 'move';
         span.setAttribute('data-index', index);
         span.textContent = moveStr;
-        span.addEventListener('click', () => {
-            SelectMove(index);
-            // Rollback au coup selectionne dans play.html
-            emit('play-req:' + matchId + ':rollback-to', { index: index + 1 });
-        });
+        span.addEventListener('click', () => { AutoplayStop(); GoTo(index); });
         movesElem.appendChild(span);
     });
 
@@ -98,6 +100,53 @@ async function SavePJN() {
         .catch(e => console.warn('[history] save book failed:', e));
 }
 
+// Lecture automatique. Les boutons Jouer/Pause du HTML n'avaient AUCUN
+// gestionnaire : ils ne faisaient rien. On rejoue les coups un par un en
+// reutilisant exactement le meme chemin que "coup suivant".
+let playing = false;
+let autoplayTimer = null;
+let stepAck = null;
+const AUTOPLAY_MS  = 900;   // respiration entre deux coups
+const STEP_TIMEOUT = 4000;  // filet si play.html ne repond pas
+
+function GoTo(index) {
+    const idx = Math.max(-1, Math.min(moveCount - 1, index));
+    SelectMove(idx);
+    emit('play-req:' + matchId + ':rollback-to', { index: idx + 1 });
+    return idx;
+}
+
+function AutoplayStop() {
+    playing = false;
+    if (autoplayTimer) { clearTimeout(autoplayTimer); autoplayTimer = null; }
+    stepAck = null;
+    UpdateButtons();
+}
+
+// Attend que play.html ait REELLEMENT applique le coup avant d'enchainer --
+// equivalent du chainage sur la promesse de freeze() dans JoclyBoard. Un
+// intervalle fixe empilerait les demandes si un coup est lent a redessiner.
+function WaitStep() {
+    return new Promise((resolve) => {
+        const done = () => { stepAck = null; clearTimeout(guard); resolve(); };
+        const guard = setTimeout(done, STEP_TIMEOUT);
+        stepAck = done;
+    });
+}
+
+async function AutoplayStart() {
+    if (playing) return;
+    playing = true;
+    UpdateButtons();
+    while (playing && currentIndex < moveCount - 1) {
+        GoTo(currentIndex + 1);
+        await WaitStep();
+        if (!playing) break;
+        await new Promise((r) => { autoplayTimer = setTimeout(r, AUTOPLAY_MS); });
+    }
+    AutoplayStop();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     await twu.init(t('history.title', { id: matchId }));
@@ -108,27 +157,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         twu.ready();
     });
 
-    // Rafraichir quand play.html signale un nouveau coup
-    listen('play-event:' + matchId + ':move-played', () => RequestHistory());
+    // Accuse de reception d'un rollback : debloque l'etape de lecture auto.
+    listen('play-rep:' + matchId + ':rollback-to', () => { if (stepAck) stepAck(); });
 
-    btn('start')?.addEventListener('click', () => {
-        SelectMove(-1);
-        emit('play-req:' + matchId + ':rollback-to', { index: 0 });
-    });
-    btn('stepback')?.addEventListener('click', () => {
-        const idx = Math.max(-1, currentIndex - 1);
-        SelectMove(idx);
-        emit('play-req:' + matchId + ':rollback-to', { index: idx + 1 });
-    });
-    btn('stepforward')?.addEventListener('click', () => {
-        const idx = Math.min(moveCount - 1, currentIndex + 1);
-        SelectMove(idx);
-        emit('play-req:' + matchId + ':rollback-to', { index: idx + 1 });
-    });
-    btn('end')?.addEventListener('click', () => {
-        SelectMove(moveCount - 1);
-        emit('play-req:' + matchId + ':rollback-to', { index: moveCount });
-    });
+    // Rafraichir quand play.html signale un nouveau coup
+    listen('play-event:' + matchId + ':move-played', () => { AutoplayStop(); RequestHistory(); });
+
+    btn('start')?.addEventListener('click',       () => { AutoplayStop(); GoTo(-1); });
+    btn('stepback')?.addEventListener('click',    () => { AutoplayStop(); GoTo(currentIndex - 1); });
+    btn('stepforward')?.addEventListener('click', () => { AutoplayStop(); GoTo(currentIndex + 1); });
+    btn('end')?.addEventListener('click',         () => { AutoplayStop(); GoTo(moveCount - 1); });
+    btn('play')?.addEventListener('click',        () => AutoplayStart());
+    btn('pause')?.addEventListener('click',       () => AutoplayStop());
     btn('resume')?.addEventListener('click', () => {
         // Reprendre la partie depuis le coup selectionne
         emit('play-req:' + matchId + ':rollback-to', { index: currentIndex + 1 });

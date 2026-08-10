@@ -1038,3 +1038,33 @@ strong { font-weight: 600; }
   flex: 1;
   font-size: 11px;
 }
+
+/* ── Fenêtre Historique : liste des coups ────────────────────────────────────
+   Reprise du style de JoclyBoard (styles.css), que le portage avait laissé de
+   côté : sans lui les coups s'empilent verticalement, sans survol ni
+   surbrillance — donc aucune indication visuelle de la position courante, ce
+   qui rend la navigation dans la partie illisible. Les couleurs passent par
+   les variables de Tabulon plutôt que par les valeurs en dur de l'original. */
+.window-history #moves {
+  padding: 8px;
+}
+.window-history #moves > * {
+  float: left;
+  margin: 0;
+  padding: 2px 4px;
+}
+.window-history .movenumber {
+  color: var(--text-muted);
+}
+.window-history .move {
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.window-history .move:hover {
+  background-color: var(--bg-alt);
+}
+.window-history .move.active {
+  background-color: var(--primary);
+  color: var(--primary-fg);
+  cursor: default;
+}

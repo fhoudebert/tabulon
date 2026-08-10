@@ -670,6 +670,10 @@ function initSatelliteListeners() {
         cancelRemoteWait('rollback');
         await joclyMatch.rollback(payload?.index ?? 0).catch(e => console.warn('[play] rollback:', e));
         await resyncRemoteChannelBaseline();
+        // Accuse de reception : la fenetre Historique enchaine sa lecture
+        // automatique SUR CET EVENEMENT, et non sur un minuteur fixe, pour ne
+        // pas empiler les demandes quand un coup est lent a redessiner.
+        emit(`play-rep:${matchId}:rollback-to`, { index: payload?.index ?? 0 }).catch(() => {});
     });
 
     // get-template-data : données complètes pour "Save template"

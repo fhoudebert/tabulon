@@ -10,6 +10,7 @@ tabulon
 node_modules
 dist
 ext
+ext/*
 dist-ssr
 dist-minimal
 src-tauri/Cargo.lock
