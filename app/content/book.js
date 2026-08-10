@@ -13,6 +13,10 @@ import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
+import { ExtractMoves, BookFen } from './book-format.js';
+
+// Re-export : tests/test-book.mjs importe ExtractMoves depuis ce module.
+export { ExtractMoves };
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);
@@ -26,23 +30,6 @@ const fileName = (function () {
     }
     return 'PJN';
 })();
-
-// Extrait les coups SAN du texte d'une partie PGN/PJN : retire les tags, les
-// commentaires {…}, les variantes (…), les numéros de coups, les NAG $n et
-// le résultat. Exporté pour les tests.
-export function ExtractMoves(text) {
-    const parts = String(text).replace(/\r\n?/g, '\n').split(/\n\n+/);
-    const movesPart = (parts.length > 1 ? parts.slice(1) : parts).join('\n');
-    let s = movesPart.replace(/\{[^}]*\}/g, ' ');
-    while (/\([^()]*\)/.test(s)) s = s.replace(/\([^()]*\)/g, ' ');
-    return s.split(/\s+/)
-        .map(tok => tok.replace(/^\d+\.+/, ''))     // "12.Nf3" → "Nf3"
-        .filter(tok => tok
-            && !/^\d+\.+$/.test(tok)                 // "12."
-            && !/^\$\d+$/.test(tok)                  // NAG
-            && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok) // résultat
-            && !/^\[/.test(tok));
-}
 
 function ShowError(error) {
     document.querySelector('.book-content ul').style.display = 'none';
@@ -71,10 +58,19 @@ async function OpenBookMatch(match) {
     const id = 'book-' + Date.now();
     const store = await Store.load('tabulon.json');
     await store.set('fork:' + id, {
-        book: { moves, playerA: match.playerA, playerB: match.playerB },
+        book: {
+            moves,
+            playerA: match.playerA,
+            playerB: match.playerB,
+            // Tag [FEN] : la partie ne part pas de la position standard
+            // (probleme, finale, position d'etude). play.js charge cette
+            // position AVANT de rejouer les coups.
+            initialBoard: BookFen(match.tags),
+        },
     });
     tRpc.call('new_match', gameName, null, id);
 }
+
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();

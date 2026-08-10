@@ -8,12 +8,14 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
+import { ParseSolution } from './book-format.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
 import { joinPeerMatch } from './remote-peer-channel.js';
 
 // Réécrit un chemin d'asset vers le dist externe si actif (window.__distURL
 // est fourni par asset-rewrite.js ; sinon chemin inchangé).
 function distURL(u) { return (window.__distURL ? window.__distURL(u) : u); }
+
 
 let store;
 let gameList = [], gamesMap = {};
@@ -250,13 +252,27 @@ function InitDetailButtons() {
 
     document.getElementById('fileElem').addEventListener('change', function () {
         if (!g()) return;
+        const name = this.value;
         const reader = new FileReader();
         reader.readAsText(this.files[0]);
         reader.onload = async (e) => {
-            // Le contenu passe par le store (trop gros pour l'URL) :
-            // book.js le lira et le parsera via la commande Rust parse_pjn.
-            await store.set('book:' + g(), { fileName: this.value, data: e.target.result });
-            tRpc.call('open_book', g(), this.value, '');
+            const text = e.target.result;
+            const solution = ParseSolution(text);
+            if (solution) {
+                // Sauvegarde Jocly ({game, initialBoard, playedMoves}) : c'est
+                // exactement ce que joclyMatch.load() attend, donc on la depose
+                // telle quelle comme fork -- play.js la charge sans rejeu ni
+                // interpretation de notation. Le jeu vient du fichier, pas de
+                // la fiche affichee : une solution designe son propre jeu.
+                const id = 'sol-' + Date.now();
+                await store.set('fork:' + id, { solution });
+                tRpc.call('new_match', solution.game || g(), null, id);
+                return;
+            }
+            // Sinon PGN/PJN : le contenu passe par le store (trop gros pour
+            // l'URL) et book.js le parse via la commande Rust parse_pjn.
+            await store.set('book:' + g(), { fileName: name, data: text });
+            tRpc.call('open_book', g(), name, '');
         };
         this.value = '';
     });

@@ -657,8 +657,14 @@ function initSatelliteListeners() {
         // en une seule transaction avec l'iframe -- plus fiable que n appels
         // séquentiels où la sérialisation JSON des objets move peut les corrompre.
         const strings = await joclyMatch.getMoveString(moves).catch(() => null);
+        // initialBoard : position de DEPART de la partie (null si c'est la
+        // position standard). La fenetre Historique en a besoin pour ecrire
+        // un tag [FEN] a la sauvegarde, sans quoi une partie partie d'un
+        // probleme se rechargerait depuis la position initiale du jeu.
+        const saved = await joclyMatch.save().catch(() => null);
         await emit(`play-rep:${matchId}:get-played-moves`, {
-            moves: Array.isArray(strings) ? strings : moves.map(() => '?')
+            moves: Array.isArray(strings) ? strings : moves.map(() => '?'),
+            initialBoard: saved?.initialBoard || null,
         });
     });
 
@@ -1148,6 +1154,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // puis appliqués par playMove. On tolère les décorations (+ # ! ?) en
     // retentant sans elles si pickMove ne trouve pas.
     async function BookReplay(book) {
+        // Tag [FEN] du PGN/PJN : la partie ne commence PAS a la position
+        // standard (probleme, finale, position d'etude). Sans ce chargement
+        // prealable, pickMove chercherait les coups dans la position initiale
+        // du jeu et echouerait des le premier.
+        if (book.initialBoard) {
+            try {
+                await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: book.initialBoard });
+            } catch (e) {
+                console.warn('[play] book: position de depart refusee:', e.message || e);
+                UpdateFooter(t('play.loadFailed'));
+            }
+        }
         let played = 0;
         for (const tok of book.moves || []) {
             let move = await joclyMatch.pickMove(tok).catch(() => null);
@@ -1169,6 +1187,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const saveData = await store?.get('fork:' + forkId).catch(() => null);
         if (saveData?.book) {
             await BookReplay(saveData.book);
+            store?.delete('fork:' + forkId).catch(() => {});
+        } else if (saveData?.solution) {
+            // Solution de probleme chargee depuis un fichier JSON : c'est deja
+            // le format de joclyMatch.save(), donc rien a interpreter. On MET
+            // EN PAUSE -- sinon l'IA jouerait aussitot par-dessus la solution
+            // qu'on vient d'ouvrir -- et on previent la fenetre Historique,
+            // qui n'a aucun autre moyen de savoir que des coups existent.
+            try {
+                await joclyMatch.load(saveData.solution);
+                paused = true;
+                UpdatePause();
+                emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+            } catch (e) {
+                console.warn('[play] solution: chargement refuse:', e.message || e);
+                UpdateFooter(t('play.loadFailed'));
+            }
             store?.delete('fork:' + forkId).catch(() => {});
         } else if (saveData) {
             await joclyMatch.load(saveData).catch(e => console.warn('[play] fork load failed:', e));

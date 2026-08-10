@@ -5,6 +5,7 @@
 
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
+import { BuildPJN } from './book-format.js';
 import { listen, emit, save as saveDialog, Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
 
@@ -14,6 +15,9 @@ const matchId  = parseInt(new URLSearchParams(window.location.search).get('id') 
 let currentIndex = -1;
 let moveCount    = 0;
 let moveStrings  = [];  // liste de chaines de coups (ex. ["e4", "e5", ...])
+// Position de depart quand elle n'est PAS la position standard du jeu
+// (probleme, finale) : ecrite en tag [FEN] a la sauvegarde.
+let initialBoard = null;
 
 function btn(action) {
     return document.querySelector('.toolbar-actions button[data-action=' + action + ']');
@@ -50,6 +54,7 @@ function SelectMove(index) {
 
 function UpdateHistory(data) {
     const moves = data.moves || [];
+    initialBoard = data.initialBoard || null;
     moveStrings = moves.map(m => typeof m === 'string' ? m : (m.toString ? m.toString() : JSON.stringify(m)));
     moveCount   = moveStrings.length;
 
@@ -82,15 +87,7 @@ function RequestHistory() {
 // correctif que le bouton Save de la fenêtre de jeu). Coups numérotés
 // ("1. e2-e4 e7-e5 2. …") pour rester relisible par parse_pjn/pickMove.
 async function SavePJN() {
-    const date = new Date();
-    const tags = [
-        '[JoclyGame "' + gameName + '"]',
-        '[Date "' + date.getFullYear() + '.' + (date.getMonth()+1) + '.' + date.getDate() + '"]',
-        '[PlyCount "' + moveCount + '"]',
-    ];
-    const numbered = moveStrings.map((mv, i) =>
-        (i % 2 === 0 ? Math.floor(i / 2) + 1 + '. ' : '') + mv).join(' ');
-    const text = tags.join('\n') + '\n\n' + numbered + '\n';
+    const text = BuildPJN(gameName, moveStrings, initialBoard);
     const path = await saveDialog({
         defaultPath: gameName + '.pjn',
         filters: [{ name: 'PJN', extensions: ['pjn', 'pgn'] }],
