@@ -86,7 +86,7 @@
                     <button id="quickplay" class="btn btn-positive"><span class="icon icon-play"></span> <span data-i18n="btn.quickPlay">Quick play</span></button>
                     <button id="clockedplay" class="btn btn-primary"><span class="icon icon-clock"></span> <span data-i18n="btn.clockedPlay">Clocked play</span></button>
                     <button id="invitation" class="btn btn-primary" title="" data-i18n-title="tip.invitation"><span class="icon icon-users"></span> <span data-i18n="btn.invitation">Invitation</span></button>
-                    <input type="file" id="fileElem" accept=".pgn,.pdn,.pjn,.json" style="display:none"/>
+                    <input type="file" id="fileElem" accept=".pgn,.pdn,.pjn,.json,.ini" style="display:none"/>
                     <button id="openbook" class="btn btn-primary"><span class="icon icon-book"></span> <span data-i18n="btn.openBook">Open book</span></button>
                     <button id="boardstate" class="btn btn-primary"><span class="icon icon-location"></span> <span data-i18n="btn.boardState">Board state</span></button>
                     <button id="unfavorite" class="btn btn-primary" style="display:none"><span class="icon icon-star"></span> <span data-i18n="btn.favorite">Favorite</span></button>
@@ -126,6 +126,30 @@
 							<div class="invitation-actions">
 								<button id="hub-button-peer-join" class="btn btn-primary"><span data-i18n="invitation.peerJoin">Connect</span></button>
 							</div>
+						</div>
+					</div>
+					<div class="pane" id="loadgame-pane" style="display:none">
+						<div class="loadgame-container">
+							<h4 data-i18n="load.heading">Load a game</h4>
+							<p class="loadgame-intro" data-i18n="load.intro"></p>
+
+							<ul class="loadgame-kinds">
+								<li><strong data-i18n="load.kind.book">A book</strong> - <span data-i18n="load.kind.bookText"></span></li>
+								<li><strong data-i18n="load.kind.game">A game</strong> - <span data-i18n="load.kind.gameText"></span></li>
+								<li><strong data-i18n="load.kind.problem">A problem</strong> - <span data-i18n="load.kind.problemText"></span></li>
+							</ul>
+
+							<p class="loadgame-formats" data-i18n="load.formats"></p>
+							<p class="loadgame-history" data-i18n="load.history"></p>
+
+							<div class="loadgame-actions">
+								<button id="loadgame-choose" class="btn btn-positive"><span class="icon icon-folder"></span> <span data-i18n="load.choose">Choose a file…</span></button>
+							</div>
+							<p id="loadgame-status" class="loadgame-status"></p>
+
+							<h5 class="loadgame-samples-title" data-i18n="load.samplesTitle">Examples</h5>
+							<p class="loadgame-samples-intro" data-i18n="load.samplesIntro"></p>
+							<div id="loadgame-samples" class="loadgame-samples"></div>
 						</div>
 					</div>
 					<div class="pane" id="about" style="display:none">

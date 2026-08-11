@@ -5,10 +5,12 @@
 // une fenêtre séparée, la sélection est une navigation interne JS).
 import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
-import { open, Store, listen } from './tauri-bridge.js';
+import { open, Store, listen, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
-import { ParseSolution, BookGame } from './book-format.js';
+import { ParseSolution, BookGame, BookVariant, FairyGameIndex } from './book-format.js';
+import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
+import { SAMPLES } from './sample-books.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
 import { joinPeerMatch } from './remote-peer-channel.js';
 
@@ -23,6 +25,10 @@ let allGameList = [], favGameList = [], templateList = [];
 let favoritesMap = {};   // gameName -> timestamp ; état des étoiles de la liste
 let filterTimer = null;
 let appInfo = { name: 'Tabulon', version: '', homepage: '' };
+// variante Fairy-Stockfish -> jeu Jocly, construit une fois depuis le
+// catalogue (voir FairyGameIndex). Sert a ouvrir un PGN qui se declare par
+// [Variant "shako"] plutot que par [JoclyGame "shako-chess"].
+let fairyMap = {};
 
 // ── Panneau de détail (ex-game.js) ────────────────────────────────────────────
 let currentGame = null;     // gameName actuellement affiché dans le détail
@@ -278,10 +284,14 @@ function InitFileInput() {
     const input = document.getElementById('fileElem');
     if (!input) { console.error('[hub] #fileElem absent — chargement de fichier indisponible'); return; }
     input.addEventListener('change', function () {
-        const name = this.value;
         const file = this.files[0];
         this.value = '';
         if (!file) return;
+        // file.name et NON this.value : les navigateurs renvoient la
+        // "C:\fakepath\" du selecteur natif, et rien du tout sous jsdom. Ce
+        // nom sert de repli au libelle de la partie et au resume d'un
+        // variants.ini -- avec this.value ils tombaient a vide.
+        const name = file.name;
         const reader = new FileReader();
         reader.onload = async (e) => {
             try { await OpenGameFile(e.target.result, name); }
@@ -308,6 +318,21 @@ function Notify(text) {
     notifier.classList.remove('hidden');
 }
 
+// Correspondance variante Fairy-Stockfish -> jeu Jocly. Construite A LA
+// DEMANDE et une seule fois : elle demande de lire la config de chaque jeu du
+// catalogue (une centaine), ce qui est trop cher pour le faire au demarrage
+// alors que la plupart des sessions n'ouvrent jamais de fichier Fairy.
+async function FairyMap() {
+    if (Object.keys(fairyMap).length) return fairyMap;
+    const configs = {};
+    await Promise.all(Object.keys(gamesMap).map(async (n) => {
+        configs[n] = await Jocly.getGameConfig(n).catch(() => null);
+    }));
+    fairyMap = FairyGameIndex(configs);
+    console.info('[hub] variantes Fairy-Stockfish reconnues :', Object.keys(fairyMap).length);
+    return fairyMap;
+}
+
 // Choisit le jeu d'un fichier : celui qu'il declare s'il existe dans le
 // catalogue, sinon celui de la fiche affichee. Le fichier fait autorite parce
 // que rejouer sa notation dans un AUTRE jeu ne peut pas marcher -- plateau et
@@ -331,12 +356,33 @@ async function OpenGameFile(text, fileName) {
         return tRpc.call('new_match', r.game, null, id);
     }
 
-    // 2. PGN/PJN : on lit d'abord les tags pour savoir de quel jeu il s'agit
-    //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers).
+    // 2. variants.ini de Fairy-Stockfish : ce n'est PAS une partie mais une
+    //    declaration de regles. On ne peut donc pas l'"ouvrir" ; on dit ce
+    //    qu'il contient, ce qui est deja la reponse a la question que se pose
+    //    quelqu'un qui vient de le deposer ici.
+    if (IsVariantsIni(text)) return OpenVariantsIni(text, fileName);
+
+    // 3. PGN/PJN : on lit d'abord les tags pour savoir de quel jeu il s'agit
+    //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers,
+    //    [Variant] par Fairy-Stockfish et les serveurs d'echecs).
     let declared = null;
     try {
         const matches = await tRpc.call('parse_pjn', text);
-        declared = BookGame(matches?.[0]?.tags);
+        const tags = matches?.[0]?.tags;
+        declared = BookGame(tags);
+        if (!declared || !gamesMap[declared]) {
+            // Repechage. `declared` lui-meme est essaye comme nom de
+            // variante : les deux nomenclatures se ressemblent assez pour
+            // qu'on ecrive [JoclyGame "knightmate"] en croyant nommer un jeu
+            // Jocly, alors que "knightmate" est le nom Fairy-Stockfish et que
+            // le jeu s'appelle "knightmate-chess". Le catalogue tranche.
+            const variant = BookVariant(tags) || declared;
+            const mapped = variant ? (await FairyMap())[String(variant).toLowerCase()] : null;
+            if (mapped) {
+                console.info('[hub]', variant, 'est une variante Fairy-Stockfish — jeu Jocly :', mapped);
+                declared = mapped;
+            }
+        }
     } catch (e) { console.warn('[hub] parse_pjn:', e.message || e); }
 
     const r = ResolveGame(declared, selected);
@@ -344,6 +390,112 @@ async function OpenGameFile(text, fileName) {
     if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
     await store.set('book:' + r.game, { fileName, data: text });
     tRpc.call('open_book', r.game, fileName, '');
+}
+
+// Un variants.ini de Fairy-Stockfish ne contient aucune partie : c'est un
+// fichier de REGLES. On ne fait donc pas semblant de l'ouvrir. Ce qu'on en
+// tire de concret aujourd'hui, c'est la position de depart de chaque variante
+// et la taille de son plateau : quand un jeu du catalogue joue deja la meme
+// variante, cette position est ouvrable telle quelle.
+//
+// Le reste (faire jouer une variante que Jocly ne connait pas) suppose un
+// module de jeu generique pilote par le moteur, cote jocly2 -- voir la note
+// FAIRY-STOCKFISH du README. On le dit ici plutot que d'echouer en silence.
+async function OpenVariantsIni(text, fileName) {
+    const variants = ReadVariantsIni(text);
+    if (!variants.length) return Notify(t('hub.iniEmpty'));
+    const map = await FairyMap();
+    const playable = variants.filter(v => map[v.name.toLowerCase()]);
+    console.info('[hub] variants.ini :', variants.length, 'variantes,',
+        playable.length, 'jouables par un jeu du catalogue :',
+        playable.map(v => v.name + ' -> ' + map[v.name.toLowerCase()]).join(', '));
+
+    SetNav('loadgame');
+    document.getElementById('loadgame-pane').style.display = '';
+    const status = document.getElementById('loadgame-status');
+    if (status) {
+        status.textContent = t('load.iniSummary', {
+            file: String(fileName || '').replace(/^.*[/\\]/, ''),
+            total: variants.length, playable: playable.length,
+        });
+    }
+    // Les positions de depart des variantes reconnues deviennent des
+    // vignettes lancables, au meme titre que les exemples livres.
+    RenderSamples(playable.slice(0, 12).map(v => ({
+        id: 'ini-' + v.name,
+        game: map[v.name.toLowerCase()],
+        kind: 'position',
+        fileName: v.name + '.pjn',
+        text: '[JoclyGame "' + map[v.name.toLowerCase()] + '"]\n[Event "' + v.name + '"]\n'
+            + (v.startFen ? '[FEN "' + v.startFen.replace(/"/g, "'") + '"]\n[SetUp "1"]\n' : '')
+            + '[PlyCount "0"]\n\n',
+    })));
+}
+
+// ── Ecran "Charger une partie" ────────────────────────────────────────────────
+//
+// Le clic sur l'entree de la barre laterale ouvrait directement le selecteur
+// de fichier natif, sans un mot d'explication : rien ne disait quels formats
+// passent, ni qu'un meme bouton accepte aussi bien un livre de plusieurs
+// parties qu'un probleme d'une position et neuf coups. Cet ecran le dit, et
+// donne des exemples a lancer ou a enregistrer pour voir a quoi ca ressemble.
+function RenderSamples(samples) {
+    const container = document.getElementById('loadgame-samples');
+    if (!container) return;
+    container.innerHTML = '';
+    // Un exemple dont le jeu n'est pas installe est masque plutot qu'affiche
+    // mort : une installation reduite (extensions non importees) ne doit pas
+    // proposer un bouton qui ne peut rien lancer.
+    for (const sample of samples.filter(sp => gamesMap[sp.game])) {
+        const game = gamesMap[sample.game];
+        const div = document.createElement('div');
+        div.className = 'loadgame-sample';
+        div.innerHTML = `
+            <img src="${distURL(game.thumbnail)}" width="42" height="42" alt=""/>
+            <div class="loadgame-sample-body">
+              <div class="loadgame-sample-name"></div>
+              <div class="loadgame-sample-desc"></div>
+              <div class="loadgame-sample-buttons">
+                <button class="btn btn-positive sample-play"></button>
+                <button class="btn btn-default sample-save"></button>
+              </div>
+            </div>`;
+        div.querySelector('.loadgame-sample-name').textContent = sample.fileName;
+        div.querySelector('.loadgame-sample-desc').textContent =
+            game.title + ' — ' + t('load.kind.' + sample.kind);
+        const play = div.querySelector('.sample-play');
+        const save = div.querySelector('.sample-save');
+        play.textContent = t('load.play');
+        save.textContent = t('load.save');
+        // Lancer : exactement le meme circuit qu'un fichier choisi a la main.
+        // Si ce chemin casse un jour, les exemples cassent avec lui -- c'est
+        // voulu, ils servent aussi de banc d'essai.
+        play.addEventListener('click', async () => {
+            try { await OpenGameFile(sample.text, sample.fileName); }
+            catch (e) { console.error('[hub] exemple:', e); Notify(t('hub.loadFailed')); }
+        });
+        save.addEventListener('click', () => SaveSample(sample));
+        container.appendChild(div);
+    }
+}
+
+async function SaveSample(sample) {
+    const ext = sample.fileName.replace(/^.*\./, '');
+    const path = await saveDialog({
+        defaultPath: sample.fileName,
+        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    }).catch(() => null);
+    if (!path) return;
+    await tRpc.call('save_text_file', path, sample.text)
+        .catch(e => console.warn('[hub] enregistrement de l\'exemple:', e));
+}
+
+function ShowLoadGame() {
+    SetNav('loadgame');
+    document.getElementById('loadgame-pane').style.display = '';
+    const status = document.getElementById('loadgame-status');
+    if (status) status.textContent = '';
+    RenderSamples(SAMPLES);
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────
@@ -550,7 +702,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         SetNav('templates'); document.getElementById('template-list').style.display = '';
         await UpdateTemplates(); UpdateTemplateList();
     });
-    document.getElementById('nav-loadgame').addEventListener('click', () => {
+    document.getElementById('nav-loadgame').addEventListener('click', ShowLoadGame);
+    document.getElementById('loadgame-choose')?.addEventListener('click', () => {
         document.getElementById('fileElem').click();
     });
     document.getElementById('nav-invitation').addEventListener('click', () => {

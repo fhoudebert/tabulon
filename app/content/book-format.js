@@ -1,5 +1,10 @@
 // app/content/book-format.js
 //
+// VOCABULAIRE. Un "ply" (PGN) est un COUP : le coup d'un seul camp. Ce que
+// les echecs numerotent "1." est une PAIRE DE COUPS (full move), soit deux
+// coups. [PlyCount "9"] annonce donc 9 coups, c'est-a-dire 4 paires de coups
+// et demie. Partout ici et dans l'interface, "coup" = ply.
+//
 // Lecture et ecriture des formats de partie : PJN/PGN (texte) et solutions
 // JSON (format de joclyMatch.save()). Module PUR -- aucun DOM, aucun Tauri --
 // pour etre testable directement sous Node, comme localized-field.js ou
@@ -87,12 +92,17 @@ export async function ReplayBookMoves(tokens, { pick, play }) {
  *   1. les joueurs, s'ils sont nommes          -> "Alice vs Bob"
  *   2. sinon [Event]                           -> "es3"
  *   3. sinon le nom du fichier, sans extension -> "es3"
- *   4. sinon [Date], sinon [JoclyGame]         -> "2026.8.11"
+ *   4. sinon [Date], sinon le jeu              -> "2026.8.11"
+ *
+ * EXCEPTION quand le fichier contient plusieurs parties (opts.count > 1) :
+ * le nom du fichier passe APRES le jeu, parce qu'il est le meme pour toutes
+ * les entrees et ne distingue donc rien. Un livre de 12 parties de 12 jeux
+ * differents (cas reel : all-tests.pgn) s'affichait "all-tests" douze fois.
  *
  * puis, quand l'information existe, le resultat ([Result] autre que "*") et
- * le nombre de demi-coups. `opts.plies` sert de repli quand le fichier ne
- * porte pas de [PlyCount] : l'appelant a deja les coups extraits, autant
- * compter dessus.
+ * le nombre de coups. `opts.plies` sert de repli quand le fichier ne porte
+ * pas de [PlyCount] : l'appelant a deja les coups extraits, autant compter
+ * dessus.
  */
 export function BookLabel(tags, opts = {}) {
     tags = tags || {};
@@ -104,9 +114,11 @@ export function BookLabel(tags, opts = {}) {
     const white = clean(tags.White), black = clean(tags.Black);
     const stem  = clean(opts.fileName).replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, '');
 
+    const game = BookGame(tags) || clean(tags.Variant);
     let head = '';
     if (white || black) head = (white || '?') + ' vs ' + (black || '?');
-    else head = clean(tags.Event) || stem || clean(tags.Date) || BookGame(tags) || '';
+    else if (opts.count > 1) head = clean(tags.Event) || game || stem || clean(tags.Date) || '';
+    else head = clean(tags.Event) || stem || clean(tags.Date) || game || '';
 
     const bits = [];
     const result = clean(tags.Result);
@@ -152,6 +164,47 @@ export function BookGame(tags) {
 }
 
 /**
+ * Variante Fairy-Stockfish declaree par le fichier ([Variant], le tag que
+ * Fairy-Stockfish, lichess et cutechess ecrivent). Ce n'est PAS un nom de jeu
+ * Jocly : "shako" cote Fairy-Stockfish s'appelle "shako-chess" chez Jocly.
+ * La correspondance se fait par le catalogue -- voir FairyGameIndex().
+ */
+export function BookVariant(tags) {
+    if (!tags) return null;
+    for (const key of ['Variant', 'variant', 'UCI_Variant']) {
+        const v = tags[key];
+        if (typeof v === 'string' && v.trim()) return v.trim().toLowerCase();
+    }
+    return null;
+}
+
+/**
+ * Index variante Fairy-Stockfish -> nom de jeu Jocly, construit a partir du
+ * CATALOGUE plutot que d'une table ecrite a la main : chaque jeu qui sait se
+ * faire jouer par Fairy-Stockfish declare deja la variante correspondante
+ * dans ses niveaux (`levels[].ai === 'fairy-stockfish'`, champ `variant`),
+ * c'est jocly2/src/games/chessbase/index.js qui la pose. Une table recopiee
+ * ici divergerait au premier jeu ajoute.
+ *
+ * `configs` : { gameName -> config Jocly }. Un jeu peut declarer plusieurs
+ * variantes (levels[].variants, pour les jeux a prelude) : toutes sont
+ * indexees. Premier arrive, premier servi -- l'ordre du catalogue est stable.
+ */
+export function FairyGameIndex(configs) {
+    const index = {};
+    for (const [name, cfg] of Object.entries(configs || {})) {
+        for (const lvl of cfg?.model?.levels || []) {
+            if (lvl?.ai !== 'fairy-stockfish') continue;
+            const declared = [lvl.variant, ...(lvl.variants || []).map(v => v?.variant)];
+            for (const v of declared)
+                if (typeof v === 'string' && v && !index[v.toLowerCase()])
+                    index[v.toLowerCase()] = name;
+        }
+    }
+    return index;
+}
+
+/**
  * Construit le texte PJN d'une partie.
  *
  * `initialBoard` non nul = la partie ne part PAS de la position standard
@@ -172,6 +225,15 @@ export function BuildPJN(gameName, moveStrings, initialBoard, date, meta) {
         // pas mieux que pas de tag du tout, et c'est precisement ce qui
         // faisait afficher "? vs ?" a la relecture.
         tag('Event', m.event),
+        // [Variant] : le nom Fairy-Stockfish, quand la partie en vient. On
+        // l'ecrit A COTE de [JoclyGame] au lieu de convertir l'un en l'autre.
+        // Les deux nomenclatures se ressemblent sans coincider ("knightmate"
+        // cote moteur, "knightmate-chess" cote Jocly ; "minishogi" contre
+        // "mini-shogi") : une table de conversion ecrite a la main se trompe,
+        // et le fichier converti a alors perdu le nom d'origine, seule chose
+        // qui aurait permis de rattraper l'erreur. Garder les deux ne coute
+        // qu'une ligne et rend le fichier reparable.
+        tag('Variant', m.variant),
         '[Date "' + d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate() + '"]',
         tag('White', m.white),
         tag('Black', m.black),

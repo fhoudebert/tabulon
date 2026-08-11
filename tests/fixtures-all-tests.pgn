@@ -1,0 +1,123 @@
+[JoclyGame "shako-chess"]
+[Date "2026.8.10"]
+[PlyCount "3"]
+[FEN "c2qn4c/er1b1kbnr1/pppppppppp/7e2/10/10/P2P1P4/1PP1P1PPPP/ERNBQKBNRE/C8C w KQkq - 1 4"]
+
+1.i5 b7
+2.i6
+
+
+[JoclyGame "xiangqi"]
+[Date "2026.8.10"]
+[PlyCount "10"]
+[FEN "rnbakab2/8r/3c4n/p1p1p1p1p/9/7C1/P1P1P1P1P/2C6/9/1RBAKABNR w - - 5 5"]
+
+1.Ce3 Hc8
+2.Cc5 Ra8
+3.Cxe7 Cd6
+4.Cce5+ Ce6
+5.Cxi7+ Ci6
+
+
+[JoclyGame "knightmate"]
+[Date "2026.8.10"]
+[PlyCount "6"]
+[FEN "rmbqkbmr/p1p1ppp1/8/1p1p3p/8/P2K3P/1PPPPPP1/RMBQ1BMR w kq - 0 4"]
+
+1.Ke1 e5
+2.e3 c6
+3.a4 bxa4
+
+
+[JoclyGame "shatranj"]
+[Date "2026.8.10"]
+[PlyCount "7"]
+[FEN "r1bkq1nr/pppppppp/2nb4/8/2N5/7B/PPPPPPPP/R1BKQ1NR b - - 5 3"]
+
+1.a6 Nf3
+2.e6 Nce5
+3.Nxe5 Nxe5
+4.a5
+
+
+[JoclyGame "losing-chess"]
+[Date "2026.8.10"]
+[PlyCount "6"]
+[FEN "rn1qkbnr/ppp1pppp/8/3p4/P7/7b/1PPPPPP1/RNBQKBNR w - - 0 3"]
+
+1.gxh3 b5
+2.axb5 Qd7
+3.Rxa7 Qxb5
+
+
+[JoclyGame "makruk"]
+[Date "2026.8.10"]
+[PlyCount "8"]
+[FEN "rns2snr/4mk2/p1pp1ppp/1p2p3/8/PPPPPPPP/R2S4/1NK1MSNR b - - 1 5"]
+
+1.a5 f4
+2.h5 fxe5
+3.dxe5 a4
+4.Nd7 Nf3
+
+
+[JoclyGame "shogi"]
+[Date "2026.8.10"]
+[PlyCount "7"]
+[FEN "lns1kgsnl/1r1g3b1/pppp1pppp/4p4/9/1PP3P2/P1NPPP1PP/1BG4R1/L1S1KGSNL[] w - - 10 6"]
+
+1.S-48 P-34
+2.N-65 Bx88=
+3.Sx88 B*55
+4.B*46
+
+
+[JoclyGame "minishogi"]
+[Date "2026.8.10"]
+[PlyCount "9"]
+[FEN "r2gk/5/2sbp/P1B2/KGS1R[] b - - 9 5"]
+
+1.P-14 Bx23
+2.Px15+ B*44
+3.Sx44 Sx44
+4.G-22 S*24
+5.R*25
+
+
+[JoclyGame "kyotoshogi"]
+[Date "2026.8.10"]
+[PlyCount "7"]
+[FEN "p1k1+l/n4/3s1/L1N1+P/1SK2[] w - - 6 4"]
+
+1.+Px11- Sx34+
+2.Sx34+ +N*33
+3.+S*24 N-44+
+4.K-25
+
+
+[JoclyGame "losalamos-chess"]
+[Date "2026.8.10"]
+[PlyCount "4"]
+[FEN "rnqknr/ppp1pp/6/1P4/P1Pp1P/RNQKNR b - - 0 4"]
+
+1.dxc1=Q+ Kxc1
+2.c4 bxc4
+
+
+[JoclyGame "spartan-chess"]
+[Date "2026.8.10"]
+[PlyCount "1"]
+[FEN "lgkcckwl/h2h1hhh/2h5/2h1h3/1P6/B6P/P1PPPPP1/RN1QKBNR w KQ - 0 4"]
+
+1.Rh2
+
+
+[JoclyGame "courier-chess"]
+[Date "2026.8.10"]
+[PlyCount "8"]
+[FEN "rnebmk1wb1nr/1ppppp1pppp1/6f4e/p5p4p/P5PP3P/6F2PP1/1PPPPP2P3/RNEBMK1WBENR b - - 0 4"]
+
+1.gxh4 Fxh4
+2.Ee6 Nc3
+3.h6 Nl3
+4.Exg4 Nd5

@@ -5,8 +5,8 @@
 // l'utilisateur, pas des exemples reconstruits : c'est le seul moyen de
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
-import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel }
-    from '../app/content/book-format.js';
+import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel,
+         BookVariant, FairyGameIndex } from '../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -294,6 +294,100 @@ console.log('Test 13 - tags d\'identification a la sauvegarde');
     // Aller-retour : ce qu'on ecrit se relit en un libelle utile.
     ok(BookLabel(ParseTags(txt), { pliesLabel: 'coups' }) === 'Humain vs Ordinateur (Facile) — 1-0, 3 coups',
        'le fichier ecrit se relit en un libelle complet');
+}
+
+console.log('Test 14 - livre reel multi-jeux (all-tests.pgn)');
+{
+    const txt = fixture('fixtures-all-tests.pgn');
+    // Reproduit le decoupage de parse_pjn : bloc de tags + bloc de coups.
+    const blocks = txt.replace(/\r\n?/g, '\n').split('\n\n').map(b => b.trim()).filter(Boolean);
+    const matches = [];
+    for (let i = 0; i < blocks.length; ) {
+        if (!blocks[i].startsWith('[')) { i++; continue; }
+        matches.push({ tags: ParseTags(blocks[i]), text: blocks[i] + '\n\n' + (blocks[i + 1] || '') });
+        i += 2;
+    }
+    ok(matches.length === 12, `12 parties dans le fichier (${matches.length})`);
+
+    // Chaque partie declare SON jeu : douze jeux differents dans un fichier.
+    const games = matches.map(m => BookGame(m.tags));
+    ok(new Set(games).size === 12, 'douze jeux distincts — un livre n\'est pas forcement mono-jeu');
+    ok(games[0] === 'shako-chess' && games[6] === 'shogi', 'jeux lus dans les tags');
+
+    // [PlyCount] du fichier contre les coups reellement extraits : c'est le
+    // controle d'integrite que ce tag permet, et il passe sur les 12 blocs
+    // malgre des notations tres differentes (SAN, shogi "S-48", drops "B*55",
+    // kyotoshogi "+Px11-", promotions "dxc1=Q+").
+    const ecarts = matches.filter(m => ExtractMoves(m.text).length !== Number(m.tags.PlyCount));
+    ok(ecarts.length === 0,
+       'PlyCount == coups extraits pour les 12 parties' +
+       (ecarts.length ? ' — ecarts sur ' + ecarts.map(m => BookGame(m.tags)).join(', ') : ''));
+
+    // Position de depart : ces parties partent toutes d'un FEN, y compris des
+    // FEN a poche shogi ("[]"), qui ne doivent pas etre tronques.
+    ok(matches.every(m => BookFen(m.tags)), 'chaque partie porte sa position de depart');
+    ok(BookFen(matches[6].tags).includes('[]'), 'la poche shogi "[]" est preservee dans le FEN');
+
+    // Libelle : le nom du fichier est le meme pour les douze, il ne distingue
+    // rien. En multi-parties c'est donc le jeu qui mene.
+    const label = (i) => BookLabel(matches[i].tags,
+        { index: i, count: matches.length, fileName: 'all-tests.pgn', pliesLabel: 'coups' });
+    ok(label(0) === 'shako-chess — 3 coups #1', 'libelle mene par le jeu — ' + label(0));
+    ok(label(1) === 'xiangqi — 10 coups #2', 'chaque entree est distinguable — ' + label(1));
+    ok(new Set(matches.map((_, i) => label(i))).size === 12, 'les douze libelles sont distincts');
+}
+
+console.log('Test 15 - deux nomenclatures, jamais confondues');
+{
+    // Fairy-Stockfish et Jocly nomment les memes jeux DIFFEREMMENT, et de
+    // facon assez voisine pour qu'on s'y trompe. Releve reel sur le catalogue
+    // jocly2 : sur les 13 variantes du all-tests.pgn de reference, 5 noms
+    // Jocly ne sont PAS le nom de la variante, et 3 ne s'en deduisent meme
+    // pas par ajout de "-chess".
+    const REEL = {
+        shako: 'shako-chess', xiangqi: 'xiangqi', knightmate: 'knightmate-chess',
+        shatranj: 'shatranj-chess', antichess: 'losing-chess', makruk: 'makruk',
+        wildebeest: 'wildebeest-chess', shogi: 'shogi', minishogi: 'mini-shogi',
+        kyotoshogi: 'kyoto-shogi', losalamos: 'los-alamos-chess',
+        spartan: 'spartan-chess', courier: 'courier-chess',
+    };
+    const identiques = Object.entries(REEL).filter(([v, j]) => v === j);
+    ok(identiques.length === 3,
+       `3 noms identiques des deux cotes sur 13 (${identiques.length}) — d'ou la tentation de croire la conversion triviale`);
+    ok(REEL.minishogi !== 'minishogi' && REEL.kyotoshogi !== 'kyotoshogi',
+       'mais "minishogi"/"kyotoshogi" ne sont PAS des noms Jocly (mini-shogi, kyoto-shogi)');
+    ok(REEL.knightmate !== 'knightmate' && REEL.shatranj !== 'shatranj',
+       'ni "knightmate"/"shatranj" (knightmate-chess, shatranj-chess)');
+    ok(REEL.antichess === 'losing-chess',
+       'et "antichess" devient "losing-chess" : aucune regle mecanique ne relie les deux');
+
+    // La lecture doit distinguer les deux tags. [JoclyGame] est un nom Jocly,
+    // [Variant] un nom de moteur : les intervertir ouvre le mauvais jeu.
+    const tags = { JoclyGame: 'mini-shogi', Variant: 'minishogi' };
+    ok(BookGame(tags) === 'mini-shogi', '[JoclyGame] lit la nomenclature Jocly');
+    ok(BookVariant(tags) === 'minishogi', '[Variant] lit la nomenclature Fairy-Stockfish');
+    ok(BookVariant({ Variant: 'Shako' }) === 'shako', 'la variante est normalisee en minuscules');
+    ok(BookVariant({ JoclyGame: 'shako-chess' }) === null,
+       '[JoclyGame] n\'est jamais pris pour une variante');
+    ok(BookGame({ Variant: 'shako' }) === null, 'ni l\'inverse');
+
+    // L'index du catalogue fait la conversion, et ne l'invente pas.
+    const index = FairyGameIndex({
+        'mini-shogi':       { model: { levels: [{ ai: 'fairy-stockfish', variant: 'minishogi' }] } },
+        'knightmate-chess': { model: { levels: [{ ai: 'fairy-stockfish', variant: 'knightmate' }] } },
+    });
+    ok(index.minishogi === 'mini-shogi' && index.knightmate === 'knightmate-chess',
+       'le catalogue donne la correspondance exacte, sans table ecrite a la main');
+    ok(index['mini-shogi'] === undefined, 'un nom Jocly n\'entre pas dans l\'index des variantes');
+
+    // Ecriture : les deux tags cohabitent, aucune conversion destructive.
+    const txt = BuildPJN('mini-shogi', ['P-14'], null, new Date(2026, 0, 1), { variant: 'minishogi' });
+    ok(txt.includes('[JoclyGame "mini-shogi"]') && txt.includes('[Variant "minishogi"]'),
+       'les deux noms sont ecrits cote a cote');
+    ok(BookGame(ParseTags(txt)) === 'mini-shogi' && BookVariant(ParseTags(txt)) === 'minishogi',
+       'et se relisent chacun dans sa nomenclature');
+    ok(!BuildPJN('x', [], null, new Date(), {}).includes('[Variant'),
+       'aucun [Variant] invente quand la partie ne vient pas du moteur');
 }
 
 console.log('');

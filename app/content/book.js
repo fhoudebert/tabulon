@@ -13,7 +13,7 @@ import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
-import { ExtractMoves, BookFen, BookLabel } from './book-format.js';
+import { ExtractMoves, BookFen, BookLabel, BookGame } from './book-format.js';
 
 // Re-export : tests/test-book.mjs importe ExtractMoves depuis ce module.
 export { ExtractMoves };
@@ -66,9 +66,27 @@ function SetBookMatches(matches) {
     list.style.display = '';
 }
 
+// Jeu d'UNE partie du livre. Un fichier peut en melanger plusieurs -- le
+// all-tests.pgn de reference contient douze parties de douze jeux differents,
+// chacune avec son tag [JoclyGame]. La fenetre etait ouverte pour un seul jeu
+// (celui de la premiere partie, choisi par le hub) et lancait TOUTES les
+// parties dedans : cliquer sur la partie de xiangqi ouvrait shako-chess, ou
+// les coups etaient refuses des le premier.
+async function MatchGame(match) {
+    const declared = BookGame(match.tags);
+    if (!declared || declared === gameName) return gameName;
+    const games = await Jocly.listGames().catch(() => ({}));
+    if (!games[declared]) {
+        console.warn('[book] la partie designe', declared, '— jeu absent du catalogue, ouverture dans', gameName);
+        return gameName;
+    }
+    return declared;
+}
+
 async function OpenBookMatch(match, index, count) {
     const moves = ExtractMoves(match.text);
     const id = 'book-' + Date.now();
+    const game = await MatchGame(match);
     const store = await Store.load('tabulon.json');
     await store.set('fork:' + id, {
         book: {
@@ -82,7 +100,7 @@ async function OpenBookMatch(match, index, count) {
             initialBoard: BookFen(match.tags),
         },
     });
-    tRpc.call('new_match', gameName, null, id);
+    tRpc.call('new_match', game, null, id);
 }
 
 
