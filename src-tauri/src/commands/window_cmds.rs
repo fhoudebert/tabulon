@@ -35,12 +35,18 @@ use serde_json::Value;
 
 // ── Commandes d'ouverture ─────────────────────────────────────────────────────
 
-/// rpc.call("openHistory", matchId)
+/// rpc.call("openHistory", matchId, gameName)
+///
+/// `game_name` est indispensable, pas decoratif : la fenetre Historique s'en
+/// sert pour le tag [JoclyGame] et le nom par defaut du fichier a la
+/// sauvegarde, et pour ouvrir open-position/show-position sur le BON jeu.
+/// Sans lui, history.js retombait sur "classic-chess" et ecrivait un PJN
+/// qui refusait ensuite de se recharger.
 #[tauri::command]
-pub async fn open_history(app: AppHandle, match_id: u32) -> Result<(), String> {
+pub async fn open_history(app: AppHandle, match_id: u32, game_name: String) -> Result<(), String> {
     open_window(&app, WindowOptions {
         label: &format!("history-{match_id}"),
-        url:   &format!("content/history.html?id={match_id}"),
+        url:   &format!("content/history.html?id={match_id}&game={}", urlencoding::encode(&game_name)),
         title: &format!("History #{match_id}"),
         width: 400.0, height: 500.0,
         min_width: 280.0, min_height: 200.0,

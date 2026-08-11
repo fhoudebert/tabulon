@@ -13,7 +13,7 @@ import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
-import { ExtractMoves, BookFen } from './book-format.js';
+import { ExtractMoves, BookFen, BookLabel } from './book-format.js';
 
 // Re-export : tests/test-book.mjs importe ExtractMoves depuis ce module.
 export { ExtractMoves };
@@ -39,29 +39,43 @@ function ShowError(error) {
     document.querySelector('.book-content .message').style.display = '';
 }
 
+// Libelle d'une partie du fichier. On IGNORE match.label venu de Rust : il
+// s'ecrivait "? vs ? #1" pour tout fichier sans tags [White]/[Black], donc
+// pour tout fichier produit par Tabulon. BookLabel descend une echelle de
+// repli (joueurs, [Event], nom du fichier, date) et le meme calcul sert au
+// pied de la fenetre de jeu.
+function MatchLabel(match, index, count) {
+    return BookLabel(match.tags, {
+        index, count, fileName,
+        plies: ExtractMoves(match.text).length,
+        pliesLabel: t('book.plies'),
+    });
+}
+
 function SetBookMatches(matches) {
     const list = document.querySelector('.book-content ul');
-    matches.forEach((match) => {
+    matches.forEach((match, index) => {
         const li = document.createElement('li');
         li.className = 'list-group-item object-list-item';
         li.innerHTML = `<div class="media-body"><strong></strong></div>`;
-        li.querySelector('strong').textContent = match.label;
-        li.addEventListener('click', () => OpenBookMatch(match));
+        li.querySelector('strong').textContent = MatchLabel(match, index, matches.length);
+        li.addEventListener('click', () => OpenBookMatch(match, index, matches.length));
         list.appendChild(li);
     });
     document.querySelector('.book-content .message').style.display = 'none';
     list.style.display = '';
 }
 
-async function OpenBookMatch(match) {
+async function OpenBookMatch(match, index, count) {
     const moves = ExtractMoves(match.text);
     const id = 'book-' + Date.now();
     const store = await Store.load('tabulon.json');
     await store.set('fork:' + id, {
         book: {
             moves,
-            playerA: match.playerA,
-            playerB: match.playerB,
+            // Libelle deja calcule : la fenetre de jeu n'a ni le nom du
+            // fichier ni les tags, elle ne pourrait pas le refaire.
+            label: MatchLabel(match, index, count),
             // Tag [FEN] : la partie ne part pas de la position standard
             // (probleme, finale, position d'etude). play.js charge cette
             // position AVANT de rejouer les coups.

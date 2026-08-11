@@ -108,7 +108,7 @@ function buildPayload(method, args) {
     set_favorite:        ([gameName, value])       => ({ gameName, value }),
     // moves
     // windows
-    open_history:        ([matchId])               => ({ matchId }),
+    open_history:        ([matchId, gameName])     => ({ matchId, gameName }),
     open_players:        ([matchId])               => ({ matchId }),
     open_view_options:   ([matchId])               => ({ matchId }),
     open_camera_view:    ([matchId, gameName])     => ({ matchId, gameName }),

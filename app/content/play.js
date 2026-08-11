@@ -283,7 +283,22 @@ function buildPlayerValue(info) {
 // avoir perdu laissait le plateau muet et « le joueur B gagne » a l'ecran.
 // HumanTurn() n'est jamais appele directement : c'est de l'interne jocly,
 // atteint via userTurn().
+// Resultat de la partie ("1-0", "0-1", "1/2-1/2") des qu'elle est terminee,
+// pour le tag [Result] a la sauvegarde. Remis a null a chaque changement de
+// position : apres un recul dans l'historique la partie n'est plus finie, et
+// ecrire un resultat serait faux.
+let gameResult = null;
+
+// Nom lisible d'un cote, pour les tags [White]/[Black] du PJN.
+function PlayerLabel(key) {
+    const value = players[key];
+    if (!value) return t('common.human');
+    if (value.remote) return t('common.remote');
+    return translateLevelLabel(value.label) || value.name || t('common.computer');
+}
+
 async function rearmAfterPositionChange() {
+    gameResult = null;
     await joclyMatch?.abortUserTurn().catch(() => {});
     if (!loopActive) gameLoop();
 }
@@ -392,6 +407,7 @@ async function gameLoop() {
 
             if (finished) {
                 ClockStop();
+                gameResult = winner === 0 ? '1/2-1/2' : winner > 0 ? '1-0' : '0-1';
                 UpdateFooter(winner === 0 ? t('play.draw')
                     : winner > 0 ? t('play.aWins')
                     : t('play.bWins'));
@@ -657,12 +673,22 @@ function initSatelliteListeners() {
         [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach(key => syncFooterSelect(key));
     });
 
+    // Ce que la fenetre Historique ecrit dans les tags du PJN a la
+    // sauvegarde : qui a joue, et le resultat s'il y en a un. Sans ca elle
+    // n'avait rien a mettre dans [White]/[Black] et les fichiers relus
+    // s'affichaient "? vs ?".
+    const HistoryMeta = () => ({
+        white:  PlayerLabel(Jocly.PLAYER_A),
+        black:  PlayerLabel(Jocly.PLAYER_B),
+        result: gameResult,
+    });
+
     // get-played-moves : retourne l'historique des coups comme strings lisibles
     listen(prefix + 'get-played-moves', async () => {
         if (!joclyMatch) return;
         const moves = await joclyMatch.getPlayedMoves().catch(() => []);
         if (!moves || moves.length === 0) {
-            await emit(`play-rep:${matchId}:get-played-moves`, { moves: [] });
+            await emit(`play-rep:${matchId}:get-played-moves`, { moves: [], gameName, ...HistoryMeta() });
             return;
         }
         // getMoveString accepte un array et retourne un array de strings
@@ -677,6 +703,11 @@ function initSatelliteListeners() {
         await emit(`play-rep:${matchId}:get-played-moves`, {
             moves: Array.isArray(strings) ? strings : moves.map(() => '?'),
             initialBoard: saved?.initialBoard || null,
+            // Le jeu, pour que la fenetre Historique ecrive le bon tag
+            // [JoclyGame] a la sauvegarde. Elle le lit AUSSI dans son URL,
+            // mais cette reponse-ci fait autorite : elle vient du match.
+            gameName,
+            ...HistoryMeta(),
         });
     });
 
@@ -833,7 +864,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         store?.set('play-footer-bar', !!visible);
     });
 
-    btn('button-history',  () => tRpc.call('open_history', matchId));
+    btn('button-history',  () => tRpc.call('open_history', matchId, gameName));
     btn('button-clock',    () => tRpc.call('open_clock', matchId));
     btn('button-players',  () => tRpc.call('open_players', matchId));
     btn('button-options',  () => tRpc.call('open_view_options', matchId));
@@ -1192,7 +1223,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         SetBothHuman();
         paused = true;
         UpdatePause();
-        UpdateFooter(`${book.playerA || t('common.playerA')} vs ${book.playerB || t('common.playerB')}`);
+        // Libelle calcule par book.js (qui a les tags ET le nom du fichier).
+        // Ancien affichage : "? vs ?", les tags [White]/[Black] etant absents
+        // de tout fichier ecrit par Tabulon.
+        UpdateFooter(book.label || gameName);
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
         console.info('[play] book: ' + played + ' coups rejoués');
     }

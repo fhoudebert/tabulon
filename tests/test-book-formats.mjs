@@ -5,7 +5,7 @@
 // l'utilisateur, pas des exemples reconstruits : c'est le seul moyen de
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
-import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves }
+import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel }
     from '../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -226,6 +226,74 @@ console.log('Test 11 - solution reelle es3-solution.json');
        'la position est identique a celle du PJN correspondant');
     ok(sol.playedMoves.length === Number(ParseTags(fixture('fixtures-es3.pjn')).PlyCount),
        'et le nombre de coups aussi');
+}
+
+console.log('Test 12 - libelle d\'une partie');
+{
+    const L = (tags, opts) => BookLabel(tags, { pliesLabel: 'coups', ...opts });
+
+    // 1. Les joueurs quand ils sont nommes.
+    ok(L({ White: 'Kasparov', Black: 'Topalov', Result: '1-0', PlyCount: '5' })
+       === 'Kasparov vs Topalov — 1-0, 5 coups', 'joueurs + resultat + longueur');
+    ok(L({ White: 'Alice', Black: 'Bob', Result: '*' }) === 'Alice vs Bob',
+       'resultat "*" (partie en cours) omis, comme en PGN');
+
+    // 2. "?" est la valeur PGN pour "inconnu" : elle ne doit JAMAIS s'afficher.
+    //    C'est tout le bug -- parse_pjn ecrivait "? vs ?" pour les fichiers de
+    //    Tabulon, qui ne posait pas [White]/[Black].
+    ok(!L({ White: '?', Black: '?', PlyCount: '9' }, { fileName: 'es3.pjn' }).includes('?'),
+       'aucun "?" affiche quand les joueurs sont inconnus');
+    ok(L({ White: '?', Black: '?', PlyCount: '9' }, { fileName: 'es3.pjn' }) === 'es3 — 9 coups',
+       'repli sur le nom du fichier');
+    ok(L({}, {}) === '?', 'rien du tout -> pas de faux libelle');
+
+    // 3. Echelle de repli, du plus parlant au moins parlant.
+    ok(L({ Event: 'Puzzle du jour', Date: '2026.8.11' }, { fileName: 'x.pjn' }) === 'Puzzle du jour',
+       '[Event] prime sur le nom du fichier');
+    ok(L({ JoclyGame: 'chu-shogi', Date: '2026.8.11' }) === '2026.8.11',
+       'sans Event ni fichier : la date');
+    ok(L({ JoclyGame: 'chu-shogi' }) === 'chu-shogi', 'en dernier ressort : le jeu');
+    ok(L({}, { fileName: '/home/moi/parties/es3.pjn' }) === 'es3',
+       'chemin et extension retires du nom de fichier');
+
+    // 4. Longueur : [PlyCount] s'il est la, sinon le comptage de l'appelant.
+    ok(L({ Event: 'x' }, { plies: 13 }) === 'x — 13 coups', 'longueur fournie par l\'appelant');
+    ok(L({ Event: 'x', PlyCount: '9' }, { plies: 13 }) === 'x — 9 coups',
+       '[PlyCount] du fichier fait foi quand il est present');
+
+    // 5. Numero d'ordre : seulement s'il y a plusieurs parties dans le fichier.
+    ok(L({ Event: 'x' }, { index: 0, count: 1 }) === 'x', 'fichier a une partie : pas de "#1"');
+    ok(L({ Event: 'x' }, { index: 2, count: 5 }) === 'x #3', 'fichier a plusieurs parties : numerote');
+
+    // 6. Fichiers reels.
+    ok(L(ParseTags(fixture('fixtures-es3.pjn')), { fileName: 'es3.pjn' }) === 'es3 — 9 coups',
+       'es3.pjn : "es3 — 9 coups" au lieu de "? vs ? #1"');
+    ok(L(ParseTags(fixture('fixtures-rocaille.pjn')), { fileName: 'rocaille.pjn' }) === 'rocaille — 13 coups',
+       'rocaille.pjn : idem');
+}
+
+console.log('Test 13 - tags d\'identification a la sauvegarde');
+{
+    const d = new Date(2026, 7, 11);
+    // Sans metadonnees : rien de nouveau, aucun tag vide ni "?" parasite.
+    const nu = BuildPJN('chu-shogi', ['a', 'b'], null, d);
+    ok(!/\[(White|Black|Result|Event)\b/.test(nu), 'aucun tag vide quand on ne sait rien');
+
+    const txt = BuildPJN('classic-chess', ['e4', 'e5', 'Nf3'], null, d, {
+        event: 'es3', white: 'Humain', black: 'Ordinateur (Facile)', result: '1-0',
+    });
+    ok(txt.includes('[Event "es3"]'), '[Event] ecrit');
+    ok(txt.includes('[White "Humain"]') && txt.includes('[Black "Ordinateur (Facile)"]'), '[White]/[Black] ecrits');
+    ok(txt.includes('[Result "1-0"]'), '[Result] ecrit');
+    ok(txt.indexOf('[Event') < txt.indexOf('[Date') && txt.indexOf('[White') < txt.indexOf('[Result'),
+       'ordre du roster PGN respecte');
+    ok(txt.indexOf('[PlyCount') < txt.indexOf('\n\n'), 'tous les tags precedent les coups');
+    ok(BuildPJN('x', [], null, d, { white: '   ' }).indexOf('[White') === -1,
+       'valeur vide -> tag omis, pas [White ""]');
+
+    // Aller-retour : ce qu'on ecrit se relit en un libelle utile.
+    ok(BookLabel(ParseTags(txt), { pliesLabel: 'coups' }) === 'Humain vs Ordinateur (Facile) — 1-0, 3 coups',
+       'le fichier ecrit se relit en un libelle complet');
 }
 
 console.log('');

@@ -74,6 +74,54 @@ export async function ReplayBookMoves(tokens, { pick, play }) {
 }
 
 /**
+ * Libelle lisible d'une partie, pour la liste de la fenetre livre ET le pied
+ * de la fenetre de jeu (meme fonction des deux cotes : le meme fichier doit
+ * s'annoncer pareil partout).
+ *
+ * L'ancien libelle venait de la commande Rust parse_pjn, qui ecrivait
+ * litteralement "? vs ?" des que [White]/[Black] manquaient -- c'est-a-dire
+ * pour TOUS les fichiers ecrits par Tabulon, qui ne posait pas ces tags. On
+ * ne se rabat plus sur "?" : on descend une echelle de repli jusqu'a quelque
+ * chose qui existe vraiment.
+ *
+ *   1. les joueurs, s'ils sont nommes          -> "Alice vs Bob"
+ *   2. sinon [Event]                           -> "es3"
+ *   3. sinon le nom du fichier, sans extension -> "es3"
+ *   4. sinon [Date], sinon [JoclyGame]         -> "2026.8.11"
+ *
+ * puis, quand l'information existe, le resultat ([Result] autre que "*") et
+ * le nombre de demi-coups. `opts.plies` sert de repli quand le fichier ne
+ * porte pas de [PlyCount] : l'appelant a deja les coups extraits, autant
+ * compter dessus.
+ */
+export function BookLabel(tags, opts = {}) {
+    tags = tags || {};
+    const clean = (v) => {
+        const s = typeof v === 'string' ? v.trim() : '';
+        // "?" est la valeur PGN pour "inconnu" : la traiter comme absente.
+        return (!s || s === '?') ? '' : s;
+    };
+    const white = clean(tags.White), black = clean(tags.Black);
+    const stem  = clean(opts.fileName).replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, '');
+
+    let head = '';
+    if (white || black) head = (white || '?') + ' vs ' + (black || '?');
+    else head = clean(tags.Event) || stem || clean(tags.Date) || BookGame(tags) || '';
+
+    const bits = [];
+    const result = clean(tags.Result);
+    if (result && result !== '*') bits.push(result);
+    const plies = Number(tags.PlyCount) || Number(opts.plies) || 0;
+    if (plies > 0) bits.push(plies + ' ' + (opts.pliesLabel || 'plies'));
+
+    let label = [head, bits.join(', ')].filter(Boolean).join(' — ');
+    // Numero d'ordre : utile SEULEMENT quand le fichier contient plusieurs
+    // parties, sinon "#1" est du bruit sur une liste d'une ligne.
+    if (opts.count > 1 && opts.index != null) label += ' #' + (opts.index + 1);
+    return label || String(opts.index != null ? '#' + (opts.index + 1) : '?');
+}
+
+/**
  * Position de depart declaree dans les tags, ou null si la partie commence a
  * la position standard du jeu. Le tag normalise est [FEN], que [SetUp "1"]
  * accompagne d'ordinaire sans etre indispensable ; on accepte aussi le nom
@@ -111,14 +159,25 @@ export function BookGame(tags) {
  * depuis la position initiale du jeu et les coups seraient introuvables des
  * le premier -- c'est tout l'interet de les ecrire.
  */
-export function BuildPJN(gameName, moveStrings, initialBoard, date) {
+export function BuildPJN(gameName, moveStrings, initialBoard, date, meta) {
     const d = date || new Date();
     const moves = moveStrings || [];
+    const m = meta || {};
+    const tag = (k, v) => (typeof v === 'string' && v.trim())
+        ? '[' + k + ' "' + v.trim().replace(/"/g, "'") + '"]' : null;
     const tags = [
         '[JoclyGame "' + gameName + '"]',
+        // Tags du roster PGN standard, dans l'ordre habituel. Ecrits
+        // seulement quand ils disent quelque chose : un [White "?"] ne vaut
+        // pas mieux que pas de tag du tout, et c'est precisement ce qui
+        // faisait afficher "? vs ?" a la relecture.
+        tag('Event', m.event),
         '[Date "' + d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate() + '"]',
+        tag('White', m.white),
+        tag('Black', m.black),
+        tag('Result', m.result),
         '[PlyCount "' + moves.length + '"]',
-    ];
+    ].filter(Boolean);
     if (initialBoard) {
         tags.push('[FEN "' + String(initialBoard).replace(/"/g, "'") + '"]');
         tags.push('[SetUp "1"]');
