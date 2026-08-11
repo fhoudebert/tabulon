@@ -81,6 +81,17 @@ const BOOK_PGN = `[JoclyGame "classic-chess"]
 1. e2-e4 c7-c5 2. Ng1-f3 d7-d6 3. d2-d4 c5xd4
 `;
 
+const ULTIMA_PJN = `[JoclyGame "ultima"]
+[Event "cameleon-c6"]
+[Date "2026.8.11"]
+[Result "1-0"]
+[PlyCount "1"]
+[FEN "ppp5/pkp5/Pp1pP3/1Kl5/8/2l5/2X5/2w5 w - - 0 1"]
+[SetUp "1"]
+
+1. Xc2-c6+ 1-0
+`;
+
 // `kind` designe la RUBRIQUE illustree par l'exemple, pas le format : c'est
 // ce que l'utilisateur cherche a comprendre en arrivant sur cet ecran.
 //   'book'    : plusieurs parties dans un fichier
@@ -106,5 +117,9 @@ export const SAMPLES = [
     {
         id: 'rocaille', game: 'rocaille', kind: 'game',
         fileName: 'rocaille.pjn', text: ROCAILLE_PJN,
+    },
+    {
+        id: 'ultima-c6', game: 'ultima', kind: 'problem',
+        fileName: 'ultima-cameleon-c6.pjn', text: ULTIMA_PJN,
     },
 ];
