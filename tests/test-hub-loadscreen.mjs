@@ -236,6 +236,35 @@ console.log('Exemples du dossier problems/');
   assert(sv.payload.contents.includes('4. Qxf7#'), 'le fichier est ecrit tel quel');
 }
 
+// ── 4c. « Voir » : ouvre la fenêtre de lecture ─────────────────────────────
+console.log('Bouton Voir');
+{
+  const cards = [...document.querySelectorAll('.loadgame-sample')];
+  const names = cards.map(c => c.querySelector('.loadgame-sample-name').textContent);
+  const card  = cards[names.indexOf('matOpera.pgn')];
+  const before = invokeCalls.length;
+  card.querySelector('.sample-view').click();
+  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_problem'), 'fenêtre demandée');
+  const call = invokeCalls.slice(before).find(c => c.cmd === 'open_problem');
+
+  // Le contenu passe par le store et non par l'URL : il embarque la vignette
+  // en base64, quelques dizaines de kilo-octets.
+  const dep = storeData.get('problem:' + call.payload.id);
+  assert(dep, 'le contenu est déposé sous problem:{id}, pas passé dans l\'URL');
+  assert(dep.text.includes('Paul Morphy'), 'le texte intégral du fichier est transmis');
+  assert(dep.thumbnail && dep.thumbnail.startsWith('data:image/'), 'la vignette aussi');
+  assert(dep.file === 'matOpera.pgn' && dep.group === 'classic-chess',
+    'avec le nom de fichier et le jeu visé');
+
+  // La vignette elle-même ouvre la même fenêtre : geste attendu, cible plus
+  // facile à viser qu'un bouton de 11 px.
+  const before2 = invokeCalls.length;
+  card.querySelector('img').click();
+  await waitFor(() => invokeCalls.slice(before2).some(c => c.cmd === 'open_problem'), 'clic sur l\'image');
+  assert(card.querySelector('img').classList.contains('clickable'),
+    'et l\'image le signale visuellement');
+}
+
 // ── 4b. Jeu absent du catalogue : visible, enregistrable, pas lancable ─────
 console.log('Onglet dont le jeu n\'est pas installe');
 {
@@ -249,7 +278,9 @@ console.log('Onglet dont le jeu n\'est pas installe');
   assert(cards.every(c => c.querySelector('.sample-play').disabled),
     'lancement desactive : le jeu ultima n\'est pas dans ce catalogue de test');
   assert(cards.every(c => !c.querySelector('.sample-save').disabled),
-    'enregistrement toujours possible — le dossier peut precedez le dist qui contient le jeu');
+    'enregistrement toujours possible — le dossier peut preceder le dist qui contient le jeu');
+  assert(cards.every(c => !c.querySelector('.sample-view').disabled),
+    'lecture toujours possible : titre, image et commentaire ne dependent pas du catalogue');
   assert(/not installed/i.test(text('.loadgame-sample-desc')), 'et la raison est ecrite');
 
   // Appariement lache : p1-thumb.jpg <-> ultima-solutionP1.json

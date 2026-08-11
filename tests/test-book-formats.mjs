@@ -6,7 +6,7 @@
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
 import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel,
-         BookVariant, FairyGameIndex } from '../app/content/book-format.js';
+         BookVariant, FairyGameIndex, BookCommentary } from '../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -388,6 +388,57 @@ console.log('Test 15 - deux nomenclatures, jamais confondues');
        'et se relisent chacun dans sa nomenclature');
     ok(!BuildPJN('x', [], null, new Date(), {}).includes('[Variant'),
        'aucun [Variant] invente quand la partie ne vient pas du moteur');
+}
+
+console.log('Test 16 - commentaires d\'une partie');
+{
+    // Fichier reel : l'etude lichess du Mat de l'Opera.
+    const c = BookCommentary(fixture('fixtures-problems/classic-chess/matOpera.pgn'));
+    ok(c.length === 4, `1 enonce + 3 coups (${c.length})`);
+    ok(c[0].move === null && /Paul Morphy/.test(c[0].comment),
+       'le commentaire ecrit avant le premier coup sort en tete, sans coup attache');
+    ok(c[1].number === '16.' && c[1].move === 'Qb8+', 'numero et coup separes');
+    ok(/sacrifice d'attraction/.test(c[1].comment), 'le commentaire est rattache a SON coup');
+    ok(c[2].number === '16...' && c[2].move === 'Nxb8', 'la numerotation "16..." est reconnue');
+    ok(c[3].move === 'Rd8#' && c[3].comment === 'Bien joué !', 'dernier coup et son commentaire');
+
+    // Le meme fichier contient { [%csl Gd8,Ge7] } : une annotation machine
+    // (cases colorees), a jeter. Elle suit le coup 16. et se collerait a son
+    // commentaire si on ne la filtrait pas.
+    ok(!c.some(x => /%csl|Gd8/.test(x.comment || '')), 'les commandes [%…] sont retirees');
+    ok(!c.some(x => x.comment === ''), 'un commentaire vide apres nettoyage disparait');
+
+    // Fichier d'UltraBullet : une commande [%clk] par demi-coup, et RIEN
+    // d'autre. Sans filtrage la fenetre afficherait 7 horodatages.
+    const d = BookCommentary(fixture('fixtures-problems/classic-chess/matduberger.pgn'));
+    ok(d.length === 7, `7 demi-coups (${d.length})`);
+    ok(d.slice(0, 6).every(x => x.comment === null),
+       'les commentaires reduits a un [%clk] ne laissent rien derriere eux');
+    ok(d[6].move === 'Qxf7#', 'le mat est bien le dernier coup');
+
+    // Coherence avec ExtractMoves : meme partie, meme nombre de coups.
+    for (const f of ['fixtures-problems/classic-chess/matOpera.pgn',
+                     'fixtures-problems/classic-chess/matduberger.pgn',
+                     'fixtures-problems/ultima/matc.pjn']) {
+        const txt = fixture(f);
+        ok(BookCommentary(txt).filter(x => x.move).length === ExtractMoves(txt).length,
+           'meme nombre de coups que ExtractMoves — ' + f.split('/').pop());
+    }
+
+    // Robustesse.
+    ok(BookCommentary('').length === 0 && BookCommentary(null).length === 0,
+       'entree vide -> liste vide, pas d\'exception');
+    ok(BookCommentary('[Event "x"]\n\n1. e4 { a } ( 1. d4 { variante } ) 1... e5')
+       .every(x => !/variante/.test(x.comment || '')),
+       'les variantes (…) sont ecartees, comme dans ExtractMoves');
+    const nag = BookCommentary('[E "x"]\n\n1. e4 $1 $18 e5 1-0');
+    ok(nag.length === 2 && nag[0].move === 'e4', 'NAG et resultat ne deviennent pas des coups');
+    const glue = BookCommentary('[E "x"]\n\n16.Qb8+ {bien} 16...Nxb8');
+    ok(glue[0].number === '16.' && glue[0].move === 'Qb8+',
+       'numero colle au coup ("16.Qb8+") correctement separe');
+    const two = BookCommentary('[E "x"]\n\n1. e4 {un} {deux}');
+    ok(two.length === 1 && two[0].comment === 'un deux',
+       'deux accolades consecutives se rattachent au meme coup');
 }
 
 console.log('');

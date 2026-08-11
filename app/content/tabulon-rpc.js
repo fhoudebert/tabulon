@@ -118,6 +118,7 @@ function buildPayload(method, args) {
     open_clock_setup:    ([gameName])              => ({ gameName }),
     open_board_state:    ([gameName, matchId])     => ({ gameName, matchId }),
     open_book:           ([gameName, fn_, data])   => ({ gameName, fileName: fn_, data }),
+    open_problem:        ([id, title])             => ({ id, title: title || '' }),
     open_moves:          ([matchId])               => ({ matchId }),
     relay_to_window:     ([target, event, payload])=> ({ target, event, payload }),
     // fichiers

@@ -12,6 +12,64 @@
 // (sauvegarde) et hub.js (aiguillage a l'ouverture d'un fichier).
 
 /**
+ * Commentaires d'une partie, dans l'ordre, rattaches au coup qu'ils suivent.
+ * C'est ce que ExtractMoves JETTE : la matiere pedagogique d'un probleme
+ * commente ("un sacrifice d'attraction pour liberer le passage") est dans les
+ * accolades, pas dans la notation.
+ *
+ * Renvoie [{ number, move, comment }] :
+ *   - une entree sans `move` en tete = commentaire d'introduction, ecrit avant
+ *     le premier coup ;
+ *   - `number` est le numero PGN quand il est ecrit ("16.", "16..."), null
+ *     sinon -- le format ne le repete pas a chaque demi-coup ;
+ *   - `comment` est null quand le coup n'est pas commente.
+ *
+ * Deux nettoyages, parce que le texte brut est illisible sinon :
+ *   - les COMMANDES entre crochets dans un commentaire ([%clk 0:00:15],
+ *     [%csl Gd8,Ge7], [%eval ...]) sont des annotations machine de lichess et
+ *     consorts. Un fichier d'UltraBullet en porte une par demi-coup ; les
+ *     afficher noierait le texte. Un commentaire qui ne contenait que ca
+ *     disparait.
+ *   - les variantes (…) sont retirees comme dans ExtractMoves : ce sont des
+ *     lignes secondaires, elles ne se rattachent pas au coup joue et il
+ *     faudrait un arbre pour les rendre correctement.
+ */
+export function BookCommentary(text) {
+    const parts = String(text || '').replace(/\r\n?/g, '\n').split(/\n\n+/);
+    let s = (parts.length > 1 ? parts.slice(1) : parts).join('\n');
+    while (/\([^()]*\)/.test(s)) s = s.replace(/\([^()]*\)/g, ' ');
+
+    const clean = (c) => c.replace(/\[%[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
+    const out = [];
+    let pending = null;                    // numero lu, en attente de son coup
+    // Un seul balayage : accolades OU jeton. Les accolades peuvent contenir
+    // des espaces et de la ponctuation, on ne peut pas se contenter de
+    // decouper sur les blancs.
+    const re = /\{([^}]*)\}|(\S+)/g;
+    let m;
+    while ((m = re.exec(s)) !== null) {
+        if (m[1] !== undefined) {
+            const c = clean(m[1]);
+            if (!c) continue;
+            // Plusieurs accolades de suite se rattachent au meme coup.
+            if (out.length && out[out.length - 1].comment) out[out.length - 1].comment += ' ' + c;
+            else if (out.length && out[out.length - 1].move) out[out.length - 1].comment = c;
+            else out.push({ number: null, move: null, comment: c });
+            continue;
+        }
+        let tok = m[2];
+        if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok)) continue;
+        if (/^\$\d+$/.test(tok)) continue;
+        // Numerotation, collee ou non au coup ("16.", "16...", "16.Qb8+").
+        const num = /^(\d+\.+)(.*)$/.exec(tok);
+        if (num) { pending = num[1]; tok = num[2]; if (!tok) continue; }
+        out.push({ number: pending, move: tok, comment: null });
+        pending = null;
+    }
+    return out;
+}
+
+/**
  * Extrait les coups d'un texte PGN/PJN : retire les tags, les commentaires
  * {…}, les variantes (…), les numeros de coups, les NAG $n et le resultat.
  */

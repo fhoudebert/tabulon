@@ -179,6 +179,30 @@ pub async fn open_board_state(app: AppHandle, game_name: String, match_id: Optio
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// rpc.call("openProblem", id)
+///
+/// Fenetre de LECTURE d'un exemple : titre, image en grand, commentaires.
+/// Elle ne recoit que l'identifiant d'un depot fait par le hub dans le store
+/// (`problem:{id}`) : le contenu comprend la vignette en base64, qui pese
+/// plusieurs dizaines de kilo-octets et n'a rien a faire dans une URL.
+///
+/// Le label depend de l'identifiant, donc un second "Voir" ouvre une seconde
+/// fenetre au lieu de remplacer la premiere : on compare volontiers deux
+/// problemes cote a cote, et l'image est le contenu principal.
+#[tauri::command]
+pub async fn open_problem(app: AppHandle, id: String, title: String) -> Result<(), String> {
+    use crate::window_manager::WindowOptions;
+    open_window(&app, WindowOptions {
+        label: &format!("problem-{}", id.replace(|c: char| !c.is_ascii_alphanumeric(), "-")),
+        url:   &format!("content/problem.html?id={}", urlencoding::encode(&id)),
+        title: if title.is_empty() { "Tabulon" } else { &title },
+        width: 460.0, height: 620.0, min_width: 280.0, min_height: 320.0,
+        // Pas de persist_key : la taille utile depend de l'image affichee,
+        // memoriser celle du probleme precedent servirait mal le suivant.
+        persist_key: None,
+    }).map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// rpc.call("openBook", gameName, fileName, data)
 /// Le parsing PJN/PGN/PDN était assuré par le worker (supprimé).
 /// Pour l'instant : ouvre book.html directement sans données parsées.

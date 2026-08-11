@@ -471,14 +471,16 @@ function RenderSamples(samples) {
               <div class="loadgame-sample-desc"></div>
               <div class="loadgame-sample-buttons">
                 <button class="btn btn-positive sample-play"></button>
+                <button class="btn btn-default sample-view"></button>
                 <button class="btn btn-default sample-save"></button>
               </div>
             </div>`;
         // Vignette fournie avec l'exemple, sinon miniature du jeu.
         const img = div.querySelector('img');
+        let hasImage = true;
         if (sample.thumbnail) img.src = sample.thumbnail;
         else if (game) img.src = distURL(game.thumbnail);
-        else img.remove();
+        else { img.remove(); hasImage = false; }
 
         div.querySelector('.loadgame-sample-name').textContent = sample.title || sample.fileName;
         div.querySelector('.loadgame-sample-desc').textContent =
@@ -486,9 +488,21 @@ function RenderSamples(samples) {
                  : t('load.gameMissing', { game: sample.game });
 
         const play = div.querySelector('.sample-play');
+        const view = div.querySelector('.sample-view');
         const save = div.querySelector('.sample-save');
         play.textContent = t('load.play');
+        view.textContent = t('load.view');
         save.textContent = t('load.save');
+        // « Voir » ne depend pas du catalogue : lire le titre, l'image et le
+        // commentaire d'un exemple reste utile quand le jeu n'est pas installe.
+        view.addEventListener('click', () => ViewSample(sample));
+        // L'image elle-meme ouvre la meme fenetre : c'est le geste attendu
+        // devant une vignette, et elle est plus facile a viser qu'un bouton.
+        if (hasImage) {
+            img.classList.add('clickable');
+            img.title = t('load.view');
+            img.addEventListener('click', () => ViewSample(sample));
+        }
         // Le jeu vise n'est pas installe : l'exemple reste visible et
         // enregistrable -- le dossier problems/ peut tres bien etre livre
         // avant le dist qui contient le jeu -- mais on ne propose pas un
@@ -503,6 +517,24 @@ function RenderSamples(samples) {
         });
         save.addEventListener('click', () => SaveSample(sample));
         container.appendChild(div);
+    }
+}
+
+// Ouvre la fenetre de lecture. Le contenu passe par le store et non par
+// l'URL : il embarque la vignette en base64, plusieurs dizaines de kilo-octets.
+async function ViewSample(sample) {
+    const id = 'view-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    try {
+        await store.set('problem:' + id, {
+            group: sample.game,
+            file:  sample.fileName,
+            text:  sample.text,
+            thumbnail: sample.thumbnail || null,
+        });
+        await tRpc.call('open_problem', id, sample.title || sample.fileName);
+    } catch (e) {
+        console.error('[hub] ouverture de l\'apercu:', e);
+        Notify(t('hub.loadFailed'));
     }
 }
 
