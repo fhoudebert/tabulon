@@ -8,7 +8,8 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
-import { ParseSolution, BookGame, BookVariant, FairyGameIndex, FairyVariantAlias } from './book-format.js';
+import { ParseSolution, BookGame, BookVariant, FairyGameIndex, FairyVariantAlias,
+         StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
 import { joinPeerMatch } from './remote-peer-channel.js';
@@ -469,9 +470,10 @@ function RenderSamples(samples) {
             <div class="loadgame-sample-body">
               <div class="loadgame-sample-name"></div>
               <div class="loadgame-sample-desc"></div>
+              <div class="loadgame-sample-note"></div>
               <div class="loadgame-sample-buttons">
-                <button class="btn btn-positive sample-play"></button>
-                <button class="btn btn-default sample-view"></button>
+                <button class="btn btn-positive sample-try"></button>
+                <button class="btn btn-default sample-solve"></button>
                 <button class="btn btn-default sample-save"></button>
               </div>
             </div>`;
@@ -486,56 +488,69 @@ function RenderSamples(samples) {
         div.querySelector('.loadgame-sample-desc').textContent =
             game ? (game.title + (sample.kind ? ' — ' + t('load.kind.' + sample.kind) : ''))
                  : t('load.gameMissing', { game: sample.game });
+        // L'enonce -- « Mat en 2 ici » -- vient du commentaire ecrit avant le
+        // premier coup. C'est ce qu'il faut savoir AVANT de chercher, donc il
+        // est sur la vignette et non derriere un clic. Tronque par le CSS,
+        // lisible en entier au survol.
+        const note = div.querySelector('.loadgame-sample-note');
+        if (sample.blurb) { note.textContent = sample.blurb; note.title = sample.blurb; }
+        else note.remove();
 
-        const play = div.querySelector('.sample-play');
-        const view = div.querySelector('.sample-view');
-        const save = div.querySelector('.sample-save');
-        play.textContent = t('load.play');
-        view.textContent = t('load.view');
-        save.textContent = t('load.save');
-        // « Voir » ne depend pas du catalogue : lire le titre, l'image et le
-        // commentaire d'un exemple reste utile quand le jeu n'est pas installe.
-        view.addEventListener('click', () => ViewSample(sample));
-        // L'image elle-meme ouvre la meme fenetre : c'est le geste attendu
-        // devant une vignette, et elle est plus facile a viser qu'un bouton.
-        if (hasImage) {
+        // « Essayer » d'abord, et en bouton principal : un probleme est fait
+        // pour etre cherche. « Resoudre » ouvre la meme position AVEC sa
+        // solution rejouee -- utile, mais il ne doit pas etre le geste par
+        // defaut, sinon il n'y a plus rien a trouver.
+        const tryIt = div.querySelector('.sample-try');
+        const solve = div.querySelector('.sample-solve');
+        const save  = div.querySelector('.sample-save');
+        tryIt.textContent = t('load.try');
+        solve.textContent = t('load.solve');
+        save.textContent  = t('load.save');
+        tryIt.title = t('load.tryTip');
+        solve.title = t('load.solveTip');
+        // L'image ouvre elle aussi la position a chercher : c'est le geste
+        // attendu devant une vignette, et une cible plus facile a viser.
+        if (hasImage && game) {
             img.classList.add('clickable');
-            img.title = t('load.view');
-            img.addEventListener('click', () => ViewSample(sample));
+            img.title = t('load.tryTip');
+            img.addEventListener('click', () => PlaySample(sample, true));
         }
         // Le jeu vise n'est pas installe : l'exemple reste visible et
         // enregistrable -- le dossier problems/ peut tres bien etre livre
         // avant le dist qui contient le jeu -- mais on ne propose pas un
         // lancement qui ne peut pas aboutir.
-        if (!game) { play.disabled = true; play.title = t('load.gameMissing', { game: sample.game }); }
-        else play.addEventListener('click', async () => {
-            // Exactement le meme circuit qu'un fichier choisi a la main : si
-            // ce chemin casse un jour, les exemples cassent avec lui, ce qui
-            // est voulu -- ils servent aussi de banc d'essai.
-            try { await OpenGameFile(sample.text, sample.fileName, sample.game); }
-            catch (e) { console.error('[hub] exemple:', e); Notify(t('hub.loadFailed')); }
-        });
+        if (!game) {
+            for (const b of [tryIt, solve]) {
+                b.disabled = true;
+                b.title = t('load.gameMissing', { game: sample.game });
+            }
+        } else {
+            tryIt.addEventListener('click', () => PlaySample(sample, true));
+            solve.addEventListener('click', () => PlaySample(sample, false));
+        }
         save.addEventListener('click', () => SaveSample(sample));
         container.appendChild(div);
     }
 }
 
-// Ouvre la fenetre de lecture. Le contenu passe par le store et non par
-// l'URL : il embarque la vignette en base64, plusieurs dizaines de kilo-octets.
-async function ViewSample(sample) {
-    const id = 'view-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-    try {
-        await store.set('problem:' + id, {
-            group: sample.game,
-            file:  sample.fileName,
-            text:  sample.text,
-            thumbnail: sample.thumbnail || null,
-        });
-        await tRpc.call('open_problem', id, sample.title || sample.fileName);
-    } catch (e) {
-        console.error('[hub] ouverture de l\'apercu:', e);
-        Notify(t('hub.loadFailed'));
+// Lance un exemple. `stripped` retire les coups AVANT de passer par le
+// circuit habituel : la position s'ouvre alors seule, sans sa solution, et
+// play.js -- qui ne met en pause que lorsqu'il a rejoue au moins un coup --
+// laisse la partie jouable contre l'adversaire habituel.
+//
+// Un seul chemin pour les deux boutons, et c'est exactement celui d'un
+// fichier choisi a la main : si ce chemin casse un jour, les exemples cassent
+// avec lui, ce qui est voulu -- ils servent aussi de banc d'essai.
+async function PlaySample(sample, stripped) {
+    let text = sample.text;
+    if (stripped) {
+        const solution = ParseSolution(text);
+        text = solution
+            ? JSON.stringify({ ...solution, playedMoves: [] })
+            : StripBookMoves(text) || text;
     }
+    try { await OpenGameFile(text, sample.fileName, sample.game); }
+    catch (e) { console.error('[hub] exemple:', e); Notify(t('hub.loadFailed')); }
 }
 
 async function SaveSample(sample) {
@@ -575,13 +590,38 @@ async function SelectProblemTab(name) {
     let entries = [];
     try { entries = await tRpc.call('read_problem_group', name) || []; }
     catch (e) { console.error('[hub] problems:', e); if (container) container.textContent = t('hub.loadFailed'); return; }
-    RenderSamples(entries.map(e => ({
-        game: e.group,
-        title: e.file,
-        fileName: e.file,
-        text: e.text,
-        thumbnail: e.thumbnail || null,
-    })));
+    RenderSamples(await Promise.all(entries.map(Describe)));
+}
+
+// Titre et enonce d'un exemple, lus dans le fichier. Le nom de fichier
+// (« matOpera.pgn ») n'apprend rien ; [Event] porte le nom que l'auteur a
+// donne au probleme, et le commentaire d'introduction porte la consigne.
+async function Describe(entry) {
+    const base = {
+        game: entry.group,
+        title: entry.file,
+        fileName: entry.file,
+        text: entry.text,
+        thumbnail: entry.thumbnail || null,
+        blurb: null,
+    };
+    // Une sauvegarde JSON ne porte ni tag ni commentaire : rien a en tirer.
+    if (ParseSolution(entry.text)) return base;
+    let matches = [];
+    try { matches = await tRpc.call('parse_pjn', entry.text) || []; }
+    catch (e) { console.warn('[hub] description de', entry.file, ':', e.message || e); return base; }
+    if (!matches.length) return base;
+
+    const title = (matches[0].tags?.Event || '').trim();
+    if (title) base.title = title;
+    // Fichier a plusieurs problemes : le dire, le titre du premier seul
+    // serait trompeur.
+    if (matches.length > 1) base.blurb = t('load.severalGames', { n: matches.length });
+    else {
+        const intro = BookCommentary(matches[0].text).find(x => !x.move && x.comment);
+        if (intro) base.blurb = intro.comment;
+    }
+    return base;
 }
 
 // Chargé une seule fois : le dossier ne bouge pas en cours de session, et

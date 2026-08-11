@@ -11,6 +11,7 @@
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync, readdirSync } from 'fs';
+import { ExtractMoves } from '../app/content/book-format.js';
 import { join } from 'path';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -82,16 +83,23 @@ const mockTauri = {
       if (cmd === 'list_problem_groups') return listProblemGroups();
       if (cmd === 'read_problem_group')  return readProblemGroup(payload.group);
       if (cmd === 'parse_pjn') {
-        // Meme decoupage que la commande Rust, reduit au premier bloc de tags.
+        // Meme decoupage que la commande Rust : un bloc de tags apparie avec
+        // le bloc suivant, sur TOUT le fichier. Ne renvoyer que la premiere
+        // partie masquerait les fichiers a plusieurs problemes.
         const blocks = String(payload.data).replace(/\r\n?/g, '\n').split('\n\n')
           .map(b => b.trim()).filter(Boolean);
-        if (!blocks.length || !blocks[0].startsWith('[')) return [];
-        const tags = {};
-        for (const line of blocks[0].split('\n')) {
-          const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
-          if (m) tags[m[1]] = m[2].replace(/^"|"$/g, '');
+        const out = [];
+        for (let i = 0; i < blocks.length; ) {
+          if (!blocks[i].startsWith('[')) { i++; continue; }
+          const tags = {};
+          for (const line of blocks[i].split('\n')) {
+            const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+            if (m) tags[m[1]] = m[2].replace(/^"|"$/g, '');
+          }
+          out.push({ label: '', text: blocks[i] + '\n\n' + (blocks[i + 1] || ''), tags });
+          i += 2;
         }
-        return [{ label: '', text: blocks.slice(0, 2).join('\n\n'), tags }];
+        return out;
       }
       return null;
   } },
@@ -206,8 +214,10 @@ console.log('Exemples du dossier problems/');
   // Le premier onglet affiche son unique probleme, avec sa vignette fournie.
   let cards = [...document.querySelectorAll('.loadgame-sample')];
   assert(cards.length === 1, 'onglet chu-shogi : 1 exemple');
-  assert(cards[0].querySelector('.loadgame-sample-name').textContent === 'tsumeshogi.pjn',
-    'nom du fichier affiche');
+  // Le titre vient de [Event], pas du nom de fichier : « tsumeshogi.pjn »
+  // n'apprend rien, « silverman - Black to move and Mate in 5 » si.
+  assert(/silverman/.test(cards[0].querySelector('.loadgame-sample-name').textContent),
+    'titre lu dans le fichier — ' + cards[0].querySelector('.loadgame-sample-name').textContent);
   assert(cards[0].querySelector('img').src.startsWith('data:image/'),
     'la vignette du dossier est utilisee (tsumeshogi-thumb), pas la miniature du jeu');
 
@@ -216,53 +226,90 @@ console.log('Exemples du dossier problems/');
   await waitFor(() => document.querySelectorAll('.loadgame-sample').length === 2, 'onglet classic-chess');
   cards = [...document.querySelectorAll('.loadgame-sample')];
   const names = cards.map(c => c.querySelector('.loadgame-sample-name').textContent);
-  assert(names.join(' ') === 'matOpera.pgn matduberger.pgn' || names.length === 2,
-    'onglet classic-chess : 2 exemples — ' + names.join(', '));
+  assert(names.length === 2, 'onglet classic-chess : 2 exemples — ' + names.join(', '));
   assert(cards.every(c => c.querySelector('img').src.startsWith('data:image/')),
     'chaque .pgn a trouve sa vignette -thumb.jpg');
 
   // Lancer : meme circuit qu'un fichier choisi a la main.
   const before = invokeCalls.length;
-  cards[names.indexOf('matOpera.pgn')].querySelector('.sample-play').click();
+  cards[names.findIndex(n => /Opéra/.test(n))].querySelector('.sample-solve').click();
   await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_book'), 'exemple lance');
   assert(invokeCalls.slice(before).find(c => c.cmd === 'open_book').payload.gameName === 'classic-chess',
     'jeu resolu depuis le fichier — le PGN lichess ne porte que [Variant "Standard"]');
 
   // Enregistrer : dialogue natif puis ecriture, contenu inchange.
-  cards[names.indexOf('matduberger.pgn')].querySelector('.sample-save').click();
+  cards[names.findIndex(n => /UltraBullet/.test(n))].querySelector('.sample-save').click();
   await waitFor(() => invokeCalls.some(c => c.cmd === 'save_text_file'), 'save_text_file invoque');
   const sv = invokeCalls.find(c => c.cmd === 'save_text_file');
-  assert(saveDialogArgs[0].defaultPath === 'matduberger.pgn', 'nom de fichier propose');
+  assert(saveDialogArgs[0].defaultPath === 'matduberger.pgn',
+    'le NOM DE FICHIER reste celui du disque a l\'enregistrement, pas le titre affiche');
   assert(sv.payload.contents.includes('4. Qxf7#'), 'le fichier est ecrit tel quel');
 }
 
-// ── 4c. « Voir » : ouvre la fenêtre de lecture ─────────────────────────────
-console.log('Bouton Voir');
+// ── 4c. « Essayer » vs « Résoudre » : deux chargements différents ─────────
+console.log('Essayer / Résoudre');
 {
   const cards = [...document.querySelectorAll('.loadgame-sample')];
   const names = cards.map(c => c.querySelector('.loadgame-sample-name').textContent);
-  const card  = cards[names.indexOf('matOpera.pgn')];
-  const before = invokeCalls.length;
-  card.querySelector('.sample-view').click();
-  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_problem'), 'fenêtre demandée');
-  const call = invokeCalls.slice(before).find(c => c.cmd === 'open_problem');
+  const card  = cards[names.findIndex(n => /Opéra/.test(n))];
+  assert(card, 'la vignette porte le titre du fichier, pas son nom — ' + names.join(' | '));
 
-  // Le contenu passe par le store et non par l'URL : il embarque la vignette
-  // en base64, quelques dizaines de kilo-octets.
-  const dep = storeData.get('problem:' + call.payload.id);
-  assert(dep, 'le contenu est déposé sous problem:{id}, pas passé dans l\'URL');
-  assert(dep.text.includes('Paul Morphy'), 'le texte intégral du fichier est transmis');
-  assert(dep.thumbnail && dep.thumbnail.startsWith('data:image/'), 'la vignette aussi');
-  assert(dep.file === 'matOpera.pgn' && dep.group === 'classic-chess',
-    'avec le nom de fichier et le jeu visé');
+  // L'énoncé, qui dit ce qu'il faut chercher, est sur la vignette.
+  assert(/Mat en 2 ici/.test(card.querySelector('.loadgame-sample-note').textContent),
+    'l\'énoncé est lisible AVANT de lancer quoi que ce soit');
 
-  // La vignette elle-même ouvre la même fenêtre : geste attendu, cible plus
-  // facile à viser qu'un bouton de 11 px.
-  const before2 = invokeCalls.length;
+  // « Essayer » : la position, sans les coups.
+  let before = invokeCalls.length;
+  card.querySelector('.sample-try').click();
+  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_book'), 'Essayer');
+  // Le texte transite par le store (book:{jeu}) : open_book ne porte que le nom.
+  let data = storeData.get('book:classic-chess').data;
+  assert(ExtractMoves(data).length === 0, 'aucun coup transmis : il reste tout à chercher');
+  assert(/\[FEN "4kb1r/.test(data), 'mais la position, elle, est bien là');
+  assert(!/Qb8/.test(data), 'la solution n\'apparaît nulle part dans ce qui est chargé');
+
+  // « Résoudre » : la même position AVEC les coups.
+  before = invokeCalls.length;
+  card.querySelector('.sample-solve').click();
+  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_book'), 'Résoudre');
+  data = storeData.get('book:classic-chess').data;
+  assert(ExtractMoves(data).length === 3, 'les 3 coups de la solution sont transmis');
+  assert(/Qb8\+/.test(data), 'le fichier passe tel quel, commentaires compris');
+
+  // L'image ouvre la position à chercher, pas la solution.
+  before = invokeCalls.length;
   card.querySelector('img').click();
-  await waitFor(() => invokeCalls.slice(before2).some(c => c.cmd === 'open_problem'), 'clic sur l\'image');
-  assert(card.querySelector('img').classList.contains('clickable'),
-    'et l\'image le signale visuellement');
+  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_book'), 'clic sur l\'image');
+  assert(ExtractMoves(storeData.get('book:classic-chess').data).length === 0,
+    'le geste le plus naturel mène à « Essayer », pas à la solution');
+  assert(card.querySelector('img').classList.contains('clickable'), 'et l\'image le signale');
+
+  // Le bouton de recherche est le bouton principal, et il vient en premier.
+  const order = [...card.querySelectorAll('.loadgame-sample-buttons button')].map(b => b.className);
+  assert(order[0].includes('sample-try'), 'Essayer est le premier bouton');
+  assert(order[0].includes('btn-positive') && !order[1].includes('btn-positive'),
+    'et le seul mis en avant : voir la solution ne doit pas être le geste par défaut');
+}
+
+// ── 4d. Fichier à plusieurs problèmes ──────────────────────────────────────
+console.log('Fichier à plusieurs problèmes');
+{
+  const tabs = [...document.querySelectorAll('.loadgame-tab')];
+  tabs[0].click();                                   // chu-shogi
+  await waitFor(() => document.querySelectorAll('.loadgame-sample').length === 1, 'onglet chu-shogi');
+  const card = document.querySelector('.loadgame-sample');
+  assert(/silverman/.test(card.querySelector('.loadgame-sample-name').textContent),
+    'le titre est celui du PREMIER problème du fichier');
+  assert(/3 games|3 parties/.test(card.querySelector('.loadgame-sample-note').textContent),
+    'et la note annonce qu\'il y en a trois — le titre seul serait trompeur');
+
+  const before = invokeCalls.length;
+  card.querySelector('.sample-try').click();
+  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_book'), 'Essayer');
+  const data = storeData.get('book:chu-shogi').data;
+  const blocks = data.split('\n\n').map(b => b.trim()).filter(Boolean).filter(b => b.startsWith('['));
+  assert(blocks.length === 3, `les 3 problèmes survivent au retrait des coups (${blocks.length})`);
+  assert(!/FLj9-k10/.test(data), 'et aucune solution ne subsiste');
 }
 
 // ── 4b. Jeu absent du catalogue : visible, enregistrable, pas lancable ─────
@@ -273,21 +320,21 @@ console.log('Onglet dont le jeu n\'est pas installe');
   await waitFor(() => document.querySelectorAll('.loadgame-sample').length === 2, 'onglet ultima');
   const cards = [...document.querySelectorAll('.loadgame-sample')];
   const names = cards.map(c => c.querySelector('.loadgame-sample-name').textContent);
-  assert(names.includes('matc.pjn') && names.includes('ultima-solutionP1.json'),
-    'les deux formats du dossier sont listes — ' + names.join(', '));
-  assert(cards.every(c => c.querySelector('.sample-play').disabled),
-    'lancement desactive : le jeu ultima n\'est pas dans ce catalogue de test');
+  assert(names.includes('Mat in 1') && names.includes('ultima-solutionP1.json'),
+    'titre pour le .pjn, nom de fichier pour le .json qui n\'en porte pas — ' + names.join(', '));
+  assert(cards.every(c => c.querySelector('.sample-solve').disabled),
+    'solution desactivee : le jeu ultima n\'est pas dans ce catalogue de test');
   assert(cards.every(c => !c.querySelector('.sample-save').disabled),
     'enregistrement toujours possible — le dossier peut preceder le dist qui contient le jeu');
-  assert(cards.every(c => !c.querySelector('.sample-view').disabled),
-    'lecture toujours possible : titre, image et commentaire ne dependent pas du catalogue');
+  assert(cards.every(c => c.querySelector('.sample-try').disabled),
+    'recherche desactivee aussi : les deux boutons ouvrent une partie');
   assert(/not installed/i.test(text('.loadgame-sample-desc')), 'et la raison est ecrite');
 
   // Appariement lache : p1-thumb.jpg <-> ultima-solutionP1.json
   const sol = cards[names.indexOf('ultima-solutionP1.json')];
   assert(sol.querySelector('img').src.startsWith('data:image/'),
     'p1-thumb.jpg est rattache a ultima-solutionP1.json malgre le nom different');
-  const pjn = cards[names.indexOf('matc.pjn')];
+  const pjn = cards[names.indexOf('Mat in 1')];
   assert(pjn.querySelector('img').src.startsWith('data:image/'),
     'matc.jpg est rattache a matc.pjn (image sans suffixe -thumb)');
   assert(sol.querySelector('img').src !== pjn.querySelector('img').src
@@ -327,7 +374,9 @@ startFen = 19/19 w - - 0 1
   assert(cards[0].querySelector('.loadgame-sample-name').textContent === 'shako.pjn',
     'la vignette porte le nom de la variante');
   const before2 = invokeCalls.length;
-  cards[0].querySelector('.sample-play').click();
+  // Une variante n'a pas de solution : « Essayer » est le seul geste qui ait
+  // un sens, et il ouvre la position de depart declaree par le variants.ini.
+  cards[0].querySelector('.sample-try').click();
   await waitFor(() => invokeCalls.slice(before2).some(c => c.cmd === 'open_book'), 'position ouvrable');
   assert(invokeCalls.slice(before2).find(c => c.cmd === 'open_book').payload.gameName === 'shako-chess',
     'la variante "shako" est routee vers le jeu Jocly "shako-chess"');

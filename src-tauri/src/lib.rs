@@ -105,7 +105,6 @@ pub fn run() {
             window_cmds::open_invitation,
             window_cmds::open_board_state,
             window_cmds::open_book,
-            window_cmds::open_problem,
             window_cmds::open_moves,
             window_cmds::relay_to_window,
             window_cmds::open_position,

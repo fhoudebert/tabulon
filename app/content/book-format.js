@@ -12,6 +12,41 @@
 // (sauvegarde) et hub.js (aiguillage a l'ouverture d'un fichier).
 
 /**
+ * Le meme texte PGN/PJN, PRIVE DE SES COUPS : tags conserves, corps vide.
+ *
+ * C'est ce que « Essayer » charge. Un probleme est fait pour etre cherche :
+ * ouvrir d'emblee la position AVEC sa solution rejouee ne laisse rien a
+ * trouver. Le [FEN] suffit a poser l'echiquier, les coups sont precisement ce
+ * qu'il faut retirer.
+ *
+ * On coupe le texte plutot que de reconstruire des tags : un fichier tiers
+ * porte des tags qu'on ne connait pas ([StudyName], [Orientation], [ECO]...)
+ * et les jeter changerait le libelle, le titre et la resolution du jeu. Toutes
+ * les parties du fichier sont traitees, pas seulement la premiere -- un livre
+ * de trois tsumeshogi doit rester un livre de trois positions.
+ */
+export function StripBookMoves(text) {
+    const blocks = String(text || '').replace(/\r\n?/g, '\n')
+        .split(/\n\n+/).map(b => b.trim()).filter(Boolean);
+    const out = [];
+    for (const block of blocks) {
+        // Un bloc de tags est suivi de son bloc de coups : on garde le
+        // premier, on jette le second. Un bloc de coups sans tags devant
+        // (fichier sans en-tete) est jete aussi.
+        if (!block.startsWith('[')) continue;
+        const tags = block.replace(/\[PlyCount\s+[^\]]*\]\n?/g, '') + '\n[PlyCount "0"]';
+        // Le corps ne peut pas etre VIDE : le decoupage apparie un bloc de
+        // tags avec le bloc suivant, et deux blocs de tags de suite feraient
+        // passer le second pour les coups du premier -- un fichier de trois
+        // problemes n'en montrerait plus qu'un et demi. On ecrit donc le
+        // marqueur de resultat PGN "*" (partie inachevee), qui est exactement
+        // ce que la position represente et que l'extraction des coups ignore.
+        out.push(tags + '\n\n*');
+    }
+    return out.length ? out.join('\n\n') + '\n' : '';
+}
+
+/**
  * Commentaires d'une partie, dans l'ordre, rattaches au coup qu'ils suivent.
  * C'est ce que ExtractMoves JETTE : la matiere pedagogique d'un probleme
  * commente ("un sacrifice d'attraction pour liberer le passage") est dans les

@@ -1217,12 +1217,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             play: (m) => joclyMatch.playMove(m),
         });
         if (unresolved) console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
-        // Humain contre humain : sans ca l'IA du camp B rejouerait par-dessus
-        // la partie chargee, et surtout des qu'on reculerait d'un coup pour
-        // naviguer dans la fenetre Historique.
-        SetBothHuman();
-        paused = true;
-        UpdatePause();
+        // Humain contre humain, en pause : sans ca l'IA du camp B rejouerait
+        // par-dessus la partie chargee, et surtout des qu'on reculerait d'un
+        // coup pour naviguer dans la fenetre Historique.
+        //
+        // SAUF si le fichier ne portait aucun coup. C'est ce que « Essayer »
+        // charge : une position seule, sans sa solution. Il n'y a alors rien
+        // a proteger et rien ou naviguer -- ce qu'on veut, c'est CHERCHER,
+        // donc jouer pour de bon, avec l'adversaire habituel.
+        if (played > 0) {
+            SetBothHuman();
+            paused = true;
+            UpdatePause();
+        }
         // Libelle calcule par book.js (qui a les tags ET le nom du fichier).
         // Ancien affichage : "? vs ?", les tags [White]/[Black] etant absents
         // de tout fichier ecrit par Tabulon.
@@ -1246,9 +1253,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             // qui n'a aucun autre moyen de savoir que des coups existent.
             try {
                 await joclyMatch.load(saveData.solution);
-                SetBothHuman();
-                paused = true;
-                UpdatePause();
+                // Meme regle que pour un livre : une sauvegarde sans coup est
+                // une POSITION, pas une partie a relire. On la laisse jouable.
+                if ((saveData.solution.playedMoves || []).length > 0) {
+                    SetBothHuman();
+                    paused = true;
+                    UpdatePause();
+                }
                 emit(`play-event:${matchId}:move-played`, null).catch(() => {});
             } catch (e) {
                 console.warn('[play] solution: chargement refuse:', e.message || e);

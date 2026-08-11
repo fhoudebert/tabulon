@@ -6,7 +6,7 @@
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
 import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel,
-         BookVariant, FairyGameIndex, BookCommentary } from '../app/content/book-format.js';
+         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves } from '../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -439,6 +439,58 @@ console.log('Test 16 - commentaires d\'une partie');
     const two = BookCommentary('[E "x"]\n\n1. e4 {un} {deux}');
     ok(two.length === 1 && two[0].comment === 'un deux',
        'deux accolades consecutives se rattachent au meme coup');
+}
+
+console.log('Test 17 - retrait des coups (bouton « Essayer »)');
+{
+    // Le decoupage de parse_pjn, reproduit : un bloc de tags apparie avec le
+    // bloc suivant. C'est LUI qui contraint le format du texte produit.
+    const split = (txt) => {
+        const b = txt.replace(/\r\n?/g, '\n').split('\n\n').map(x => x.trim()).filter(Boolean);
+        const out = [];
+        for (let i = 0; i < b.length; ) {
+            if (!b[i].startsWith('[')) { i++; continue; }
+            out.push({ tags: ParseTags(b[i]), text: b[i] + '\n\n' + (b[i + 1] || '') });
+            i += 2;
+        }
+        return out;
+    };
+
+    // Fichier a UNE partie.
+    {
+        const orig = fixture('fixtures-problems/classic-chess/matOpera.pgn');
+        const bare = StripBookMoves(orig);
+        ok(ExtractMoves(bare).length === 0, 'plus aucun coup — c\'est tout l\'objet du bouton');
+        ok(ExtractMoves(orig).length === 3, 'alors que l\'original en portait 3');
+        const t0 = ParseTags(bare);
+        ok(BookFen(t0) === BookFen(ParseTags(orig)), 'la position de depart est conservee a l\'identique');
+        ok(t0.Event && t0.Event.includes('Opéra'), 'et les tags aussi : le titre survit');
+        ok(t0.StudyName && t0.ChapterURL,
+           'y compris les tags tiers qu\'on ne connait pas — on coupe le texte, on ne le reecrit pas');
+        ok(t0.PlyCount === '0', '[PlyCount] est remis a 0 plutot que laisse mensonger');
+    }
+
+    // Fichier a PLUSIEURS parties : les trois problemes doivent survivre.
+    {
+        const orig = fixture('fixtures-problems/chu-shogi/tsumeshogi.pjn');
+        const bare = StripBookMoves(orig);
+        const a = split(orig), b = split(bare);
+        ok(a.length === 3, '3 problemes dans le fichier d\'origine');
+        ok(b.length === 3,
+           `3 problemes apres retrait (${b.length}) — deux blocs de tags de suite feraient prendre ` +
+           'le second pour les coups du premier');
+        ok(b.every(m => ExtractMoves(m.text).length === 0), 'aucun coup dans aucune des trois');
+        ok(b.every((m, i) => BookFen(m.tags) === BookFen(a[i].tags)), 'chacune garde SA position');
+        ok(b[1].tags.Event.includes('George Hodges'), 'et son titre');
+    }
+
+    // Robustesse.
+    ok(StripBookMoves('') === '' && StripBookMoves(null) === '',
+       'entree vide -> chaine vide, pas d\'exception');
+    ok(StripBookMoves('1. e4 e5') === '',
+       'un corps de coups sans tags devant ne produit rien : il n\'y a pas de position a ouvrir');
+    ok(!/1\. e4/.test(StripBookMoves('[Event "x"]\n\n1. e4 { note } e5')),
+       'les commentaires partent avec les coups');
 }
 
 console.log('');
