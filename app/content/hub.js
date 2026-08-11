@@ -8,7 +8,7 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
-import { ParseSolution } from './book-format.js';
+import { ParseSolution, BookGame } from './book-format.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
 import { joinPeerMatch } from './remote-peer-channel.js';
 
@@ -250,31 +250,21 @@ function InitDetailButtons() {
         UpdateDetailFavorite();
     });
 
+    // Ouverture d'un fichier de partie. Deux points d'entree, meme circuit :
+    // le bouton "Ouvrir un livre" de la fiche (un jeu est selectionne) et
+    // l'entree "Charger une partie" de la barre laterale (aucun jeu choisi --
+    // c'est alors le fichier qui doit dire de quel jeu il s'agit).
     document.getElementById('fileElem').addEventListener('change', function () {
-        if (!g()) return;
         const name = this.value;
-        const reader = new FileReader();
-        reader.readAsText(this.files[0]);
-        reader.onload = async (e) => {
-            const text = e.target.result;
-            const solution = ParseSolution(text);
-            if (solution) {
-                // Sauvegarde Jocly ({game, initialBoard, playedMoves}) : c'est
-                // exactement ce que joclyMatch.load() attend, donc on la depose
-                // telle quelle comme fork -- play.js la charge sans rejeu ni
-                // interpretation de notation. Le jeu vient du fichier, pas de
-                // la fiche affichee : une solution designe son propre jeu.
-                const id = 'sol-' + Date.now();
-                await store.set('fork:' + id, { solution });
-                tRpc.call('new_match', solution.game || g(), null, id);
-                return;
-            }
-            // Sinon PGN/PJN : le contenu passe par le store (trop gros pour
-            // l'URL) et book.js le parse via la commande Rust parse_pjn.
-            await store.set('book:' + g(), { fileName: name, data: text });
-            tRpc.call('open_book', g(), name, '');
-        };
+        const file = this.files[0];
         this.value = '';
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try { await OpenGameFile(e.target.result, name); }
+            catch (err) { console.error('[hub] chargement:', err); }
+        };
+        reader.readAsText(file);
     });
     document.getElementById('openbook').addEventListener('click', () => {
         if (g()) document.getElementById('fileElem').click();
@@ -284,6 +274,58 @@ function InitDetailButtons() {
     document.getElementById('detail-back').addEventListener('click', () => {
         document.getElementById('game-list-pane').classList.remove('show-detail');
     });
+}
+
+// Message dans la banniere du bas (meme zone que les notifications poussees
+// depuis Rust), avec un lien pour la refermer.
+function Notify(text) {
+    const notifier = document.querySelector('.hub-notifier');
+    if (!notifier) { console.warn('[hub]', text); return; }
+    document.querySelectorAll('.hub-notifier > *').forEach(el => el.style.display = 'none');
+    const el = document.querySelector('.hub-notifier-text');
+    el.style.display = ''; el.textContent = text;
+    const ok = document.querySelector('.hub-notifier-ok');
+    ok.style.display = ''; ok.textContent = t('common.close');
+    ok.onclick = () => { notifier.classList.add('hidden'); ok.onclick = null; };
+    notifier.classList.remove('hidden');
+}
+
+// Choisit le jeu d'un fichier : celui qu'il declare s'il existe dans le
+// catalogue, sinon celui de la fiche affichee. Le fichier fait autorite parce
+// que rejouer sa notation dans un AUTRE jeu ne peut pas marcher -- plateau et
+// notation different, les coups seraient refuses des le premier.
+function ResolveGame(declared, selected) {
+    if (declared && gamesMap[declared]) return { game: declared, mismatch: !!selected && declared !== selected };
+    return { game: selected || null, unknown: !!declared };
+}
+
+async function OpenGameFile(text, fileName) {
+    const selected = g();
+
+    // 1. Solution/sauvegarde Jocly (JSON) : deja au format de joclyMatch.load().
+    const solution = ParseSolution(text);
+    if (solution) {
+        const r = ResolveGame(solution.game, selected);
+        if (!r.game) return Notify(t('hub.loadNoGame'));
+        if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
+        const id = 'sol-' + Date.now();
+        await store.set('fork:' + id, { solution });
+        return tRpc.call('new_match', r.game, null, id);
+    }
+
+    // 2. PGN/PJN : on lit d'abord les tags pour savoir de quel jeu il s'agit
+    //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers).
+    let declared = null;
+    try {
+        const matches = await tRpc.call('parse_pjn', text);
+        declared = BookGame(matches?.[0]?.tags);
+    } catch (e) { console.warn('[hub] parse_pjn:', e.message || e); }
+
+    const r = ResolveGame(declared, selected);
+    if (!r.game) return Notify(r.unknown ? t('hub.loadUnknownGame') : t('hub.loadNoGame'));
+    if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
+    await store.set('book:' + r.game, { fileName, data: text });
+    tRpc.call('open_book', r.game, fileName, '');
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────
@@ -489,6 +531,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('nav-templates').addEventListener('click', async () => {
         SetNav('templates'); document.getElementById('template-list').style.display = '';
         await UpdateTemplates(); UpdateTemplateList();
+    });
+    document.getElementById('nav-loadgame').addEventListener('click', () => {
+        document.getElementById('fileElem').click();
     });
     document.getElementById('nav-invitation').addEventListener('click', () => {
         SetNav('invitation'); document.getElementById('invitation-pane').style.display = '';

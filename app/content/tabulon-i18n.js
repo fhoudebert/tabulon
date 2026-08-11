@@ -26,6 +26,9 @@ const DICT = {
         // hub — navigation
         'nav.games': 'Games', 'nav.all': 'All', 'nav.favorites': 'Favorites',
         'nav.invitation': 'Invitation',
+        'nav.loadGame': 'Load a game',
+        'hub.loadNoGame': 'This file does not say which game it belongs to — select a game first, then use “Open book”.',
+        'hub.loadUnknownGame': 'This file refers to a game that is not installed.',
         'nav.configuration': 'Configuration', 'nav.templates': 'Templates',
         'nav.about': 'About',
         // hub — liste et détail
@@ -187,6 +190,9 @@ const DICT = {
     fr: {
         'nav.games': 'Jeux', 'nav.all': 'Tous', 'nav.favorites': 'Favoris',
         'nav.invitation': 'Invitation',
+        'nav.loadGame': 'Charger une partie',
+        'hub.loadNoGame': 'Ce fichier n’indique pas de quel jeu il s’agit — sélectionnez d’abord un jeu, puis utilisez « Ouvrir un livre ».',
+        'hub.loadUnknownGame': 'Ce fichier désigne un jeu qui n’est pas installé.',
         'nav.configuration': 'Configuration', 'nav.templates': 'Modèles',
         'nav.about': 'À propos',
         'hub.search': 'Rechercher un jeu',

@@ -5,7 +5,7 @@
 // l'utilisateur, pas des exemples reconstruits : c'est le seul moyen de
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
-import { ExtractMoves, BookFen, BuildPJN, ParseSolution } from '../app/content/book-format.js';
+import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution } from '../app/content/book-format.js';
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
@@ -114,6 +114,19 @@ console.log('Test 6 - solutions JSON');
     ok(ParseSolution('{"a":1}') === null, 'JSON quelconque refuse (ni coups ni position)');
     ok(ParseSolution('') === null && ParseSolution(null) === null, 'vide -> null');
     ok(ParseSolution('  {"playedMoves":[]}') !== null, 'espaces en tete toleres');
+}
+
+console.log('Test 7 - jeu declare par le fichier');
+{
+    ok(BookGame(ParseTags(PJN_SANS_FEN)) === 'rocaille', '[JoclyGame] (ecrit par Tabulon)');
+    ok(BookGame(ParseTags(PGN_AVEC_FEN)) === 'classic-chess', '[Game] sans guillemets (fichier tiers)');
+    ok(BookGame({}) === null && BookGame(null) === null, 'aucun tag de jeu -> null');
+    ok(BookGame({ Game: '  ' }) === null, 'tag vide -> null');
+    // [JoclyGame] prime : c'est le nom canonique ecrit par Tabulon.
+    ok(BookGame({ Game: 'x', JoclyGame: 'chu-shogi' }) === 'chu-shogi', '[JoclyGame] prime sur [Game]');
+    // Aller-retour : ce que Tabulon ecrit se relit comme le bon jeu.
+    ok(BookGame(ParseTags(BuildPJN('chu-shogi', ['a'], null, new Date(2026,0,1)))) === 'chu-shogi',
+       'le jeu survit a l\'aller-retour');
 }
 
 console.log('');

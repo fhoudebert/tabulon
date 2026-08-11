@@ -40,6 +40,21 @@ export function BookFen(tags) {
 }
 
 /**
+ * Jeu Jocly declare dans les tags, ou null. [JoclyGame] est le nom ecrit par
+ * Tabulon ; [Game] est la forme courte utilisee a la main et par des fichiers
+ * tiers. Le nom n'est PAS valide ici -- l'appelant doit verifier qu'il existe
+ * dans le catalogue avant de s'en servir.
+ */
+export function BookGame(tags) {
+    if (!tags) return null;
+    for (const key of ['JoclyGame', 'Game', 'joclyGame', 'game']) {
+        const v = tags[key];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+}
+
+/**
  * Construit le texte PJN d'une partie.
  *
  * `initialBoard` non nul = la partie ne part PAS de la position standard

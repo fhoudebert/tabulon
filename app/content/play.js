@@ -537,6 +537,17 @@ function updateRemoteRestrictedButtons() {
     }
 }
 
+// Bascule les deux camps en HUMAIN. Utilise a l'ouverture d'une partie ou
+// d'une solution : par defaut le camp B est une IA, qui jouerait aussitot
+// par-dessus les coups qu'on vient de charger -- et surtout des qu'on
+// reviendrait en arriere dans la fenetre Historique pour naviguer.
+function SetBothHuman() {
+    for (const key of [Jocly.PLAYER_A, Jocly.PLAYER_B]) {
+        players[key] = null;
+        syncFooterSelect(key);
+    }
+}
+
 // Aligne le select rapide du footer (select-player-a/-b) sur l'etat reel de
 // players[key] -- humain (''), IA (index en string), ou distant ('remote').
 // A appeler chaque fois que players[key] change ailleurs que par ce select
@@ -1174,6 +1185,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             await joclyMatch.playMove(move);
             played++;
         }
+        // Humain contre humain : sans ca l'IA du camp B rejouerait par-dessus
+        // la partie chargee, et surtout des qu'on reculerait d'un coup pour
+        // naviguer dans la fenetre Historique.
+        SetBothHuman();
         paused = true;
         UpdatePause();
         UpdateFooter(`${book.playerA || t('common.playerA')} vs ${book.playerB || t('common.playerB')}`);
@@ -1196,6 +1211,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // qui n'a aucun autre moyen de savoir que des coups existent.
             try {
                 await joclyMatch.load(saveData.solution);
+                SetBothHuman();
                 paused = true;
                 UpdatePause();
                 emit(`play-event:${matchId}:move-played`, null).catch(() => {});
