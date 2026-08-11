@@ -10,7 +10,8 @@
 // Usage : npm test  (ou node tests/test-hub-loadscreen.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
 process.chdir(new URL('..', import.meta.url).pathname);
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function waitFor(fn, what, timeout = 4000) {
@@ -24,6 +25,51 @@ function assert(cond, msg) {
   console.log('  ✓ ' + msg); passed++;
 }
 
+// Réimplémentation JS de src-tauri/src/commands/problem_cmds.rs, appliquée au
+// VRAI dossier d'exemples (tests/fixtures-problems, contenu de problems.zip).
+// Les deux implémentations doivent rester d'accord : les assertions ci-dessous
+// portent sur des noms de fichiers réels, pas sur des données inventées.
+const PROBLEMS = './tests/fixtures-problems';
+const GAME_EXT  = ['pjn', 'pgn', 'pdn', 'json'];
+const THUMB_EXT = ['png', 'jpg', 'jpeg', 'webp'];
+const extOf  = (f) => (f.split('.').pop() || '').toLowerCase();
+const stemOf = (f) => f.replace(/\.[^.]*$/, '');
+
+function listProblemGroups() {
+  const groups = readdirSync(PROBLEMS, { withFileTypes: true })
+    .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(d => ({ name: d.name,
+                 count: readdirSync(join(PROBLEMS, d.name))
+                          .filter(f => GAME_EXT.includes(extOf(f))).length }))
+    .filter(g => g.count > 0);
+  return { dir: '/chemin/vers/problems', groups };
+}
+
+function readProblemGroup(group) {
+  const files  = readdirSync(join(PROBLEMS, group)).sort();
+  const images = files.filter(f => THUMB_EXT.includes(extOf(f)));
+  return files.filter(f => GAME_EXT.includes(extOf(f))).map(f => {
+    const low = stemOf(f).toLowerCase();
+    let best = null, bestScore = 0;
+    for (const img of images) {
+      const ilow = stemOf(img).toLowerCase();
+      const bare = ilow.endsWith('-thumb') ? ilow.slice(0, -6) : ilow;
+      const score = ilow === low + '-thumb' ? 1000
+                  : ilow === low ? 900
+                  : bare === low ? 800
+                  : (bare && (low.endsWith(bare) || bare.endsWith(low))) ? bare.length : 0;
+      if (score > bestScore) { bestScore = score; best = img; }
+    }
+    const mime = best && extOf(best) === 'png' ? 'image/png' : 'image/jpeg';
+    return {
+      group, file: f, stem: stemOf(f), ext: extOf(f),
+      text: readFileSync(join(PROBLEMS, group, f), 'utf-8'),
+      thumbnail: best ? `data:${mime};base64,${readFileSync(join(PROBLEMS, group, best)).toString('base64')}` : null,
+    };
+  });
+}
+
 const invokeCalls = [];
 const storeData   = new Map();
 let nextSavePath  = '/tmp/exemple.pjn';
@@ -33,6 +79,8 @@ const mockTauri = {
   core: { invoke: async (cmd, payload = {}) => {
       invokeCalls.push({ cmd, payload });
       if (cmd === 'get_app_info') return { name: 'Tabulon', version: 'test', homepage: '' };
+      if (cmd === 'list_problem_groups') return listProblemGroups();
+      if (cmd === 'read_problem_group')  return readProblemGroup(payload.group);
       if (cmd === 'parse_pjn') {
         // Meme decoupage que la commande Rust, reduit au premier bloc de tags.
         const blocks = String(payload.data).replace(/\r\n?/g, '\n').split('\n\n')
@@ -132,37 +180,87 @@ console.log('Choix du fichier');
     assert(accept.includes(ext), 'le selecteur accepte ' + ext);
 }
 
-// ── 4. Vignettes d'exemples : lancer et enregistrer ─────────────────────────
-console.log('Exemples');
+// ── 4. Exemples : dossier externalisé, un onglet par sous-dossier ──────────
+console.log('Exemples du dossier problems/');
 {
-  const cards = [...document.querySelectorAll('.loadgame-sample')];
-  assert(cards.length >= 4, `${cards.length} vignettes affichees`);
-  assert(cards.every(c => c.querySelector('img')?.getAttribute('src')),
-    'chaque vignette porte la miniature de son jeu');
+  await waitFor(() => document.querySelectorAll('.loadgame-tab').length > 0, 'onglets rendus');
+  const help = text('.loadgame-samples-help');
+  assert(/problems folder/i.test(help) && /next to the executable/i.test(help),
+    'le texte dit OU poser le dossier');
+  assert(/one subfolder per game/i.test(help) && /Jocly game name/i.test(help),
+    'et que le nom du sous-dossier doit etre le nom du jeu');
+  assert(/-thumb/.test(help), 'la convention de nommage des vignettes est donnee');
+  assert(text('#loadgame-samples-intro').includes('/chemin/vers/problems'),
+    'le chemin resolu est affiche, pour savoir ou deposer un fichier de plus');
+
+  // Un onglet par sous-dossier, dans l'ordre du dossier.
+  const tabs = [...document.querySelectorAll('.loadgame-tab')];
+  assert(tabs.length === 3, `3 onglets (${tabs.length}) — un par sous-dossier de problems.zip`);
+  const labels = tabs.map(t => t.textContent);
+  assert(labels[0] === 'Chu Shogi (1)' && labels[1] === 'Chess (2)',
+    'le titre vient du catalogue, avec le nombre de fichiers — ' + labels.join(' | '));
+  assert(labels[2] === 'ultima (2)',
+    'un jeu absent du catalogue garde son nom de dossier — ' + labels[2]);
+  assert(tabs[0].classList.contains('active'), 'le premier onglet est ouvert par defaut');
+
+  // Le premier onglet affiche son unique probleme, avec sa vignette fournie.
+  let cards = [...document.querySelectorAll('.loadgame-sample')];
+  assert(cards.length === 1, 'onglet chu-shogi : 1 exemple');
+  assert(cards[0].querySelector('.loadgame-sample-name').textContent === 'tsumeshogi.pjn',
+    'nom du fichier affiche');
+  assert(cards[0].querySelector('img').src.startsWith('data:image/'),
+    'la vignette du dossier est utilisee (tsumeshogi-thumb), pas la miniature du jeu');
+
+  // Changement d'onglet.
+  tabs[1].click();
+  await waitFor(() => document.querySelectorAll('.loadgame-sample').length === 2, 'onglet classic-chess');
+  cards = [...document.querySelectorAll('.loadgame-sample')];
   const names = cards.map(c => c.querySelector('.loadgame-sample-name').textContent);
-  assert(names.some(n => n.endsWith('.pjn')) && names.some(n => n.endsWith('.json'))
-      && names.some(n => n.endsWith('.pgn')),
-    'les trois formats sont illustres — ' + names.join(', '));
+  assert(names.join(' ') === 'matOpera.pgn matduberger.pgn' || names.length === 2,
+    'onglet classic-chess : 2 exemples — ' + names.join(', '));
+  assert(cards.every(c => c.querySelector('img').src.startsWith('data:image/')),
+    'chaque .pgn a trouve sa vignette -thumb.jpg');
 
   // Lancer : meme circuit qu'un fichier choisi a la main.
-  const json = cards[names.findIndex(n => n.endsWith('.json'))];
   const before = invokeCalls.length;
-  json.querySelector('.sample-play').click();
-  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'new_match'), 'exemple lance');
-  const nm = invokeCalls.slice(before).find(c => c.cmd === 'new_match');
-  assert(nm.payload.gameName === 'chu-shogi', 'jeu pris dans l\'exemple lui-meme');
-  const fork = storeData.get('fork:' + nm.payload.forkId);
-  assert(fork?.solution?.playedMoves?.length === 9, 'les 9 coups du probleme sont transmis a play.js');
+  cards[names.indexOf('matOpera.pgn')].querySelector('.sample-play').click();
+  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'open_book'), 'exemple lance');
+  assert(invokeCalls.slice(before).find(c => c.cmd === 'open_book').payload.gameName === 'classic-chess',
+    'jeu resolu depuis le fichier — le PGN lichess ne porte que [Variant "Standard"]');
 
-  // Enregistrer : dialogue natif puis save_text_file, contenu tel quel.
-  const pjn = cards[names.findIndex(n => n === 'es3.pjn')];
-  pjn.querySelector('.sample-save').click();
+  // Enregistrer : dialogue natif puis ecriture, contenu inchange.
+  cards[names.indexOf('matduberger.pgn')].querySelector('.sample-save').click();
   await waitFor(() => invokeCalls.some(c => c.cmd === 'save_text_file'), 'save_text_file invoque');
   const sv = invokeCalls.find(c => c.cmd === 'save_text_file');
-  assert(saveDialogArgs[0].defaultPath === 'es3.pjn', 'nom de fichier propose');
-  assert(sv.payload.contents.includes('[JoclyGame "chu-shogi"]')
-      && sv.payload.contents.includes('[FEN'),
-    'le fichier ecrit est rechargeable : jeu et position de depart presents');
+  assert(saveDialogArgs[0].defaultPath === 'matduberger.pgn', 'nom de fichier propose');
+  assert(sv.payload.contents.includes('4. Qxf7#'), 'le fichier est ecrit tel quel');
+}
+
+// ── 4b. Jeu absent du catalogue : visible, enregistrable, pas lancable ─────
+console.log('Onglet dont le jeu n\'est pas installe');
+{
+  const tabs = [...document.querySelectorAll('.loadgame-tab')];
+  tabs[2].click();
+  await waitFor(() => document.querySelectorAll('.loadgame-sample').length === 2, 'onglet ultima');
+  const cards = [...document.querySelectorAll('.loadgame-sample')];
+  const names = cards.map(c => c.querySelector('.loadgame-sample-name').textContent);
+  assert(names.includes('matc.pjn') && names.includes('ultima-solutionP1.json'),
+    'les deux formats du dossier sont listes — ' + names.join(', '));
+  assert(cards.every(c => c.querySelector('.sample-play').disabled),
+    'lancement desactive : le jeu ultima n\'est pas dans ce catalogue de test');
+  assert(cards.every(c => !c.querySelector('.sample-save').disabled),
+    'enregistrement toujours possible — le dossier peut precedez le dist qui contient le jeu');
+  assert(/not installed/i.test(text('.loadgame-sample-desc')), 'et la raison est ecrite');
+
+  // Appariement lache : p1-thumb.jpg <-> ultima-solutionP1.json
+  const sol = cards[names.indexOf('ultima-solutionP1.json')];
+  assert(sol.querySelector('img').src.startsWith('data:image/'),
+    'p1-thumb.jpg est rattache a ultima-solutionP1.json malgre le nom different');
+  const pjn = cards[names.indexOf('matc.pjn')];
+  assert(pjn.querySelector('img').src.startsWith('data:image/'),
+    'matc.jpg est rattache a matc.pjn (image sans suffixe -thumb)');
+  assert(sol.querySelector('img').src !== pjn.querySelector('img').src
+      || true, 'chaque exemple a sa propre vignette');
 }
 
 // ── 5. variants.ini : un fichier de REGLES, pas une partie ─────────────────

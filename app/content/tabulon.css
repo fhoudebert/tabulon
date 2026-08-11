@@ -1157,3 +1157,46 @@ strong { font-weight: 600; }
 }
 .loadgame-sample-buttons { display: flex; gap: 4px; }
 .loadgame-sample-buttons .btn { font-size: 11px; padding: 2px 6px; }
+
+/* Onglets des exemples : un par sous-dossier de problems/. Barre qui passe
+   à la ligne plutôt que de défiler — le nombre de jeux couverts par un
+   dossier d'exemples se compte en dizaines, pas en centaines, et une barre
+   scrollable cacherait des onglets sans le dire. */
+.loadgame-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px 0;
+}
+.loadgame-tab {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #fafafa;
+  color: #555;
+  cursor: pointer;
+  user-select: none;
+}
+.loadgame-tab:hover { background: #f0f0f0; }
+.loadgame-tab.active {
+  background: #6f6f6f;
+  border-color: #6f6f6f;
+  color: #fff;
+}
+.loadgame-samples-help {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 6px 0;
+}
+/* Chemin du dossier : à lire, à recopier, donc en chasse fixe et
+   sélectionnable. */
+.loadgame-samples-intro {
+  font-size: 11px;
+  color: #888;
+  font-family: Menlo, Consolas, monospace;
+  word-break: break-all;
+  margin: 0 0 8px 0;
+  user-select: text;
+}
+.loadgame-sample .btn[disabled] { opacity: .45; cursor: default; }

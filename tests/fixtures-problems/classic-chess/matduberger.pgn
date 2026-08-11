@@ -1,0 +1,23 @@
+[Event "Rated UltraBullet game"]
+[Site "https://lichess.org/5zJU4jUr"]
+[Date "2020.04.13"]
+[Round "-"]
+[White "Attigator"]
+[Black "kught0"]
+[Result "1-0"]
+[WhiteElo "1189"]
+[BlackElo "1251"]
+[TimeControl "15+0"]
+[Termination "Normal"]
+[Variant "Standard"]
+[ECO "C23"]
+[Opening "Bishop's Opening"]
+[StudyName "le coup du berger"]
+[ChapterName "Chapitre : 2"]
+[ChapterURL "https://lichess.org/study/onEZPUjN/w8qeVfOK"]
+[Annotator "https://lichess.org/@/LouisVERGNES"]
+[Orientation "white"]
+
+1. e4 { [%clk 0:00:15] } 1... e5 { [%clk 0:00:15] } 2. Bc4 { [%clk 0:00:15] } 2... d6 { [%clk 0:00:15] } 3. Qh5 { [%clk 0:00:12] } 3... c6 { [%clk 0:00:15] } 4. Qxf7# { 1-0 White wins by checkmate. } { [%clk 0:00:10] } 1-0
+
+

@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{engine_cmds, scan_cmds, extension_cmds, fs_cmds, hub_cmds, match_cmds, peer_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, scan_cmds, extension_cmds, fs_cmds, hub_cmds, match_cmds, peer_cmds, problem_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -110,6 +110,9 @@ pub fn run() {
             window_cmds::open_position,
             // ── Hub ───────────────────────────────────────────────────────────
             hub_cmds::get_app_info,
+            // ── Exemples externalisés (répertoire problems/) ─────────────────
+            problem_cmds::list_problem_groups,
+            problem_cmds::read_problem_group,
             hub_cmds::notify_user_response,
             // ── Templates ────────────────────────────────────────────────────
             template_cmds::play_template,

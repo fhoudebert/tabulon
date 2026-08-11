@@ -8,9 +8,8 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
-import { ParseSolution, BookGame, BookVariant, FairyGameIndex } from './book-format.js';
+import { ParseSolution, BookGame, BookVariant, FairyGameIndex, FairyVariantAlias } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
-import { SAMPLES } from './sample-books.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
 import { joinPeerMatch } from './remote-peer-channel.js';
 
@@ -342,8 +341,13 @@ function ResolveGame(declared, selected) {
     return { game: selected || null, unknown: !!declared };
 }
 
-async function OpenGameFile(text, fileName) {
-    const selected = g();
+// `hintGame` : jeu suggere par le CONTEXTE et non par le fichier -- en
+// pratique le sous-dossier de problems/ d'ou vient l'exemple. Il ne prime pas
+// sur ce que le fichier declare (le fichier reste juge de son propre jeu),
+// mais il remplace la fiche selectionnee comme repli, ce qui rend les
+// exemples ouvrables sans avoir choisi un jeu au prealable.
+async function OpenGameFile(text, fileName, hintGame) {
+    const selected = (hintGame && gamesMap[hintGame]) ? hintGame : g();
 
     // 1. Solution/sauvegarde Jocly (JSON) : deja au format de joclyMatch.load().
     const solution = ParseSolution(text);
@@ -376,8 +380,8 @@ async function OpenGameFile(text, fileName) {
             // qu'on ecrive [JoclyGame "knightmate"] en croyant nommer un jeu
             // Jocly, alors que "knightmate" est le nom Fairy-Stockfish et que
             // le jeu s'appelle "knightmate-chess". Le catalogue tranche.
-            const variant = BookVariant(tags) || declared;
-            const mapped = variant ? (await FairyMap())[String(variant).toLowerCase()] : null;
+            const variant = FairyVariantAlias(BookVariant(tags) || declared);
+            const mapped = variant ? (await FairyMap())[variant] : null;
             if (mapped) {
                 console.info('[hub]', variant, 'est une variante Fairy-Stockfish — jeu Jocly :', mapped);
                 declared = mapped;
@@ -421,8 +425,8 @@ async function OpenVariantsIni(text, fileName) {
     }
     // Les positions de depart des variantes reconnues deviennent des
     // vignettes lancables, au meme titre que les exemples livres.
+    document.getElementById('loadgame-tabs').innerHTML = '';
     RenderSamples(playable.slice(0, 12).map(v => ({
-        id: 'ini-' + v.name,
         game: map[v.name.toLowerCase()],
         kind: 'position',
         fileName: v.name + '.pjn',
@@ -437,21 +441,31 @@ async function OpenVariantsIni(text, fileName) {
 // Le clic sur l'entree de la barre laterale ouvrait directement le selecteur
 // de fichier natif, sans un mot d'explication : rien ne disait quels formats
 // passent, ni qu'un meme bouton accepte aussi bien un livre de plusieurs
-// parties qu'un probleme d'une position et neuf coups. Cet ecran le dit, et
-// donne des exemples a lancer ou a enregistrer pour voir a quoi ca ressemble.
+// parties qu'un probleme d'une position et neuf coups.
+//
+// Les exemples ne sont plus ecrits en dur : ils viennent du dossier externe
+// `problems/` (voir src-tauri/src/commands/problem_cmds.rs), un sous-dossier
+// par jeu = un onglet. Consequence assumee : sans ce dossier, l'ecran n'a
+// aucun exemple a montrer. Il dit alors ou le poser, ce qui est plus utile
+// qu'une poignee d'exemples figes qu'on ne peut ni completer ni remplacer.
+
+let problemGroups = [];      // [{ name, count }] -- un onglet chacun
+let problemsDir   = null;    // chemin resolu, affiche a l'utilisateur
+let problemTab    = null;    // onglet courant
+
+// Rend une liste de "vignettes". Sert aux exemples du dossier ET aux
+// positions extraites d'un variants.ini : meme presentation, meme circuit.
+//   { game, title, fileName, text, thumbnail?, kind? }
 function RenderSamples(samples) {
     const container = document.getElementById('loadgame-samples');
     if (!container) return;
     container.innerHTML = '';
-    // Un exemple dont le jeu n'est pas installe est masque plutot qu'affiche
-    // mort : une installation reduite (extensions non importees) ne doit pas
-    // proposer un bouton qui ne peut rien lancer.
-    for (const sample of samples.filter(sp => gamesMap[sp.game])) {
+    for (const sample of samples) {
         const game = gamesMap[sample.game];
         const div = document.createElement('div');
         div.className = 'loadgame-sample';
         div.innerHTML = `
-            <img src="${distURL(game.thumbnail)}" width="42" height="42" alt=""/>
+            <img width="42" height="42" alt=""/>
             <div class="loadgame-sample-body">
               <div class="loadgame-sample-name"></div>
               <div class="loadgame-sample-desc"></div>
@@ -460,18 +474,31 @@ function RenderSamples(samples) {
                 <button class="btn btn-default sample-save"></button>
               </div>
             </div>`;
-        div.querySelector('.loadgame-sample-name').textContent = sample.fileName;
+        // Vignette fournie avec l'exemple, sinon miniature du jeu.
+        const img = div.querySelector('img');
+        if (sample.thumbnail) img.src = sample.thumbnail;
+        else if (game) img.src = distURL(game.thumbnail);
+        else img.remove();
+
+        div.querySelector('.loadgame-sample-name').textContent = sample.title || sample.fileName;
         div.querySelector('.loadgame-sample-desc').textContent =
-            game.title + ' — ' + t('load.kind.' + sample.kind);
+            game ? (game.title + (sample.kind ? ' — ' + t('load.kind.' + sample.kind) : ''))
+                 : t('load.gameMissing', { game: sample.game });
+
         const play = div.querySelector('.sample-play');
         const save = div.querySelector('.sample-save');
         play.textContent = t('load.play');
         save.textContent = t('load.save');
-        // Lancer : exactement le meme circuit qu'un fichier choisi a la main.
-        // Si ce chemin casse un jour, les exemples cassent avec lui -- c'est
-        // voulu, ils servent aussi de banc d'essai.
-        play.addEventListener('click', async () => {
-            try { await OpenGameFile(sample.text, sample.fileName); }
+        // Le jeu vise n'est pas installe : l'exemple reste visible et
+        // enregistrable -- le dossier problems/ peut tres bien etre livre
+        // avant le dist qui contient le jeu -- mais on ne propose pas un
+        // lancement qui ne peut pas aboutir.
+        if (!game) { play.disabled = true; play.title = t('load.gameMissing', { game: sample.game }); }
+        else play.addEventListener('click', async () => {
+            // Exactement le meme circuit qu'un fichier choisi a la main : si
+            // ce chemin casse un jour, les exemples cassent avec lui, ce qui
+            // est voulu -- ils servent aussi de banc d'essai.
+            try { await OpenGameFile(sample.text, sample.fileName, sample.game); }
             catch (e) { console.error('[hub] exemple:', e); Notify(t('hub.loadFailed')); }
         });
         save.addEventListener('click', () => SaveSample(sample));
@@ -480,7 +507,7 @@ function RenderSamples(samples) {
 }
 
 async function SaveSample(sample) {
-    const ext = sample.fileName.replace(/^.*\./, '');
+    const ext = (sample.fileName.match(/\.([^.]+)$/) || [, 'pjn'])[1];
     const path = await saveDialog({
         defaultPath: sample.fileName,
         filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
@@ -490,12 +517,72 @@ async function SaveSample(sample) {
         .catch(e => console.warn('[hub] enregistrement de l\'exemple:', e));
 }
 
-function ShowLoadGame() {
+// Un onglet par sous-dossier. Le nom du sous-dossier EST le nom du jeu Jocly :
+// c'est ce qui permet de dire si le jeu est installe, donc si l'exemple est
+// lancable. On affiche le titre du catalogue quand il est connu, le nom brut
+// du dossier sinon.
+function RenderProblemTabs() {
+    const tabs = document.getElementById('loadgame-tabs');
+    if (!tabs) return;
+    tabs.innerHTML = '';
+    for (const grp of problemGroups) {
+        const el = document.createElement('span');
+        el.className = 'loadgame-tab' + (grp.name === problemTab ? ' active' : '');
+        el.textContent = (gamesMap[grp.name]?.title || grp.name) + ' (' + grp.count + ')';
+        if (!gamesMap[grp.name]) el.title = t('load.gameMissing', { game: grp.name });
+        el.addEventListener('click', () => SelectProblemTab(grp.name));
+        tabs.appendChild(el);
+    }
+}
+
+async function SelectProblemTab(name) {
+    problemTab = name;
+    RenderProblemTabs();
+    const container = document.getElementById('loadgame-samples');
+    if (container) container.textContent = t('common.loading');
+    let entries = [];
+    try { entries = await tRpc.call('read_problem_group', name) || []; }
+    catch (e) { console.error('[hub] problems:', e); if (container) container.textContent = t('hub.loadFailed'); return; }
+    RenderSamples(entries.map(e => ({
+        game: e.group,
+        title: e.file,
+        fileName: e.file,
+        text: e.text,
+        thumbnail: e.thumbnail || null,
+    })));
+}
+
+// Chargé une seule fois : le dossier ne bouge pas en cours de session, et
+// relire les vignettes à chaque ouverture de l'écran serait gratuit.
+async function LoadProblems() {
+    if (problemGroups.length) return;
+    let r;
+    try { r = await tRpc.call('list_problem_groups'); }
+    catch (e) { console.warn('[hub] problems:', e.message || e); return; }
+    problemsDir   = r?.dir || null;
+    problemGroups = r?.groups || [];
+    console.info('[hub] exemples :', problemGroups.length, 'groupe(s) dans', problemsDir || '(aucun dossier)');
+}
+
+async function ShowLoadGame() {
     SetNav('loadgame');
     document.getElementById('loadgame-pane').style.display = '';
     const status = document.getElementById('loadgame-status');
     if (status) status.textContent = '';
-    RenderSamples(SAMPLES);
+    await LoadProblems();
+    RenderProblemTabs();
+
+    // Le chemin resolu est affiche meme quand le dossier existe : c'est la
+    // seule facon pour l'utilisateur de savoir ou deposer un fichier de plus.
+    const where = document.getElementById('loadgame-samples-intro');
+    if (where) {
+        where.textContent = problemsDir
+            ? t('load.samplesFrom', { dir: problemsDir })
+            : t('load.samplesNone');
+    }
+    if (problemGroups.length) await SelectProblemTab(problemTab && problemGroups.some(g => g.name === problemTab)
+        ? problemTab : problemGroups[0].name);
+    else RenderSamples([]);
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────

@@ -1,0 +1,13 @@
+{
+  "playedMoves": [
+    {
+      "f": 42,
+      "t": 34,
+      "c": null,
+      "a": "C",
+      "ck": true
+    }
+  ],
+  "initialBoard": "3L1K2/2l2w2/P1C1kPlL/p2Wx1p1/x7/8/4c3/8 w - - 5 64",
+  "game": "ultima"
+}

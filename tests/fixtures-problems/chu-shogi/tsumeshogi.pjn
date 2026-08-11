@@ -1,0 +1,27 @@
+[JoclyGame "chu-shogi"]
+[Event "silverman - Black to move and Mate in 5"]
+[Date "2026.8.11"]
+[PlyCount "9"]
+[FEN "8+lc1l/7+h2ok/4+H3Q3/9Fg1/11p/9D2/12/12/12/12/4+L7/10K1 w - - 0 1"]
+[SetUp "1"]
+
+1. FLj9-k10+ Gk9xk10 2. DKj7-j9=+DK+ Gk10xj9 3. +Le2-l9+ +Li12xl9 4. FKi10-k12+ Kl11xk12 5. +DHe10-k10+
+
+[JoclyGame "chu-shogi"]
+[Event "George Hodges - Black to move and Mate in 5"]
+[Date "2026.8.11"]
+[Result "1-0"]
+[PlyCount "23"]
+[FEN "11l/5t2o1+O1/5n1t1s2/3+c3k3q/5pP2p2/12/5N3f2/3+L4+b3/6+A5/12/12/K11 w - - 0 1"]
+[SetUp "1"]
+
+1. LNf6-h7+ Kh9-g10 2. +KNk11-i12+ FKl9xi12 3. g8-g9=+P+ LNf10xg9 4. +RVg4xg9+ BTh10xg9 5. LNh7-g8+ Kg10-g11 6. +Ld5-d8+ Kg11-h11 7. LNg8-f10+ Kh11-i10 8. +Ld8-d5+ f8-f7 9. +Ld5xf7+ Ki10-j9 10. LNf10-h8+ Kj9-k8 11. LNh8-i8+ Kk8-l8 12. LNi8xj8+
+
+[JoclyGame "chu-shogi"]
+[Event "silverman - Black to move and Mate in 2"]
+[Date "2026.8.11"]
+[PlyCount "3"]
+[FEN "10k1/11+G/9+E1K/8n3/11L/12/12/12/12/12/12/12 w - - 0 1"]
+[SetUp "1"]
+
+1. +Gl11-l12+ Kk12xl12 2. Kl10-k11+

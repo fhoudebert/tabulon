@@ -178,6 +178,34 @@ export function BookVariant(tags) {
     return null;
 }
 
+// Orthographes de [Variant] qui designent une variante Fairy-Stockfish sous
+// un autre nom. La table reste DANS la nomenclature du moteur (orthographe ->
+// nom Fairy), jamais vers un nom Jocly : c'est le catalogue qui fait ensuite
+// la traduction, et une table qui sauterait cette etape se retrouverait a
+// devoir suivre les 189 jeux (voir le releve : 5 correspondances sur 13
+// ecrites a la main etaient fausses).
+//
+// Seules figurent ici les orthographes vraiment repandues : "Standard" est ce
+// qu'ecrivent lichess, chess.com et la specification PGN pour les echecs
+// orthodoxes, la ou Fairy-Stockfish dit "chess".
+const VARIANT_ALIASES = {
+    'standard': 'chess',
+    'from position': 'chess',
+    'classical': 'chess',
+    'chess960': 'fischerandom',
+    'antichess': 'antichess',
+    'losing chess': 'antichess',
+    'giveaway': 'antichess',
+};
+
+/**
+ * Nom Fairy-Stockfish canonique d'une orthographe de [Variant].
+ */
+export function FairyVariantAlias(name) {
+    const key = String(name || '').trim().toLowerCase();
+    return VARIANT_ALIASES[key] || key || null;
+}
+
 /**
  * Index variante Fairy-Stockfish -> nom de jeu Jocly, construit a partir du
  * CATALOGUE plutot que d'une table ecrite a la main : chaque jeu qui sait se
