@@ -73,8 +73,6 @@ function readProblemGroup(group) {
 
 const invokeCalls = [];
 const storeData   = new Map();
-let nextSavePath  = '/tmp/exemple.pjn';
-const saveDialogArgs = [];
 
 const mockTauri = {
   core: { invoke: async (cmd, payload = {}) => {
@@ -107,7 +105,9 @@ const mockTauri = {
   window: { getCurrentWindow: () => ({ label: 'main', close: () => {} }) },
   os:     { platform: async () => 'linux', locale: async () => 'en-US' },
   shell:  { open: async () => {} },
-  dialog: { save: async (opts) => { saveDialogArgs.push(opts); return nextSavePath; } },
+  // Aucun dialogue de fichier n'est attendu depuis cet ecran : s'il en
+  // surgit un, le test doit le voir plutot que le laisser passer.
+  dialog: { save: async () => { throw new Error('dialogue d\'enregistrement inattendu'); } },
   store:  { Store: class { static async load() { return {
       get: async (k) => storeData.get(k), set: async (k, v) => { storeData.set(k, v); },
       delete: async (k) => { storeData.delete(k); },
@@ -237,13 +237,15 @@ console.log('Exemples du dossier problems/');
   assert(invokeCalls.slice(before).find(c => c.cmd === 'open_book').payload.gameName === 'classic-chess',
     'jeu resolu depuis le fichier — le PGN lichess ne porte que [Variant "Standard"]');
 
-  // Enregistrer : dialogue natif puis ecriture, contenu inchange.
-  cards[names.findIndex(n => /UltraBullet/.test(n))].querySelector('.sample-save').click();
-  await waitFor(() => invokeCalls.some(c => c.cmd === 'save_text_file'), 'save_text_file invoque');
-  const sv = invokeCalls.find(c => c.cmd === 'save_text_file');
-  assert(saveDialogArgs[0].defaultPath === 'matduberger.pgn',
-    'le NOM DE FICHIER reste celui du disque a l\'enregistrement, pas le titre affiche');
-  assert(sv.payload.contents.includes('4. Qxf7#'), 'le fichier est ecrit tel quel');
+  // Aucun bouton d'enregistrement : la source EST un dossier que
+  // l'utilisateur ouvre lui-meme, recopier un fichier depuis l'application
+  // ne lui apprendrait rien qu'un gestionnaire de fichiers ne fasse mieux.
+  assert(cards.every(c => !c.querySelector('.sample-save')),
+    'pas de bouton Enregistrer sur les vignettes');
+  assert(!invokeCalls.some(c => c.cmd === 'save_text_file'),
+    'et aucune ecriture de fichier depuis cet ecran');
+  assert(cards.every(c => c.querySelectorAll('.loadgame-sample-buttons button').length === 2),
+    'deux boutons par vignette : chercher, ou voir la solution');
 }
 
 // ── 4c. « Essayer » vs « Résoudre » : deux chargements différents ─────────
@@ -312,7 +314,7 @@ console.log('Fichier à plusieurs problèmes');
   assert(!/FLj9-k10/.test(data), 'et aucune solution ne subsiste');
 }
 
-// ── 4b. Jeu absent du catalogue : visible, enregistrable, pas lancable ─────
+// ── 4b. Jeu absent du catalogue : visible mais pas lancable ───────────────
 console.log('Onglet dont le jeu n\'est pas installe');
 {
   const tabs = [...document.querySelectorAll('.loadgame-tab')];
@@ -324,8 +326,6 @@ console.log('Onglet dont le jeu n\'est pas installe');
     'titre pour le .pjn, nom de fichier pour le .json qui n\'en porte pas — ' + names.join(', '));
   assert(cards.every(c => c.querySelector('.sample-solve').disabled),
     'solution desactivee : le jeu ultima n\'est pas dans ce catalogue de test');
-  assert(cards.every(c => !c.querySelector('.sample-save').disabled),
-    'enregistrement toujours possible — le dossier peut preceder le dist qui contient le jeu');
   assert(cards.every(c => c.querySelector('.sample-try').disabled),
     'recherche desactivee aussi : les deux boutons ouvrent une partie');
   assert(/not installed/i.test(text('.loadgame-sample-desc')), 'et la raison est ecrite');

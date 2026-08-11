@@ -5,7 +5,7 @@
 // une fenêtre séparée, la sélection est une navigation interne JS).
 import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
-import { open, Store, listen, save as saveDialog } from './tauri-bridge.js';
+import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
 import { ParseSolution, BookGame, BookVariant, FairyGameIndex, FairyVariantAlias,
@@ -474,7 +474,6 @@ function RenderSamples(samples) {
               <div class="loadgame-sample-buttons">
                 <button class="btn btn-positive sample-try"></button>
                 <button class="btn btn-default sample-solve"></button>
-                <button class="btn btn-default sample-save"></button>
               </div>
             </div>`;
         // Vignette fournie avec l'exemple, sinon miniature du jeu.
@@ -502,10 +501,8 @@ function RenderSamples(samples) {
         // defaut, sinon il n'y a plus rien a trouver.
         const tryIt = div.querySelector('.sample-try');
         const solve = div.querySelector('.sample-solve');
-        const save  = div.querySelector('.sample-save');
         tryIt.textContent = t('load.try');
         solve.textContent = t('load.solve');
-        save.textContent  = t('load.save');
         tryIt.title = t('load.tryTip');
         solve.title = t('load.solveTip');
         // L'image ouvre elle aussi la position a chercher : c'est le geste
@@ -515,10 +512,10 @@ function RenderSamples(samples) {
             img.title = t('load.tryTip');
             img.addEventListener('click', () => PlaySample(sample, true));
         }
-        // Le jeu vise n'est pas installe : l'exemple reste visible et
-        // enregistrable -- le dossier problems/ peut tres bien etre livre
-        // avant le dist qui contient le jeu -- mais on ne propose pas un
-        // lancement qui ne peut pas aboutir.
+        // Le jeu vise n'est pas installe : l'exemple reste visible -- le
+        // dossier problems/ peut tres bien etre livre avant le dist qui
+        // contient le jeu -- mais on ne propose pas un lancement qui ne peut
+        // pas aboutir.
         if (!game) {
             for (const b of [tryIt, solve]) {
                 b.disabled = true;
@@ -528,7 +525,6 @@ function RenderSamples(samples) {
             tryIt.addEventListener('click', () => PlaySample(sample, true));
             solve.addEventListener('click', () => PlaySample(sample, false));
         }
-        save.addEventListener('click', () => SaveSample(sample));
         container.appendChild(div);
     }
 }
@@ -551,17 +547,6 @@ async function PlaySample(sample, stripped) {
     }
     try { await OpenGameFile(text, sample.fileName, sample.game); }
     catch (e) { console.error('[hub] exemple:', e); Notify(t('hub.loadFailed')); }
-}
-
-async function SaveSample(sample) {
-    const ext = (sample.fileName.match(/\.([^.]+)$/) || [, 'pjn'])[1];
-    const path = await saveDialog({
-        defaultPath: sample.fileName,
-        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-    }).catch(() => null);
-    if (!path) return;
-    await tRpc.call('save_text_file', path, sample.text)
-        .catch(e => console.warn('[hub] enregistrement de l\'exemple:', e));
 }
 
 // Un onglet par sous-dossier. Le nom du sous-dossier EST le nom du jeu Jocly :
