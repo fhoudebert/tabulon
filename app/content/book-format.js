@@ -15,6 +15,11 @@ export function ExtractMoves(text) {
     const movesPart = (parts.length > 1 ? parts.slice(1) : parts).join('\n');
     let s = movesPart.replace(/\{[^}]*\}/g, ' ');
     while (/\([^()]*\)/.test(s)) s = s.replace(/\([^()]*\)/g, ' ');
+    // Numerotation ecrite a la main : "4 ." au lieu de "4.". Sans cette
+    // normalisation le "4" devient un faux coup ET le vrai coup garde un
+    // point en tete (".FKi10-k12+"), donc deux jetons irrecuperables.
+    // On la retire ici, une fois, plutot que jeton par jeton.
+    s = s.replace(/(^|\s)(\d+)\s*\.+/g, '$1');
     return s.split(/\s+/)
         .map(tok => tok.replace(/^\d+\.+/, ''))     // "12.Nf3" → "Nf3"
         .filter(tok => tok
@@ -22,6 +27,50 @@ export function ExtractMoves(text) {
             && !/^\$\d+$/.test(tok)                  // NAG
             && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok) // résultat
             && !/^\[/.test(tok));
+}
+
+/**
+ * Rejoue une liste de jetons de notation. Les deux operations sont fournies
+ * par l'appelant, ce qui garde ce module pur (play.js passe joclyMatch) :
+ *   pick(str) -> coup Jocly, ou null si la notation ne designe aucun coup
+ *                LEGAL dans la position courante (aucun effet de bord) ;
+ *   play(move) -> applique le coup et avance la position.
+ *
+ * Deux tolerances, dans cet ordre :
+ *  1. decorations finales (+ # ! ?) retirees si le jeton entier est refuse ;
+ *  2. jetons COLLES. Beaucoup de fichiers ecrits a la main soudent un coup
+ *     au suivant quand le premier finit par un signe d'echec :
+ *     "FKi10-k12+Kl11xk12". Aucun decoupage syntaxique ne peut trancher --
+ *     "+" ouvre aussi les pieces promues du shogi ("+L") -- alors on demande
+ *     au moteur : le PLUS LONG prefixe qu'il accepte est le coup, le reste
+ *     retourne dans la file. Du plus long au plus court, pour ne pas couper
+ *     "…-k12+" en "…-k12" et laisser un "+" parasite devant le suivant.
+ *
+ * Renvoie {played, unresolved} — unresolved est le premier jeton refuse
+ * (la lecture s'arrete la, comme dans JoclyBoard), ou null si tout a passe.
+ */
+export async function ReplayBookMoves(tokens, { pick, play }) {
+    const queue = (tokens || []).slice();
+    let played = 0;
+    while (queue.length) {
+        const tok = queue.shift();
+        if (!tok) continue;
+        let move = await pick(tok);
+        let rest = '';
+        if (!move) {
+            const bare = tok.replace(/[+#!?]+$/, '');
+            if (bare !== tok) move = await pick(bare);
+        }
+        for (let len = tok.length - 1; !move && len >= 2; len--) {
+            move = await pick(tok.slice(0, len));
+            if (move) rest = tok.slice(len);
+        }
+        if (!move) return { played, unresolved: tok };
+        await play(move);
+        played++;
+        if (rest) queue.unshift(rest);
+    }
+    return { played, unresolved: null };
 }
 
 /**

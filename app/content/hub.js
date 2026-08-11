@@ -26,6 +26,13 @@ let appInfo = { name: 'Tabulon', version: '', homepage: '' };
 
 // ── Panneau de détail (ex-game.js) ────────────────────────────────────────────
 let currentGame = null;     // gameName actuellement affiché dans le détail
+// Jeu selectionne, au moment de l'appel. Fonction et non valeur : les
+// gestionnaires d'evenements sont lies UNE FOIS au chargement, ils doivent
+// lire currentGame a chaque clic et non le null du demarrage. Defini ici, au
+// niveau du module, et non dans InitDetailButtons() : OpenGameFile() s'en
+// sert aussi, et une copie locale y etait invisible (ReferenceError a
+// l'ouverture d'un fichier).
+const g = () => currentGame;
 let visualTimer = null;     // interval de rotation des visuels 600x600
 // Passe à false si hub.html ne contient pas le panneau de détail (fichier
 // obsolète / cache) : le hub reste alors utilisable en mode dégradé (liste
@@ -232,7 +239,6 @@ function InitDetailButtons() {
         return;
     }
 
-    const g = () => currentGame;
     document.getElementById('quickplay').addEventListener('click',   () => g() && tRpc.call('new_match', g()));
     document.getElementById('clockedplay').addEventListener('click', () => g() && tRpc.call('open_clock_setup', g()));
     document.getElementById('invitation').addEventListener('click',  () => g() && tRpc.call('open_invitation', g()));
@@ -250,22 +256,6 @@ function InitDetailButtons() {
         UpdateDetailFavorite();
     });
 
-    // Ouverture d'un fichier de partie. Deux points d'entree, meme circuit :
-    // le bouton "Ouvrir un livre" de la fiche (un jeu est selectionne) et
-    // l'entree "Charger une partie" de la barre laterale (aucun jeu choisi --
-    // c'est alors le fichier qui doit dire de quel jeu il s'agit).
-    document.getElementById('fileElem').addEventListener('change', function () {
-        const name = this.value;
-        const file = this.files[0];
-        this.value = '';
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try { await OpenGameFile(e.target.result, name); }
-            catch (err) { console.error('[hub] chargement:', err); }
-        };
-        reader.readAsText(file);
-    });
     document.getElementById('openbook').addEventListener('click', () => {
         if (g()) document.getElementById('fileElem').click();
     });
@@ -273,6 +263,34 @@ function InitDetailButtons() {
     // Retour liste sur écran étroit
     document.getElementById('detail-back').addEventListener('click', () => {
         document.getElementById('game-list-pane').classList.remove('show-detail');
+    });
+}
+
+// Ouverture d'un fichier de partie. Deux points d'entree, meme circuit : le
+// bouton "Ouvrir un livre" de la fiche (un jeu est selectionne) et l'entree
+// "Charger une partie" de la barre laterale (aucun jeu choisi -- c'est alors
+// le fichier qui doit dire de quel jeu il s'agit).
+//
+// Cable a part de InitDetailButtons() : celle-ci abandonne en bloc si un
+// SEUL element du panneau de detail manque, ce qui laissait aussi "Charger
+// une partie" sans gestionnaire alors que ce chemin ne depend pas du detail.
+function InitFileInput() {
+    const input = document.getElementById('fileElem');
+    if (!input) { console.error('[hub] #fileElem absent — chargement de fichier indisponible'); return; }
+    input.addEventListener('change', function () {
+        const name = this.value;
+        const file = this.files[0];
+        this.value = '';
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try { await OpenGameFile(e.target.result, name); }
+            catch (err) {
+                console.error('[hub] chargement:', err);
+                Notify(t('hub.loadFailed'));
+            }
+        };
+        reader.readAsText(file);
     });
 }
 
@@ -554,6 +572,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     catch (e) { console.error('[hub] InitInvitationPane:', e); }
     try { InitDetailButtons(); }
     catch (e) { detailAvailable = false; console.error('[hub] InitDetailButtons:', e); }
+    try { InitFileInput(); }
+    catch (e) { console.error('[hub] InitFileInput:', e); }
 
     // Garde : si ../browser/jocly.js n'a pas chargé (dist/ absent des assets
     // embarqués — build fait sans dist/ ou avec un src-tauri/target périmé),

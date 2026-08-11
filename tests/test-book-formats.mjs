@@ -5,7 +5,14 @@
 // l'utilisateur, pas des exemples reconstruits : c'est le seul moyen de
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
-import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution } from '../app/content/book-format.js';
+import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves }
+    from '../app/content/book-format.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const here    = path.dirname(fileURLToPath(import.meta.url));
+const fixture = (name) => readFileSync(path.join(here, name), 'utf-8');
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
@@ -127,6 +134,98 @@ console.log('Test 7 - jeu declare par le fichier');
     // Aller-retour : ce que Tabulon ecrit se relit comme le bon jeu.
     ok(BookGame(ParseTags(BuildPJN('chu-shogi', ['a'], null, new Date(2026,0,1)))) === 'chu-shogi',
        'le jeu survit a l\'aller-retour');
+}
+
+console.log('Test 8 - fichier reel rocaille.pjn (partie standard)');
+{
+    const txt  = fixture('fixtures-rocaille.pjn');
+    const tags = ParseTags(txt);
+    ok(BookGame(tags) === 'rocaille', 'le jeu est declare par le fichier');
+    ok(BookFen(tags) === null, 'pas de tag FEN -> position standard');
+    const moves = ExtractMoves(txt);
+    ok(moves.length === Number(tags.PlyCount),
+       `${tags.PlyCount} demi-coups annonces, ${moves.length} extraits`);
+    ok(moves[0] === 'Wg3-g6' && moves[12] === 'Ak6-j6', 'premier et dernier coups');
+}
+
+console.log('Test 9 - fichier reel es3.pjn (probleme de chu-shogi)');
+{
+    const txt  = fixture('fixtures-es3.pjn');
+    const tags = ParseTags(txt);
+    ok(BookGame(tags) === 'chu-shogi', 'jeu declare');
+    ok(BookFen(tags).startsWith('8+lc1l/') && BookFen(tags).endsWith(' 0 1'),
+       'la position du probleme est lue en entier');
+
+    const tokens = ExtractMoves(txt);
+    // Numerotation ecrite "4 ." (espace avant le point) dans ce fichier.
+    ok(!tokens.includes('4') && !tokens.includes('5'),
+       'un numero de coup separe du point n\'est pas pris pour un coup');
+    ok(!tokens.some(tk => tk.startsWith('.')), 'aucun jeton ne garde un point en tete');
+
+    // Ce fichier colle des coups ("…-k12+Kl11xk12") : le decoupage final est
+    // fait par ReplayBookMoves, qui interroge le moteur. Moteur simule ici
+    // par la liste des 9 coups attendus, joues dans l'ordre.
+    // Les 9 demi-coups de es3-solution.json, en notation. Trois d'entre eux
+    // sont colles a leur voisin dans le fichier (signe d'echec suivi
+    // immediatement du coup suivant, lui-meme ouvert par un "+" de piece
+    // promue) : c'est exactement ce que la resolution doit demeler.
+    const expected = ['FLj9-k10+', 'Gk9xk10', 'DKj7-j9=+DK+', 'Gk10xj9', '+Le2-l9+',
+                      '+Li12xl9', 'FKi10-k12+', 'Kl11xk12', '+DHe10-k10+'];
+    let next = 0;
+    const engine = {
+        pick: (s) => (s === expected[next] ? { san: s } : null),
+        play: () => { next++; },
+    };
+    const r = await ReplayBookMoves(tokens, engine);
+    ok(r.unresolved === null, 'aucun jeton refuse (' + (r.unresolved || '-') + ')');
+    ok(r.played === Number(tags.PlyCount),
+       `${tags.PlyCount} demi-coups annonces, ${r.played} rejoues`);
+}
+
+console.log('Test 10 - resolution des jetons');
+{
+    // Decorations finales : le moteur ne connait que la forme nue.
+    {
+        const seen = [];
+        const r = await ReplayBookMoves(['Rf1+', 'Kg7'], {
+            pick: (s) => (/[+#!?]$/.test(s) ? null : { s }),
+            play: (m) => seen.push(m.s),
+        });
+        ok(r.played === 2 && seen[0] === 'Rf1', 'le + final est retire si besoin');
+        ok(r.unresolved === null, 'et la lecture continue');
+    }
+    // Le plus LONG prefixe gagne : "e4e5" ne doit pas se couper en "e" + "4e5".
+    {
+        const legal = new Set(['e4', 'e5']);
+        const seen = [];
+        const r = await ReplayBookMoves(['e4e5'], {
+            pick: (s) => (legal.has(s) ? { s } : null),
+            play: (m) => seen.push(m.s),
+        });
+        ok(r.played === 2 && seen.join(' ') === 'e4 e5', 'deux coups colles sont separes');
+    }
+    // Jeton vraiment inconnu : on s'arrete la, on ne saute pas.
+    {
+        const r = await ReplayBookMoves(['e4', 'zz9'], { pick: (s) => (s === 'e4' ? { s } : null), play: () => {} });
+        ok(r.played === 1 && r.unresolved === 'zz9', 'arret sur le premier coup irresolu, signale');
+    }
+    ok((await ReplayBookMoves([], { pick: () => null, play: () => {} })).played === 0,
+       'liste vide -> 0 coup, pas d\'exception');
+}
+
+console.log('Test 11 - solution reelle es3-solution.json');
+{
+    const sol = ParseSolution(fixture('fixtures-es3-solution.json'));
+    ok(sol !== null, 'reconnue comme sauvegarde Jocly');
+    ok(sol.game === 'chu-shogi', 'le jeu vient du fichier, pas de la fiche affichee');
+    ok(sol.playedMoves.length === 9, '9 coups, transmis tels quels a joclyMatch.load()');
+    ok(typeof sol.initialBoard === 'string' && sol.initialBoard.includes('+lc1l'),
+       'la position de depart accompagne les coups');
+    // Meme probleme que es3.pjn : les deux fichiers doivent decrire la meme partie.
+    ok(sol.initialBoard === BookFen(ParseTags(fixture('fixtures-es3.pjn'))),
+       'la position est identique a celle du PJN correspondant');
+    ok(sol.playedMoves.length === Number(ParseTags(fixture('fixtures-es3.pjn')).PlyCount),
+       'et le nombre de coups aussi');
 }
 
 console.log('');

@@ -13,6 +13,7 @@ import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
+import { ReplayBookMoves } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -1177,14 +1178,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 UpdateFooter(t('play.loadFailed'));
             }
         }
-        let played = 0;
-        for (const tok of book.moves || []) {
-            let move = await joclyMatch.pickMove(tok).catch(() => null);
-            if (!move) move = await joclyMatch.pickMove(tok.replace(/[+#!?]+$/, '')).catch(() => null);
-            if (!move) { console.warn('[play] book: coup non résolu:', tok, 'après', played, 'coups'); break; }
-            await joclyMatch.playMove(move);
-            played++;
-        }
+        // La resolution des jetons (decorations, coups colles) vit dans
+        // book-format.js -- module pur, donc testable sans Jocly ; ici on ne
+        // fournit que les deux operations qui touchent au moteur.
+        const { played, unresolved } = await ReplayBookMoves(book.moves, {
+            pick: (s) => joclyMatch.pickMove(s).catch(() => null),
+            play: (m) => joclyMatch.playMove(m),
+        });
+        if (unresolved) console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
         // Humain contre humain : sans ca l'IA du camp B rejouerait par-dessus
         // la partie chargee, et surtout des qu'on reculerait d'un coup pour
         // naviguer dans la fenetre Historique.

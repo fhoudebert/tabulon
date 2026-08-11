@@ -1,0 +1,74 @@
+{
+  "playedMoves": [
+    {
+      "f": 105,
+      "t": 118,
+      "c": null,
+      "a": "FL",
+      "ck": true
+    },
+    {
+      "f": 106,
+      "t": 118,
+      "c": 0,
+      "a": "G",
+      "ep": false,
+      "ck": false
+    },
+    {
+      "f": 81,
+      "t": 105,
+      "c": null,
+      "pr": 51,
+      "a": "DK",
+      "ck": true
+    },
+    {
+      "f": 118,
+      "t": 105,
+      "c": 2,
+      "a": "G",
+      "ep": false,
+      "ck": false
+    },
+    {
+      "f": 16,
+      "t": 107,
+      "c": null,
+      "a": "+L",
+      "ck": true
+    },
+    {
+      "f": 140,
+      "t": 107,
+      "c": 1,
+      "a": "+L",
+      "ep": false,
+      "ck": false
+    },
+    {
+      "f": 116,
+      "t": 142,
+      "c": null,
+      "a": "FK",
+      "ck": true
+    },
+    {
+      "f": 131,
+      "t": 142,
+      "c": 4,
+      "a": "K",
+      "ep": false,
+      "ck": false
+    },
+    {
+      "f": 112,
+      "t": 118,
+      "c": null,
+      "a": "+DH",
+      "ck": true
+    }
+  ],
+  "initialBoard": "8+lc1l/7+h2ok/4+H3Q3/9Fg1/11p/9D2/12/12/12/12/4+L7/10K1 w - - 0 1",
+  "game": "chu-shogi"
+}
