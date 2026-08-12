@@ -3,7 +3,7 @@
 //      numéros, \r\n Windows, résultat) — la partie fragile du parsing
 //   2. book.js : store → parse_pjn (mock Rust) → liste → clic → fork book
 //   3. play.js : rejeu du livre via pickMove/playMove (match Jocly factice),
-//      partie en pause, footer "White vs Black"
+//      partie en pause, footer = le libelle de la partie
 // Usage : npm test  (ou node tests/test-book.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
 process.chdir(new URL('..', import.meta.url).pathname);
@@ -80,14 +80,17 @@ const mockTauri = {
   assert(invokeCalls.some(c => c.cmd === 'parse_pjn' && c.payload.data === PGN_TEXT),
     'contenu du store transmis à la commande Rust parse_pjn');
   const li = document.querySelector('.book-content li');
-  assert(li.textContent.includes('Kasparov vs Topalov'), 'libellé de partie affiché');
+  // Libelle calcule par BookLabel : joueurs, resultat, nombre de demi-coups.
+  // Le fichier ne contient qu'une partie -> pas de "#1" parasite.
+  assert(li.textContent === 'Kasparov vs Topalov — 1-0, 5 moves',
+    'libellé complet affiché — trouvé : ' + li.textContent);
   li.click();
   await waitFor(() => invokeCalls.some(c => c.cmd === 'new_match'), 'new_match lancé');
   const nm = invokeCalls.find(c => c.cmd === 'new_match');
   const forkKey = 'fork:' + nm.payload.forkId;
   const fork = storeData.get(forkKey);
-  assert(fork?.book?.moves?.length === 5 && fork.book.playerA === 'Kasparov',
-    'payload book (5 coups + joueurs) déposé sous ' + forkKey);
+  assert(fork?.book?.moves?.length === 5 && fork.book.label === 'Kasparov vs Topalov — 1-0, 5 moves',
+    'payload book (5 coups + libellé calculé) déposé sous ' + forkKey);
   assert(typeof nm.payload.forkId === 'string',
     'forkId envoyé en String (contrat Rust fork_id: Option<String> — un u32 rejetait l\'invoke en silence)');
 }
@@ -118,7 +121,7 @@ const mockTauri = {
   };
 
   const bookId = 'book-test';
-  storeData.set('fork:' + bookId, { book: { moves: ['e4','e5','Nf3','Nc6','Bb5+'], playerA: 'Kasparov', playerB: 'Topalov' } });
+  storeData.set('fork:' + bookId, { book: { moves: ['e4','e5','Nf3','Nc6','Bb5+'], label: 'Kasparov vs Topalov — 1-0, 5 moves' } });
 
   const html = readFileSync('./app/content/play.html', 'utf-8').replace(/<script[\s\S]*?<\/script>/g, '');
   const dom = new JSDOM(html, { url: `https://tauri.localhost/content/play.html?game=classic-chess&id=9&fork=${bookId}` });
@@ -140,8 +143,8 @@ const mockTauri = {
     'les 5 coups rejoués via pickMove/playMove (décoration + retirée au retry)');
   assert(!storeData.has('fork:' + bookId), 'payload book nettoyé du store après rejeu');
   await waitFor(() => document.getElementById('board-footer-text').textContent.includes('Kasparov'), 'footer');
-  assert(document.getElementById('board-footer-text').textContent === 'Kasparov vs Topalov',
-    'footer "White vs Black" affiché, partie en pause pour navigation via History');
+  assert(document.getElementById('board-footer-text').textContent === 'Kasparov vs Topalov — 1-0, 5 moves',
+    'footer = MEME libellé que la liste du livre, partie en pause pour navigation via History');
 }
 
 console.log(`\n${passed} assertions OK — flux livre validé.`);

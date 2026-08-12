@@ -1,0 +1,20 @@
+[Event "Cours Mat types - Cahiers Débutants FFE: Le Mat de l'Opéra 2"]
+[Date "2019.07.07"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Cours Mat types - Cahiers Débutants FFE"]
+[ChapterName "Le Mat de l'Opéra 2"]
+[ChapterURL "https://lichess.org/study/KQsiReAD/JRjiP1Q4"]
+[Annotator "https://lichess.org/@/Furo951"]
+[FEN "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 0 16"]
+[SetUp "1"]
+[UTCDate "2019.07.07"]
+[UTCTime "13:53:54"]
+
+{ La position dans laquelle Paul Morphy fit mat contre le Duc Karl et le Conte Isouard, lors de la partie de l'Opéra. Mat en 2 ici. }
+16. Qb8+ { Oui, un sacrifice d'attraction pour libérer le passage. Le roi n'a pas de case, le cavalier est obligé de prendre la dame } { [%csl Gd8,Ge7] } 16... Nxb8 { Et maintenant, Mat ! } 17. Rd8# { Bien joué ! } *
+
+
+

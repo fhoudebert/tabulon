@@ -8,6 +8,9 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
+import { ParseSolution, BookGame, BookVariant, FairyGameIndex, FairyVariantAlias,
+         StripBookMoves, BookCommentary } from './book-format.js';
+import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
 import { joinPeerMatch } from './remote-peer-channel.js';
 
@@ -15,15 +18,27 @@ import { joinPeerMatch } from './remote-peer-channel.js';
 // est fourni par asset-rewrite.js ; sinon chemin inchangé).
 function distURL(u) { return (window.__distURL ? window.__distURL(u) : u); }
 
+
 let store;
 let gameList = [], gamesMap = {};
 let allGameList = [], favGameList = [], templateList = [];
 let favoritesMap = {};   // gameName -> timestamp ; état des étoiles de la liste
 let filterTimer = null;
 let appInfo = { name: 'Tabulon', version: '', homepage: '' };
+// variante Fairy-Stockfish -> jeu Jocly, construit une fois depuis le
+// catalogue (voir FairyGameIndex). Sert a ouvrir un PGN qui se declare par
+// [Variant "shako"] plutot que par [JoclyGame "shako-chess"].
+let fairyMap = {};
 
 // ── Panneau de détail (ex-game.js) ────────────────────────────────────────────
 let currentGame = null;     // gameName actuellement affiché dans le détail
+// Jeu selectionne, au moment de l'appel. Fonction et non valeur : les
+// gestionnaires d'evenements sont lies UNE FOIS au chargement, ils doivent
+// lire currentGame a chaque clic et non le null du demarrage. Defini ici, au
+// niveau du module, et non dans InitDetailButtons() : OpenGameFile() s'en
+// sert aussi, et une copie locale y etait invisible (ReferenceError a
+// l'ouverture d'un fichier).
+const g = () => currentGame;
 let visualTimer = null;     // interval de rotation des visuels 600x600
 // Passe à false si hub.html ne contient pas le panneau de détail (fichier
 // obsolète / cache) : le hub reste alors utilisable en mode dégradé (liste
@@ -230,7 +245,6 @@ function InitDetailButtons() {
         return;
     }
 
-    const g = () => currentGame;
     document.getElementById('quickplay').addEventListener('click',   () => g() && tRpc.call('new_match', g()));
     document.getElementById('clockedplay').addEventListener('click', () => g() && tRpc.call('open_clock_setup', g()));
     document.getElementById('invitation').addEventListener('click',  () => g() && tRpc.call('open_invitation', g()));
@@ -248,18 +262,6 @@ function InitDetailButtons() {
         UpdateDetailFavorite();
     });
 
-    document.getElementById('fileElem').addEventListener('change', function () {
-        if (!g()) return;
-        const reader = new FileReader();
-        reader.readAsText(this.files[0]);
-        reader.onload = async (e) => {
-            // Le contenu passe par le store (trop gros pour l'URL) :
-            // book.js le lira et le parsera via la commande Rust parse_pjn.
-            await store.set('book:' + g(), { fileName: this.value, data: e.target.result });
-            tRpc.call('open_book', g(), this.value, '');
-        };
-        this.value = '';
-    });
     document.getElementById('openbook').addEventListener('click', () => {
         if (g()) document.getElementById('fileElem').click();
     });
@@ -268,6 +270,376 @@ function InitDetailButtons() {
     document.getElementById('detail-back').addEventListener('click', () => {
         document.getElementById('game-list-pane').classList.remove('show-detail');
     });
+}
+
+// Ouverture d'un fichier de partie. Deux points d'entree, meme circuit : le
+// bouton "Ouvrir un livre" de la fiche (un jeu est selectionne) et l'entree
+// "Charger une partie" de la barre laterale (aucun jeu choisi -- c'est alors
+// le fichier qui doit dire de quel jeu il s'agit).
+//
+// Cable a part de InitDetailButtons() : celle-ci abandonne en bloc si un
+// SEUL element du panneau de detail manque, ce qui laissait aussi "Charger
+// une partie" sans gestionnaire alors que ce chemin ne depend pas du detail.
+function InitFileInput() {
+    const input = document.getElementById('fileElem');
+    if (!input) { console.error('[hub] #fileElem absent — chargement de fichier indisponible'); return; }
+    input.addEventListener('change', function () {
+        const file = this.files[0];
+        this.value = '';
+        if (!file) return;
+        // file.name et NON this.value : les navigateurs renvoient la
+        // "C:\fakepath\" du selecteur natif, et rien du tout sous jsdom. Ce
+        // nom sert de repli au libelle de la partie et au resume d'un
+        // variants.ini -- avec this.value ils tombaient a vide.
+        const name = file.name;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try { await OpenGameFile(e.target.result, name); }
+            catch (err) {
+                console.error('[hub] chargement:', err);
+                Notify(t('hub.loadFailed'));
+            }
+        };
+        reader.readAsText(file);
+    });
+}
+
+// Message dans la banniere du bas (meme zone que les notifications poussees
+// depuis Rust), avec un lien pour la refermer.
+function Notify(text) {
+    const notifier = document.querySelector('.hub-notifier');
+    if (!notifier) { console.warn('[hub]', text); return; }
+    document.querySelectorAll('.hub-notifier > *').forEach(el => el.style.display = 'none');
+    const el = document.querySelector('.hub-notifier-text');
+    el.style.display = ''; el.textContent = text;
+    const ok = document.querySelector('.hub-notifier-ok');
+    ok.style.display = ''; ok.textContent = t('common.close');
+    ok.onclick = () => { notifier.classList.add('hidden'); ok.onclick = null; };
+    notifier.classList.remove('hidden');
+}
+
+// Correspondance variante Fairy-Stockfish -> jeu Jocly. Construite A LA
+// DEMANDE et une seule fois : elle demande de lire la config de chaque jeu du
+// catalogue (une centaine), ce qui est trop cher pour le faire au demarrage
+// alors que la plupart des sessions n'ouvrent jamais de fichier Fairy.
+async function FairyMap() {
+    if (Object.keys(fairyMap).length) return fairyMap;
+    const configs = {};
+    await Promise.all(Object.keys(gamesMap).map(async (n) => {
+        configs[n] = await Jocly.getGameConfig(n).catch(() => null);
+    }));
+    fairyMap = FairyGameIndex(configs);
+    console.info('[hub] variantes Fairy-Stockfish reconnues :', Object.keys(fairyMap).length);
+    return fairyMap;
+}
+
+// Choisit le jeu d'un fichier : celui qu'il declare s'il existe dans le
+// catalogue, sinon celui de la fiche affichee. Le fichier fait autorite parce
+// que rejouer sa notation dans un AUTRE jeu ne peut pas marcher -- plateau et
+// notation different, les coups seraient refuses des le premier.
+function ResolveGame(declared, selected) {
+    if (declared && gamesMap[declared]) return { game: declared, mismatch: !!selected && declared !== selected };
+    return { game: selected || null, unknown: !!declared };
+}
+
+// `hintGame` : jeu suggere par le CONTEXTE et non par le fichier -- en
+// pratique le sous-dossier de problems/ d'ou vient l'exemple. Il ne prime pas
+// sur ce que le fichier declare (le fichier reste juge de son propre jeu),
+// mais il remplace la fiche selectionnee comme repli, ce qui rend les
+// exemples ouvrables sans avoir choisi un jeu au prealable.
+async function OpenGameFile(text, fileName, hintGame) {
+    const selected = (hintGame && gamesMap[hintGame]) ? hintGame : g();
+
+    // 1. Solution/sauvegarde Jocly (JSON) : deja au format de joclyMatch.load().
+    const solution = ParseSolution(text);
+    if (solution) {
+        const r = ResolveGame(solution.game, selected);
+        if (!r.game) return Notify(t('hub.loadNoGame'));
+        if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
+        const id = 'sol-' + Date.now();
+        await store.set('fork:' + id, { solution });
+        return tRpc.call('new_match', r.game, null, id);
+    }
+
+    // 2. variants.ini de Fairy-Stockfish : ce n'est PAS une partie mais une
+    //    declaration de regles. On ne peut donc pas l'"ouvrir" ; on dit ce
+    //    qu'il contient, ce qui est deja la reponse a la question que se pose
+    //    quelqu'un qui vient de le deposer ici.
+    if (IsVariantsIni(text)) return OpenVariantsIni(text, fileName);
+
+    // 3. PGN/PJN : on lit d'abord les tags pour savoir de quel jeu il s'agit
+    //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers,
+    //    [Variant] par Fairy-Stockfish et les serveurs d'echecs).
+    let declared = null;
+    try {
+        const matches = await tRpc.call('parse_pjn', text);
+        const tags = matches?.[0]?.tags;
+        declared = BookGame(tags);
+        if (!declared || !gamesMap[declared]) {
+            // Repechage. `declared` lui-meme est essaye comme nom de
+            // variante : les deux nomenclatures se ressemblent assez pour
+            // qu'on ecrive [JoclyGame "knightmate"] en croyant nommer un jeu
+            // Jocly, alors que "knightmate" est le nom Fairy-Stockfish et que
+            // le jeu s'appelle "knightmate-chess". Le catalogue tranche.
+            const variant = FairyVariantAlias(BookVariant(tags) || declared);
+            const mapped = variant ? (await FairyMap())[variant] : null;
+            if (mapped) {
+                console.info('[hub]', variant, 'est une variante Fairy-Stockfish — jeu Jocly :', mapped);
+                declared = mapped;
+            }
+        }
+    } catch (e) { console.warn('[hub] parse_pjn:', e.message || e); }
+
+    const r = ResolveGame(declared, selected);
+    if (!r.game) return Notify(r.unknown ? t('hub.loadUnknownGame') : t('hub.loadNoGame'));
+    if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
+    await store.set('book:' + r.game, { fileName, data: text });
+    tRpc.call('open_book', r.game, fileName, '');
+}
+
+// Un variants.ini de Fairy-Stockfish ne contient aucune partie : c'est un
+// fichier de REGLES. On ne fait donc pas semblant de l'ouvrir. Ce qu'on en
+// tire de concret aujourd'hui, c'est la position de depart de chaque variante
+// et la taille de son plateau : quand un jeu du catalogue joue deja la meme
+// variante, cette position est ouvrable telle quelle.
+//
+// Le reste (faire jouer une variante que Jocly ne connait pas) suppose un
+// module de jeu generique pilote par le moteur, cote jocly2 -- voir la note
+// FAIRY-STOCKFISH du README. On le dit ici plutot que d'echouer en silence.
+async function OpenVariantsIni(text, fileName) {
+    const variants = ReadVariantsIni(text);
+    if (!variants.length) return Notify(t('hub.iniEmpty'));
+    const map = await FairyMap();
+    const playable = variants.filter(v => map[v.name.toLowerCase()]);
+    console.info('[hub] variants.ini :', variants.length, 'variantes,',
+        playable.length, 'jouables par un jeu du catalogue :',
+        playable.map(v => v.name + ' -> ' + map[v.name.toLowerCase()]).join(', '));
+
+    SetNav('loadgame');
+    document.getElementById('loadgame-pane').style.display = '';
+    const status = document.getElementById('loadgame-status');
+    if (status) {
+        status.textContent = t('load.iniSummary', {
+            file: String(fileName || '').replace(/^.*[/\\]/, ''),
+            total: variants.length, playable: playable.length,
+        });
+    }
+    // Les positions de depart des variantes reconnues deviennent des
+    // vignettes lancables, au meme titre que les exemples livres.
+    document.getElementById('loadgame-tabs').innerHTML = '';
+    RenderSamples(playable.slice(0, 12).map(v => ({
+        game: map[v.name.toLowerCase()],
+        kind: 'position',
+        fileName: v.name + '.pjn',
+        text: '[JoclyGame "' + map[v.name.toLowerCase()] + '"]\n[Event "' + v.name + '"]\n'
+            + (v.startFen ? '[FEN "' + v.startFen.replace(/"/g, "'") + '"]\n[SetUp "1"]\n' : '')
+            + '[PlyCount "0"]\n\n',
+    })));
+}
+
+// ── Ecran "Charger une partie" ────────────────────────────────────────────────
+//
+// Le clic sur l'entree de la barre laterale ouvrait directement le selecteur
+// de fichier natif, sans un mot d'explication : rien ne disait quels formats
+// passent, ni qu'un meme bouton accepte aussi bien un livre de plusieurs
+// parties qu'un probleme d'une position et neuf coups.
+//
+// Les exemples ne sont plus ecrits en dur : ils viennent du dossier externe
+// `problems/` (voir src-tauri/src/commands/problem_cmds.rs), un sous-dossier
+// par jeu = un onglet. Consequence assumee : sans ce dossier, l'ecran n'a
+// aucun exemple a montrer. Il dit alors ou le poser, ce qui est plus utile
+// qu'une poignee d'exemples figes qu'on ne peut ni completer ni remplacer.
+
+let problemGroups = [];      // [{ name, count }] -- un onglet chacun
+let problemsDir   = null;    // chemin resolu, affiche a l'utilisateur
+let problemTab    = null;    // onglet courant
+
+// Rend une liste de "vignettes". Sert aux exemples du dossier ET aux
+// positions extraites d'un variants.ini : meme presentation, meme circuit.
+//   { game, title, fileName, text, thumbnail?, kind? }
+function RenderSamples(samples) {
+    const container = document.getElementById('loadgame-samples');
+    if (!container) return;
+    container.innerHTML = '';
+    for (const sample of samples) {
+        const game = gamesMap[sample.game];
+        const div = document.createElement('div');
+        div.className = 'loadgame-sample';
+        div.innerHTML = `
+            <img width="42" height="42" alt=""/>
+            <div class="loadgame-sample-body">
+              <div class="loadgame-sample-name"></div>
+              <div class="loadgame-sample-desc"></div>
+              <div class="loadgame-sample-note"></div>
+              <div class="loadgame-sample-buttons">
+                <button class="btn btn-positive sample-try"></button>
+                <button class="btn btn-default sample-solve"></button>
+              </div>
+            </div>`;
+        // Vignette fournie avec l'exemple, sinon miniature du jeu.
+        const img = div.querySelector('img');
+        let hasImage = true;
+        if (sample.thumbnail) img.src = sample.thumbnail;
+        else if (game) img.src = distURL(game.thumbnail);
+        else { img.remove(); hasImage = false; }
+
+        div.querySelector('.loadgame-sample-name').textContent = sample.title || sample.fileName;
+        div.querySelector('.loadgame-sample-desc').textContent =
+            game ? (game.title + (sample.kind ? ' — ' + t('load.kind.' + sample.kind) : ''))
+                 : t('load.gameMissing', { game: sample.game });
+        // L'enonce -- « Mat en 2 ici » -- vient du commentaire ecrit avant le
+        // premier coup. C'est ce qu'il faut savoir AVANT de chercher, donc il
+        // est sur la vignette et non derriere un clic. Tronque par le CSS,
+        // lisible en entier au survol.
+        const note = div.querySelector('.loadgame-sample-note');
+        if (sample.blurb) { note.textContent = sample.blurb; note.title = sample.blurb; }
+        else note.remove();
+
+        // « Essayer » d'abord, et en bouton principal : un probleme est fait
+        // pour etre cherche. « Resoudre » ouvre la meme position AVEC sa
+        // solution rejouee -- utile, mais il ne doit pas etre le geste par
+        // defaut, sinon il n'y a plus rien a trouver.
+        const tryIt = div.querySelector('.sample-try');
+        const solve = div.querySelector('.sample-solve');
+        tryIt.textContent = t('load.try');
+        solve.textContent = t('load.solve');
+        tryIt.title = t('load.tryTip');
+        solve.title = t('load.solveTip');
+        // L'image ouvre elle aussi la position a chercher : c'est le geste
+        // attendu devant une vignette, et une cible plus facile a viser.
+        if (hasImage && game) {
+            img.classList.add('clickable');
+            img.title = t('load.tryTip');
+            img.addEventListener('click', () => PlaySample(sample, true));
+        }
+        // Le jeu vise n'est pas installe : l'exemple reste visible -- le
+        // dossier problems/ peut tres bien etre livre avant le dist qui
+        // contient le jeu -- mais on ne propose pas un lancement qui ne peut
+        // pas aboutir.
+        if (!game) {
+            for (const b of [tryIt, solve]) {
+                b.disabled = true;
+                b.title = t('load.gameMissing', { game: sample.game });
+            }
+        } else {
+            tryIt.addEventListener('click', () => PlaySample(sample, true));
+            solve.addEventListener('click', () => PlaySample(sample, false));
+        }
+        container.appendChild(div);
+    }
+}
+
+// Lance un exemple. `stripped` retire les coups AVANT de passer par le
+// circuit habituel : la position s'ouvre alors seule, sans sa solution, et
+// play.js -- qui ne met en pause que lorsqu'il a rejoue au moins un coup --
+// laisse la partie jouable contre l'adversaire habituel.
+//
+// Un seul chemin pour les deux boutons, et c'est exactement celui d'un
+// fichier choisi a la main : si ce chemin casse un jour, les exemples cassent
+// avec lui, ce qui est voulu -- ils servent aussi de banc d'essai.
+async function PlaySample(sample, stripped) {
+    let text = sample.text;
+    if (stripped) {
+        const solution = ParseSolution(text);
+        text = solution
+            ? JSON.stringify({ ...solution, playedMoves: [] })
+            : StripBookMoves(text) || text;
+    }
+    try { await OpenGameFile(text, sample.fileName, sample.game); }
+    catch (e) { console.error('[hub] exemple:', e); Notify(t('hub.loadFailed')); }
+}
+
+// Un onglet par sous-dossier. Le nom du sous-dossier EST le nom du jeu Jocly :
+// c'est ce qui permet de dire si le jeu est installe, donc si l'exemple est
+// lancable. On affiche le titre du catalogue quand il est connu, le nom brut
+// du dossier sinon.
+function RenderProblemTabs() {
+    const tabs = document.getElementById('loadgame-tabs');
+    if (!tabs) return;
+    tabs.innerHTML = '';
+    for (const grp of problemGroups) {
+        const el = document.createElement('span');
+        el.className = 'loadgame-tab' + (grp.name === problemTab ? ' active' : '');
+        el.textContent = (gamesMap[grp.name]?.title || grp.name) + ' (' + grp.count + ')';
+        if (!gamesMap[grp.name]) el.title = t('load.gameMissing', { game: grp.name });
+        el.addEventListener('click', () => SelectProblemTab(grp.name));
+        tabs.appendChild(el);
+    }
+}
+
+async function SelectProblemTab(name) {
+    problemTab = name;
+    RenderProblemTabs();
+    const container = document.getElementById('loadgame-samples');
+    if (container) container.textContent = t('common.loading');
+    let entries = [];
+    try { entries = await tRpc.call('read_problem_group', name) || []; }
+    catch (e) { console.error('[hub] problems:', e); if (container) container.textContent = t('hub.loadFailed'); return; }
+    RenderSamples(await Promise.all(entries.map(Describe)));
+}
+
+// Titre et enonce d'un exemple, lus dans le fichier. Le nom de fichier
+// (« matOpera.pgn ») n'apprend rien ; [Event] porte le nom que l'auteur a
+// donne au probleme, et le commentaire d'introduction porte la consigne.
+async function Describe(entry) {
+    const base = {
+        game: entry.group,
+        title: entry.file,
+        fileName: entry.file,
+        text: entry.text,
+        thumbnail: entry.thumbnail || null,
+        blurb: null,
+    };
+    // Une sauvegarde JSON ne porte ni tag ni commentaire : rien a en tirer.
+    if (ParseSolution(entry.text)) return base;
+    let matches = [];
+    try { matches = await tRpc.call('parse_pjn', entry.text) || []; }
+    catch (e) { console.warn('[hub] description de', entry.file, ':', e.message || e); return base; }
+    if (!matches.length) return base;
+
+    const title = (matches[0].tags?.Event || '').trim();
+    if (title) base.title = title;
+    // Fichier a plusieurs problemes : le dire, le titre du premier seul
+    // serait trompeur.
+    if (matches.length > 1) base.blurb = t('load.severalGames', { n: matches.length });
+    else {
+        const intro = BookCommentary(matches[0].text).find(x => !x.move && x.comment);
+        if (intro) base.blurb = intro.comment;
+    }
+    return base;
+}
+
+// Chargé une seule fois : le dossier ne bouge pas en cours de session, et
+// relire les vignettes à chaque ouverture de l'écran serait gratuit.
+async function LoadProblems() {
+    if (problemGroups.length) return;
+    let r;
+    try { r = await tRpc.call('list_problem_groups'); }
+    catch (e) { console.warn('[hub] problems:', e.message || e); return; }
+    problemsDir   = r?.dir || null;
+    problemGroups = r?.groups || [];
+    console.info('[hub] exemples :', problemGroups.length, 'groupe(s) dans', problemsDir || '(aucun dossier)');
+}
+
+async function ShowLoadGame() {
+    SetNav('loadgame');
+    document.getElementById('loadgame-pane').style.display = '';
+    const status = document.getElementById('loadgame-status');
+    if (status) status.textContent = '';
+    await LoadProblems();
+    RenderProblemTabs();
+
+    // Le chemin resolu est affiche meme quand le dossier existe : c'est la
+    // seule facon pour l'utilisateur de savoir ou deposer un fichier de plus.
+    const where = document.getElementById('loadgame-samples-intro');
+    if (where) {
+        where.textContent = problemsDir
+            ? t('load.samplesFrom', { dir: problemsDir })
+            : t('load.samplesNone');
+    }
+    if (problemGroups.length) await SelectProblemTab(problemTab && problemGroups.some(g => g.name === problemTab)
+        ? problemTab : problemGroups[0].name);
+    else RenderSamples([]);
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────
@@ -474,6 +846,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         SetNav('templates'); document.getElementById('template-list').style.display = '';
         await UpdateTemplates(); UpdateTemplateList();
     });
+    document.getElementById('nav-loadgame').addEventListener('click', ShowLoadGame);
+    document.getElementById('loadgame-choose')?.addEventListener('click', () => {
+        document.getElementById('fileElem').click();
+    });
     document.getElementById('nav-invitation').addEventListener('click', () => {
         SetNav('invitation'); document.getElementById('invitation-pane').style.display = '';
     });
@@ -493,6 +869,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     catch (e) { console.error('[hub] InitInvitationPane:', e); }
     try { InitDetailButtons(); }
     catch (e) { detailAvailable = false; console.error('[hub] InitDetailButtons:', e); }
+    try { InitFileInput(); }
+    catch (e) { console.error('[hub] InitFileInput:', e); }
 
     // Garde : si ../browser/jocly.js n'a pas chargé (dist/ absent des assets
     // embarqués — build fait sans dist/ ou avec un src-tauri/target périmé),

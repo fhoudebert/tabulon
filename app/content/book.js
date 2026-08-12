@@ -13,6 +13,10 @@ import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
+import { ExtractMoves, BookFen, BookLabel, BookGame } from './book-format.js';
+
+// Re-export : tests/test-book.mjs importe ExtractMoves depuis ce module.
+export { ExtractMoves };
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);
@@ -27,23 +31,6 @@ const fileName = (function () {
     return 'PJN';
 })();
 
-// Extrait les coups SAN du texte d'une partie PGN/PJN : retire les tags, les
-// commentaires {…}, les variantes (…), les numéros de coups, les NAG $n et
-// le résultat. Exporté pour les tests.
-export function ExtractMoves(text) {
-    const parts = String(text).replace(/\r\n?/g, '\n').split(/\n\n+/);
-    const movesPart = (parts.length > 1 ? parts.slice(1) : parts).join('\n');
-    let s = movesPart.replace(/\{[^}]*\}/g, ' ');
-    while (/\([^()]*\)/.test(s)) s = s.replace(/\([^()]*\)/g, ' ');
-    return s.split(/\s+/)
-        .map(tok => tok.replace(/^\d+\.+/, ''))     // "12.Nf3" → "Nf3"
-        .filter(tok => tok
-            && !/^\d+\.+$/.test(tok)                 // "12."
-            && !/^\$\d+$/.test(tok)                  // NAG
-            && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok) // résultat
-            && !/^\[/.test(tok));
-}
-
 function ShowError(error) {
     document.querySelector('.book-content ul').style.display = 'none';
     const msg = document.querySelector('.book-content .message > div > div');
@@ -52,29 +39,70 @@ function ShowError(error) {
     document.querySelector('.book-content .message').style.display = '';
 }
 
+// Libelle d'une partie du fichier. On IGNORE match.label venu de Rust : il
+// s'ecrivait "? vs ? #1" pour tout fichier sans tags [White]/[Black], donc
+// pour tout fichier produit par Tabulon. BookLabel descend une echelle de
+// repli (joueurs, [Event], nom du fichier, date) et le meme calcul sert au
+// pied de la fenetre de jeu.
+function MatchLabel(match, index, count) {
+    return BookLabel(match.tags, {
+        index, count, fileName,
+        plies: ExtractMoves(match.text).length,
+        pliesLabel: t('book.plies'),
+    });
+}
+
 function SetBookMatches(matches) {
     const list = document.querySelector('.book-content ul');
-    matches.forEach((match) => {
+    matches.forEach((match, index) => {
         const li = document.createElement('li');
         li.className = 'list-group-item object-list-item';
         li.innerHTML = `<div class="media-body"><strong></strong></div>`;
-        li.querySelector('strong').textContent = match.label;
-        li.addEventListener('click', () => OpenBookMatch(match));
+        li.querySelector('strong').textContent = MatchLabel(match, index, matches.length);
+        li.addEventListener('click', () => OpenBookMatch(match, index, matches.length));
         list.appendChild(li);
     });
     document.querySelector('.book-content .message').style.display = 'none';
     list.style.display = '';
 }
 
-async function OpenBookMatch(match) {
+// Jeu d'UNE partie du livre. Un fichier peut en melanger plusieurs -- le
+// all-tests.pgn de reference contient douze parties de douze jeux differents,
+// chacune avec son tag [JoclyGame]. La fenetre etait ouverte pour un seul jeu
+// (celui de la premiere partie, choisi par le hub) et lancait TOUTES les
+// parties dedans : cliquer sur la partie de xiangqi ouvrait shako-chess, ou
+// les coups etaient refuses des le premier.
+async function MatchGame(match) {
+    const declared = BookGame(match.tags);
+    if (!declared || declared === gameName) return gameName;
+    const games = await Jocly.listGames().catch(() => ({}));
+    if (!games[declared]) {
+        console.warn('[book] la partie designe', declared, '— jeu absent du catalogue, ouverture dans', gameName);
+        return gameName;
+    }
+    return declared;
+}
+
+async function OpenBookMatch(match, index, count) {
     const moves = ExtractMoves(match.text);
     const id = 'book-' + Date.now();
+    const game = await MatchGame(match);
     const store = await Store.load('tabulon.json');
     await store.set('fork:' + id, {
-        book: { moves, playerA: match.playerA, playerB: match.playerB },
+        book: {
+            moves,
+            // Libelle deja calcule : la fenetre de jeu n'a ni le nom du
+            // fichier ni les tags, elle ne pourrait pas le refaire.
+            label: MatchLabel(match, index, count),
+            // Tag [FEN] : la partie ne part pas de la position standard
+            // (probleme, finale, position d'etude). play.js charge cette
+            // position AVANT de rejouer les coups.
+            initialBoard: BookFen(match.tags),
+        },
     });
-    tRpc.call('new_match', gameName, null, id);
+    tRpc.call('new_match', game, null, id);
 }
+
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();

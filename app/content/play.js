@@ -13,6 +13,7 @@ import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
+import { ReplayBookMoves } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -282,7 +283,22 @@ function buildPlayerValue(info) {
 // avoir perdu laissait le plateau muet et « le joueur B gagne » a l'ecran.
 // HumanTurn() n'est jamais appele directement : c'est de l'interne jocly,
 // atteint via userTurn().
+// Resultat de la partie ("1-0", "0-1", "1/2-1/2") des qu'elle est terminee,
+// pour le tag [Result] a la sauvegarde. Remis a null a chaque changement de
+// position : apres un recul dans l'historique la partie n'est plus finie, et
+// ecrire un resultat serait faux.
+let gameResult = null;
+
+// Nom lisible d'un cote, pour les tags [White]/[Black] du PJN.
+function PlayerLabel(key) {
+    const value = players[key];
+    if (!value) return t('common.human');
+    if (value.remote) return t('common.remote');
+    return translateLevelLabel(value.label) || value.name || t('common.computer');
+}
+
 async function rearmAfterPositionChange() {
+    gameResult = null;
     await joclyMatch?.abortUserTurn().catch(() => {});
     if (!loopActive) gameLoop();
 }
@@ -391,6 +407,7 @@ async function gameLoop() {
 
             if (finished) {
                 ClockStop();
+                gameResult = winner === 0 ? '1/2-1/2' : winner > 0 ? '1-0' : '0-1';
                 UpdateFooter(winner === 0 ? t('play.draw')
                     : winner > 0 ? t('play.aWins')
                     : t('play.bWins'));
@@ -537,6 +554,17 @@ function updateRemoteRestrictedButtons() {
     }
 }
 
+// Bascule les deux camps en HUMAIN. Utilise a l'ouverture d'une partie ou
+// d'une solution : par defaut le camp B est une IA, qui jouerait aussitot
+// par-dessus les coups qu'on vient de charger -- et surtout des qu'on
+// reviendrait en arriere dans la fenetre Historique pour naviguer.
+function SetBothHuman() {
+    for (const key of [Jocly.PLAYER_A, Jocly.PLAYER_B]) {
+        players[key] = null;
+        syncFooterSelect(key);
+    }
+}
+
 // Aligne le select rapide du footer (select-player-a/-b) sur l'etat reel de
 // players[key] -- humain (''), IA (index en string), ou distant ('remote').
 // A appeler chaque fois que players[key] change ailleurs que par ce select
@@ -645,20 +673,41 @@ function initSatelliteListeners() {
         [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach(key => syncFooterSelect(key));
     });
 
+    // Ce que la fenetre Historique ecrit dans les tags du PJN a la
+    // sauvegarde : qui a joue, et le resultat s'il y en a un. Sans ca elle
+    // n'avait rien a mettre dans [White]/[Black] et les fichiers relus
+    // s'affichaient "? vs ?".
+    const HistoryMeta = () => ({
+        white:  PlayerLabel(Jocly.PLAYER_A),
+        black:  PlayerLabel(Jocly.PLAYER_B),
+        result: gameResult,
+    });
+
     // get-played-moves : retourne l'historique des coups comme strings lisibles
     listen(prefix + 'get-played-moves', async () => {
         if (!joclyMatch) return;
         const moves = await joclyMatch.getPlayedMoves().catch(() => []);
         if (!moves || moves.length === 0) {
-            await emit(`play-rep:${matchId}:get-played-moves`, { moves: [] });
+            await emit(`play-rep:${matchId}:get-played-moves`, { moves: [], gameName, ...HistoryMeta() });
             return;
         }
         // getMoveString accepte un array et retourne un array de strings
         // en une seule transaction avec l'iframe -- plus fiable que n appels
         // séquentiels où la sérialisation JSON des objets move peut les corrompre.
         const strings = await joclyMatch.getMoveString(moves).catch(() => null);
+        // initialBoard : position de DEPART de la partie (null si c'est la
+        // position standard). La fenetre Historique en a besoin pour ecrire
+        // un tag [FEN] a la sauvegarde, sans quoi une partie partie d'un
+        // probleme se rechargerait depuis la position initiale du jeu.
+        const saved = await joclyMatch.save().catch(() => null);
         await emit(`play-rep:${matchId}:get-played-moves`, {
-            moves: Array.isArray(strings) ? strings : moves.map(() => '?')
+            moves: Array.isArray(strings) ? strings : moves.map(() => '?'),
+            initialBoard: saved?.initialBoard || null,
+            // Le jeu, pour que la fenetre Historique ecrive le bon tag
+            // [JoclyGame] a la sauvegarde. Elle le lit AUSSI dans son URL,
+            // mais cette reponse-ci fait autorite : elle vient du match.
+            gameName,
+            ...HistoryMeta(),
         });
     });
 
@@ -670,6 +719,10 @@ function initSatelliteListeners() {
         cancelRemoteWait('rollback');
         await joclyMatch.rollback(payload?.index ?? 0).catch(e => console.warn('[play] rollback:', e));
         await resyncRemoteChannelBaseline();
+        // Accuse de reception : la fenetre Historique enchaine sa lecture
+        // automatique SUR CET EVENEMENT, et non sur un minuteur fixe, pour ne
+        // pas empiler les demandes quand un coup est lent a redessiner.
+        emit(`play-rep:${matchId}:rollback-to`, { index: payload?.index ?? 0 }).catch(() => {});
     });
 
     // get-template-data : données complètes pour "Save template"
@@ -811,7 +864,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         store?.set('play-footer-bar', !!visible);
     });
 
-    btn('button-history',  () => tRpc.call('open_history', matchId));
+    btn('button-history',  () => tRpc.call('open_history', matchId, gameName));
     btn('button-clock',    () => tRpc.call('open_clock', matchId));
     btn('button-players',  () => tRpc.call('open_players', matchId));
     btn('button-options',  () => tRpc.call('open_view_options', matchId));
@@ -1144,17 +1197,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     // puis appliqués par playMove. On tolère les décorations (+ # ! ?) en
     // retentant sans elles si pickMove ne trouve pas.
     async function BookReplay(book) {
-        let played = 0;
-        for (const tok of book.moves || []) {
-            let move = await joclyMatch.pickMove(tok).catch(() => null);
-            if (!move) move = await joclyMatch.pickMove(tok.replace(/[+#!?]+$/, '')).catch(() => null);
-            if (!move) { console.warn('[play] book: coup non résolu:', tok, 'après', played, 'coups'); break; }
-            await joclyMatch.playMove(move);
-            played++;
+        // Tag [FEN] du PGN/PJN : la partie ne commence PAS a la position
+        // standard (probleme, finale, position d'etude). Sans ce chargement
+        // prealable, pickMove chercherait les coups dans la position initiale
+        // du jeu et echouerait des le premier.
+        if (book.initialBoard) {
+            try {
+                await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: book.initialBoard });
+            } catch (e) {
+                console.warn('[play] book: position de depart refusee:', e.message || e);
+                UpdateFooter(t('play.loadFailed'));
+            }
         }
-        paused = true;
-        UpdatePause();
-        UpdateFooter(`${book.playerA || t('common.playerA')} vs ${book.playerB || t('common.playerB')}`);
+        // La resolution des jetons (decorations, coups colles) vit dans
+        // book-format.js -- module pur, donc testable sans Jocly ; ici on ne
+        // fournit que les deux operations qui touchent au moteur.
+        const { played, unresolved } = await ReplayBookMoves(book.moves, {
+            pick: (s) => joclyMatch.pickMove(s).catch(() => null),
+            play: (m) => joclyMatch.playMove(m),
+        });
+        if (unresolved) console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
+        // Humain contre humain, en pause : sans ca l'IA du camp B rejouerait
+        // par-dessus la partie chargee, et surtout des qu'on reculerait d'un
+        // coup pour naviguer dans la fenetre Historique.
+        //
+        // SAUF si le fichier ne portait aucun coup. C'est ce que « Essayer »
+        // charge : une position seule, sans sa solution. Il n'y a alors rien
+        // a proteger et rien ou naviguer -- ce qu'on veut, c'est CHERCHER,
+        // donc jouer pour de bon, avec l'adversaire habituel.
+        if (played > 0) {
+            SetBothHuman();
+            paused = true;
+            UpdatePause();
+        }
+        // Libelle calcule par book.js (qui a les tags ET le nom du fichier).
+        // Ancien affichage : "? vs ?", les tags [White]/[Black] etant absents
+        // de tout fichier ecrit par Tabulon.
+        UpdateFooter(book.label || gameName);
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
         console.info('[play] book: ' + played + ' coups rejoués');
     }
@@ -1165,6 +1244,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         const saveData = await store?.get('fork:' + forkId).catch(() => null);
         if (saveData?.book) {
             await BookReplay(saveData.book);
+            store?.delete('fork:' + forkId).catch(() => {});
+        } else if (saveData?.solution) {
+            // Solution de probleme chargee depuis un fichier JSON : c'est deja
+            // le format de joclyMatch.save(), donc rien a interpreter. On MET
+            // EN PAUSE -- sinon l'IA jouerait aussitot par-dessus la solution
+            // qu'on vient d'ouvrir -- et on previent la fenetre Historique,
+            // qui n'a aucun autre moyen de savoir que des coups existent.
+            try {
+                await joclyMatch.load(saveData.solution);
+                // Meme regle que pour un livre : une sauvegarde sans coup est
+                // une POSITION, pas une partie a relire. On la laisse jouable.
+                if ((saveData.solution.playedMoves || []).length > 0) {
+                    SetBothHuman();
+                    paused = true;
+                    UpdatePause();
+                }
+                emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+            } catch (e) {
+                console.warn('[play] solution: chargement refuse:', e.message || e);
+                UpdateFooter(t('play.loadFailed'));
+            }
             store?.delete('fork:' + forkId).catch(() => {});
         } else if (saveData) {
             await joclyMatch.load(saveData).catch(e => console.warn('[play] fork load failed:', e));

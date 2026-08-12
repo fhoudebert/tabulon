@@ -1038,3 +1038,184 @@ strong { font-weight: 600; }
   flex: 1;
   font-size: 11px;
 }
+
+/* ── Fenêtre Historique : liste des coups ────────────────────────────────────
+   Reprise du style de JoclyBoard (styles.css), que le portage avait laissé de
+   côté : sans lui les coups s'empilent verticalement, sans survol ni
+   surbrillance — donc aucune indication visuelle de la position courante, ce
+   qui rend la navigation dans la partie illisible. Les couleurs passent par
+   les variables de Tabulon plutôt que par les valeurs en dur de l'original. */
+.window-history #moves {
+  padding: 8px;
+}
+.window-history #moves > * {
+  float: left;
+  margin: 0;
+  padding: 2px 4px;
+}
+.window-history .movenumber {
+  color: var(--text-muted);
+}
+.window-history .move {
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.window-history .move:hover {
+  background-color: var(--bg-alt);
+}
+.window-history .move.active {
+  background-color: var(--primary);
+  color: var(--primary-fg);
+  cursor: default;
+}
+
+/* ── Ecran "Charger une partie" ─────────────────────────────────────────────
+   Meme grammaire visuelle que le panneau Invitation (conteneur a 16px, titres
+   13px, texte secondaire 12px gris) : cet ecran est un panneau du hub, pas
+   une fenetre a part, et doit s'y fondre. Le panneau defile (overflow) parce
+   que le texte explicatif plus la grille de vignettes depasse la hauteur
+   utile sur un portable. */
+.loadgame-container {
+  padding: 16px;
+  overflow-y: auto;
+  height: 100%;
+}
+.loadgame-container h4 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+.loadgame-intro,
+.loadgame-formats,
+.loadgame-history,
+.loadgame-samples-intro {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 10px 0;
+}
+.loadgame-history {
+  border-left: 3px solid #d8d8d8;
+  padding-left: 8px;
+}
+.loadgame-kinds {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 10px 0;
+  padding-left: 18px;
+}
+.loadgame-kinds li { margin-bottom: 3px; }
+.loadgame-kinds strong { color: #333; }
+.loadgame-actions { margin-bottom: 6px; }
+.loadgame-status {
+  font-size: 12px;
+  min-height: 16px;
+  color: #666;
+}
+.loadgame-samples-title {
+  margin: 14px 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+/* Grille fluide : les vignettes se reorganisent seules quand la fenetre est
+   etroite (le hub est redimensionnable et passe en une colonne sur tablette
+   portrait), sans media query a maintenir. */
+.loadgame-samples {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.loadgame-sample {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: #fff;
+}
+.loadgame-sample img {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 3px;
+}
+.loadgame-sample-body { min-width: 0; flex: 1; }
+.loadgame-sample-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loadgame-sample-desc {
+  font-size: 11px;
+  color: #777;
+  margin: 2px 0 6px 0;
+}
+.loadgame-sample-buttons { display: flex; gap: 4px; }
+.loadgame-sample-buttons .btn { font-size: 11px; padding: 2px 6px; }
+
+/* Onglets des exemples : un par sous-dossier de problems/. Barre qui passe
+   à la ligne plutôt que de défiler — le nombre de jeux couverts par un
+   dossier d'exemples se compte en dizaines, pas en centaines, et une barre
+   scrollable cacherait des onglets sans le dire. */
+.loadgame-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px 0;
+}
+.loadgame-tab {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #fafafa;
+  color: #555;
+  cursor: pointer;
+  user-select: none;
+}
+.loadgame-tab:hover { background: #f0f0f0; }
+.loadgame-tab.active {
+  background: #6f6f6f;
+  border-color: #6f6f6f;
+  color: #fff;
+}
+.loadgame-samples-help {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 6px 0;
+}
+/* Chemin du dossier : à lire, à recopier, donc en chasse fixe et
+   sélectionnable. */
+.loadgame-samples-intro {
+  font-size: 11px;
+  color: #888;
+  font-family: Menlo, Consolas, monospace;
+  word-break: break-all;
+  margin: 0 0 8px 0;
+  user-select: text;
+}
+.loadgame-sample .btn[disabled] { opacity: .45; cursor: default; }
+
+
+/* Énoncé du problème, sous le titre de la vignette : « Mat en 2 ici ».
+   Borné à deux lignes — la consigne tient en une phrase, et un commentaire
+   bavard ne doit pas faire enfler la grille. Le texte complet est dans le
+   title, donc lisible au survol. */
+.loadgame-sample-note {
+  font-size: 11px;
+  color: #666;
+  line-height: 1.35;
+  margin: 0 0 6px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* La vignette ouvre la position à chercher : le signaler. */
+.loadgame-sample img.clickable { cursor: pointer; }
+.loadgame-sample img.clickable:hover { outline: 2px solid #b8b8b8; }

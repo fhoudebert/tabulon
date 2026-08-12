@@ -108,7 +108,7 @@ function buildPayload(method, args) {
     set_favorite:        ([gameName, value])       => ({ gameName, value }),
     // moves
     // windows
-    open_history:        ([matchId])               => ({ matchId }),
+    open_history:        ([matchId, gameName])     => ({ matchId, gameName }),
     open_players:        ([matchId])               => ({ matchId }),
     open_view_options:   ([matchId])               => ({ matchId }),
     open_camera_view:    ([matchId, gameName])     => ({ matchId, gameName }),
@@ -122,6 +122,8 @@ function buildPayload(method, args) {
     relay_to_window:     ([target, event, payload])=> ({ target, event, payload }),
     // fichiers
     parse_pjn:           ([data])                  => ({ data }),
+    list_problem_groups: ()                        => ({}),
+    read_problem_group:  ([group])                 => ({ group }),
     open_show_position:  ([gameName, matchId])     => ({ gameName, matchId }),
     // templates
     play_template:       ([templateName])          => ({ templateName }),
