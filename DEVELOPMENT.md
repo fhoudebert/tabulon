@@ -1023,3 +1023,4 @@ on the machine above.
 ## License
 
 AGPL-3.0 (see `package.json`).
+
