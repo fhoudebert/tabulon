@@ -23,7 +23,7 @@
     "dev": "node scripts/check-dist.mjs && tauri dev",
     "build": "node scripts/check-dist.mjs && npm run build:frontend && tauri build",
     "build:frontend": "npm --prefix app install --omit=dev",
-    "lint": "node_modules/jshint/bin/jshint app/content/*.js || true",
+    "lint": "node scripts/check-syntax.mjs",
     "tauri": "tauri",
     "test": "node tests/run-tests.mjs",
     "check:dist": "node scripts/check-dist.mjs",
@@ -31,10 +31,6 @@
     "version": "node scripts/set-version.mjs && git add package-lock.json app/package.json src-tauri/Cargo.toml"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
-    "jshint": "^2.13.6"
-  },
-  "overrides": {
-    "graceful-fs": "^4.2.11"
+    "@tauri-apps/cli": "^2.0.0"
   }
 }

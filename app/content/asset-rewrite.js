@@ -1,4 +1,4 @@
-// asset-rewrite.js — injecté dans chaque webview AVANT le code de page,
+// asset-rewrite.js - injecté dans chaque webview AVANT le code de page,
 // uniquement quand un dist/ externe existe (voir dist_override.rs).
 //
 // But : faire pointer les assets Jocly (moteur + jeux) vers le protocole
@@ -14,7 +14,7 @@
 function __applyDistRewrite() {
   // Idempotence : depuis le passage à initialization_script_for_all_frames
   // (lib.rs / window_manager.rs), ce script s'exécute nativement dans CHAQUE
-  // frame — y compris l'iframe Jocly — à document_start. La ré-injection
+  // frame - y compris l'iframe Jocly - à document_start. La ré-injection
   // manuelle dans l'iframe (injectIntoIframe, conservée en filet de sécurité)
   // peut donc conduire à une double exécution dans le même contexte : on
   // s'arrête si les hooks sont déjà posés, pour ne pas les ré-emballer.
@@ -31,7 +31,7 @@ function __applyDistRewrite() {
   //   macOS (WKWebView)  : tabulon-dist://localhost/<path>
   // convertFileSrc() connaît le bon format : on l'utilise TOUJOURS quand il est
   // disponible (withGlobalTauri le garantit tôt). Le repli en dur ne sert que
-  // si __TAURI__ n'est pas encore prêt — auquel cas on tente le format le plus
+  // si __TAURI__ n'est pas encore prêt - auquel cas on tente le format le plus
   // courant, mais ce cas ne devrait pas se produire avec l'injection au
   // initialization_script.
   var PROTO = 'tabulon-dist://localhost/';
@@ -86,8 +86,8 @@ function __applyDistRewrite() {
 
   // <style> ajouté au DOM (ex. page de règles d'un jeu injectée par info.js,
   // dont les icônes de pièces sont des background-image de sprite) : on
-  // réécrit son texte. Sans ça, l'URL part sur les assets embarqués — où le
-  // jeu du dist externe n'existe pas — et la webview répond 500.
+  // réécrit son texte. Sans ça, l'URL part sur les assets embarqués - où le
+  // jeu du dist externe n'existe pas - et la webview répond 500.
   function rewriteStyleEl(el) {
     try {
       var css = el.textContent;
@@ -112,7 +112,7 @@ function __applyDistRewrite() {
 
   // L'<iframe> de Jocly (attachElement → jocly.embed.html) est un contexte
   // séparé où ce script n'est pas ré-injecté et où Jocly RECHARGE le jeu
-  // (createMatch) — d'où "Game … not found" quand le jeu est seulement dans le
+  // (createMatch) - d'où "Game … not found" quand le jeu est seulement dans le
   // dist externe. On garde l'iframe sur NOTRE origine (pour préserver le
   // postMessage parent↔iframe, qui vérifie l'origine) et on injecte ce même
   // script à l'intérieur dès que son document est accessible : les fetch de
@@ -157,7 +157,7 @@ function __applyDistRewrite() {
     }).observe(document, { childList: true, subtree: true });
   } catch (e) { console.warn('[dist-rewrite] MutationObserver non installe:', e); }
 
-  // 2. fetch() — les règles/descriptions/crédits et data des jeux.
+  // 2. fetch() - les règles/descriptions/crédits et data des jeux.
   var _fetch = window.fetch;
   if (_fetch) {
     window.fetch = function (input, init) {
@@ -168,7 +168,7 @@ function __applyDistRewrite() {
     };
   }
 
-  // 3. XMLHttpRequest — au cas où Jocly l'utilise pour certaines ressources.
+  // 3. XMLHttpRequest - au cas où Jocly l'utilise pour certaines ressources.
   var _open = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url) {
     var d = (typeof url === 'string') && toDist(url);
@@ -228,8 +228,8 @@ function __applyDistRewrite() {
   // 6. Web Worker de l'IA. Après un coup, Jocly fait
   //    new Worker(config.baseURL+'jocly.aiworker.js') (StartThreadedMachine),
   //    puis DANS le worker : importScripts(baseURL+"jocly.core.js") (absolu)
-  //    et des importScripts RELATIFS — "jocly-allgames.js", "jocly.game.js",
-  //    "games/<module>/<jeu>-model.js" (WorkerCreateGame, jocly.core.js) —
+  //    et des importScripts RELATIFS - "jocly-allgames.js", "jocly.game.js",
+  //    "games/<module>/<jeu>-model.js" (WorkerCreateGame, jocly.core.js) -
   //    résolus contre l'URL du worker. On ne peut PAS rediriger l'URL du
   //    worker vers tabulon-dist:// : un Worker doit être SAME-ORIGIN avec sa
   //    page (SecurityError sinon → l'IA reste sur "réflexion"). On crée donc
@@ -241,7 +241,7 @@ function __applyDistRewrite() {
   //    dist_override.rs).
   //    Portée volontairement limitée à jocly.aiworker.js : les workers
   //    fairy/scan chargent du WASM par fetch relatif, incompatible avec une
-  //    base blob: — ils restent sur l'embarqué (comportement inchangé).
+  //    base blob: - ils restent sur l'embarqué (comportement inchangé).
   try {
     var _Worker = window.Worker;
     if (_Worker && window.Blob && window.URL && window.URL.createObjectURL) {
@@ -255,7 +255,7 @@ function __applyDistRewrite() {
             var m = s.match(/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/[^\/]*(\/.*)$/);
             if (m) s = m[1];
             else if (/^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(s)) return String(u); // autre scheme (file:…)
-            // Racine-absolu : c'est la forme RÉELLE de config.baseURL — Jocly
+            // Racine-absolu : c'est la forme RÉELLE de config.baseURL - Jocly
             // calcule sa baseURL via new URL(scriptDir).pathname ("/browser/"),
             // donc le worker reçoit importScripts("/browser/jocly.core.js").
             if (s.charAt(0) === '/') {
@@ -310,7 +310,7 @@ function __applyDistRewrite() {
 
   // 8. setAttribute('href'/'src', …). C'est la voie RÉELLE des CSS de module :
   //    JocGame.LoadCss (jocly.game.js) fait
-  //    style.setAttribute("href", fullPath+"/"+css) — ni le setter .href ni le
+  //    style.setAttribute("href", fullPath+"/"+css) - ni le setter .href ni le
   //    parse HTML ne sont impliqués, et le MutationObserver ne corrige qu'APRÈS
   //    l'insertion, alors que la webview a déjà lancé la requête sur l'embarqué
   //    (→ 500 en console sur chessbase.css avant le refetch corrigé). En

@@ -2,7 +2,7 @@
 //
 // "Board state" / "Load board state" : saisir un état de plateau et
 //   - avec matchId : recharger la partie en cours (satellite load-board-state
-//     vers play.js — l'ancien rpc load_board_state n'avait pas de commande Rust) ;
+//     vers play.js - l'ancien rpc load_board_state n'avait pas de commande Rust) ;
 //   - sans matchId (bouton "Board state" du hub) : démarrer une nouvelle
 //     partie depuis cet état, via le canal fork ({initialBoard}) + new_match,
 //     comme joclyboard::loadBoardState sans match.

@@ -47,7 +47,7 @@ function AddViewPoint(camera, id, title) {
         e.stopPropagation();
         const name = await ask('New viewpoint name', { title: 'Rename', kind: 'info' });
         if (!name) return;
-        // ask() retourne true/false — on utilise un prompt natif via dialog
+        // ask() retourne true/false - on utilise un prompt natif via dialog
         // TODO: quand tauri-plugin-dialog supporte prompt(), utiliser ça
         // Pour l'instant on utilise window.prompt (supporté dans Tauri WebView)
         const newName = window.prompt('New viewpoint name', vp.title);

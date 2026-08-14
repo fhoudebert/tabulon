@@ -6,7 +6,7 @@
 //   2. cette fenêtre lit le store et parse via la commande Rust parse_pjn
 //   3. au clic sur une partie : les coups SAN sont extraits du texte, déposés
 //      dans le store sous 'fork:{id}' avec un marqueur `book`, puis
-//      new_match(gameName, null, id) — play.js détecte le marqueur et rejoue
+//      new_match(gameName, null, id) - play.js détecte le marqueur et rejoue
 //      les coups via l'API Jocly pickMove/playMove. La navigation dans la
 //      partie se fait ensuite par la fenêtre History (start/step/end).
 import tRpc from './tabulon-rpc.js';
@@ -77,7 +77,7 @@ async function MatchGame(match) {
     if (!declared || declared === gameName) return gameName;
     const games = await Jocly.listGames().catch(() => ({}));
     if (!games[declared]) {
-        console.warn('[book] la partie designe', declared, '— jeu absent du catalogue, ouverture dans', gameName);
+        console.warn('[book] la partie designe', declared, '- jeu absent du catalogue, ouverture dans', gameName);
         return gameName;
     }
     return declared;
@@ -107,7 +107,7 @@ async function OpenBookMatch(match, index, count) {
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(config.model['title-en'] + ' — ' + fileName);
+    await twu.init(config.model['title-en'] + ' - ' + fileName);
     setTimeout(() => twu.ready(), 0);
 
     try {

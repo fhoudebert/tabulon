@@ -27,7 +27,7 @@
 //
 // COHABITATION avec le hook Worker d'asset-rewrite.js (qui redirige
 // jocly.aiworker.js vers le dist externe) : les deux enveloppent `Worker`,
-// mais sur des URL DISJOINTES et chacun délègue à l'enveloppe précédente —
+// mais sur des URL DISJOINTES et chacun délègue à l'enveloppe précédente -
 // l'ordre d'installation n'a donc pas d'importance.
 
 const FAIRY_WORKER_RE = /(^|\/)jocly\.fairyworker\.js(\?|$)/;
@@ -43,7 +43,7 @@ function ReportEval(variant, asked, used) {
     if (used) console.info(`[engine-native] ${variant} : reseau NNUE ${used}`);
     else if (asked) console.info(
         `[engine-native] ${variant} : reseau NNUE "${asked}" introuvable a cote du ` +
-        `binaire (ou refuse) — evaluation classique`);
+        `binaire (ou refuse) - evaluation classique`);
 }
 
 /**
@@ -155,7 +155,7 @@ class NativeFairyWorker {
  * « 33-28 », « 28x19x23 ») et non `data.bestMoveUci`.
  *
  * Une position terminale est un `done` SANS coup : jocly l'interprète en
- * vidant sa liste de coups, ce n'est pas une erreur — on transmet donc
+ * vidant sa liste de coups, ce n'est pas une erreur - on transmet donc
  * `bestMove: null` plutôt que d'échouer.
  */
 class NativeScanWorker {
@@ -204,7 +204,7 @@ class NativeScanWorker {
                 // Chemin NORMAL quand `engine/scan` n'est pas installé : jocly
                 // marque le moteur indisponible et joue avec son IA native.
                 const why = (err && err.message) || err;
-                console.warn('[engine-native] moteur de dames indisponible — ' +
+                console.warn('[engine-native] moteur de dames indisponible - ' +
                     'le niveau Expert des dames se rabat sur l’IA native :', why);
                 this._fail(err);
             });

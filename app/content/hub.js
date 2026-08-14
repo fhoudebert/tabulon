@@ -1,7 +1,7 @@
-// app/content/hub.js  —  Fenêtre principale Tabulon
+// app/content/hub.js  -  Fenêtre principale Tabulon
 //
 // Navigation unifiée : liste des jeux à gauche + panneau de détail à droite
-// (fusion de l'ancien game.html/game.js — la fiche jeu ne s'ouvre plus dans
+// (fusion de l'ancien game.html/game.js - la fiche jeu ne s'ouvre plus dans
 // une fenêtre séparée, la sélection est une navigation interne JS).
 import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
@@ -132,7 +132,7 @@ async function UpdateFavoriteGames(favorites) {
 
 // ── Panneau de détail : sélection d'un jeu ────────────────────────────────────
 //
-// Remplace tRpc.call('open_game', gameName) — plus aucune fenêtre ouverte,
+// Remplace tRpc.call('open_game', gameName) - plus aucune fenêtre ouverte,
 // la fiche est rendue dans le panneau droit du hub.
 //
 // opts.reveal : sur écran étroit (tablette portrait), true bascule la vue
@@ -226,7 +226,7 @@ async function UpdateDetailTemplates() {
     });
 }
 
-// Boutons d'action du panneau de détail — liés une seule fois au chargement,
+// Boutons d'action du panneau de détail - liés une seule fois au chargement,
 // ils opèrent sur currentGame.
 function InitDetailButtons() {
     // hub.js et hub.html doivent être de la même version. Si le panneau de
@@ -239,7 +239,7 @@ function InitDetailButtons() {
     const missing = required.filter(id => !document.getElementById(id));
     if (missing.length) {
         detailAvailable = false;
-        console.error('[hub] hub.html obsolète — éléments manquants :', missing.join(', '),
+        console.error('[hub] hub.html obsolète - éléments manquants :', missing.join(', '),
             '\nLe panneau de détail est désactivé. Vérifier que app/content/hub.html',
             'est à jour, puis supprimer src-tauri/target/ (assets embarqués périmés) et relancer.');
         return;
@@ -282,7 +282,7 @@ function InitDetailButtons() {
 // une partie" sans gestionnaire alors que ce chemin ne depend pas du detail.
 function InitFileInput() {
     const input = document.getElementById('fileElem');
-    if (!input) { console.error('[hub] #fileElem absent — chargement de fichier indisponible'); return; }
+    if (!input) { console.error('[hub] #fileElem absent - chargement de fichier indisponible'); return; }
     input.addEventListener('change', function () {
         const file = this.files[0];
         this.value = '';
@@ -355,7 +355,7 @@ async function OpenGameFile(text, fileName, hintGame) {
     if (solution) {
         const r = ResolveGame(solution.game, selected);
         if (!r.game) return Notify(t('hub.loadNoGame'));
-        if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
+        if (r.mismatch) console.info('[hub] le fichier designe', r.game, '- ouvert dans ce jeu');
         const id = 'sol-' + Date.now();
         await store.set('fork:' + id, { solution });
         return tRpc.call('new_match', r.game, null, id);
@@ -384,7 +384,7 @@ async function OpenGameFile(text, fileName, hintGame) {
             const variant = FairyVariantAlias(BookVariant(tags) || declared);
             const mapped = variant ? (await FairyMap())[variant] : null;
             if (mapped) {
-                console.info('[hub]', variant, 'est une variante Fairy-Stockfish — jeu Jocly :', mapped);
+                console.info('[hub]', variant, 'est une variante Fairy-Stockfish - jeu Jocly :', mapped);
                 declared = mapped;
             }
         }
@@ -392,7 +392,7 @@ async function OpenGameFile(text, fileName, hintGame) {
 
     const r = ResolveGame(declared, selected);
     if (!r.game) return Notify(r.unknown ? t('hub.loadUnknownGame') : t('hub.loadNoGame'));
-    if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
+    if (r.mismatch) console.info('[hub] le fichier designe', r.game, '- ouvert dans ce jeu');
     await store.set('book:' + r.game, { fileName, data: text });
     tRpc.call('open_book', r.game, fileName, '');
 }
@@ -485,7 +485,7 @@ function RenderSamples(samples) {
 
         div.querySelector('.loadgame-sample-name').textContent = sample.title || sample.fileName;
         div.querySelector('.loadgame-sample-desc').textContent =
-            game ? (game.title + (sample.kind ? ' — ' + t('load.kind.' + sample.kind) : ''))
+            game ? (game.title + (sample.kind ? ' - ' + t('load.kind.' + sample.kind) : ''))
                  : t('load.gameMissing', { game: sample.game });
         // L'enonce -- « Mat en 2 ici » -- vient du commentaire ecrit avant le
         // premier coup. C'est ce qu'il faut savoir AVANT de chercher, donc il
@@ -810,7 +810,7 @@ tRpc.listen({
     // courante, qui re-rend la liste).
     // Import/désinstallation d'extension : l'index du dist a changé, mais le
     // BrowserScriptLoader de Jocly CACHE jocly-allgames.js pour la durée de
-    // vie de la page (cache[url] fermé sur le module) — relancer ListGames()
+    // vie de la page (cache[url] fermé sur le module) - relancer ListGames()
     // relirait l'index périmé. Seul un rechargement de la page repart d'un
     // cache vierge ; le hub restaure ensuite sa navigation depuis le store.
     extensionsChanged: () => {
@@ -827,7 +827,7 @@ tRpc.listen({
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.info('[hub] DOMContentLoaded — start');
+    console.info('[hub] DOMContentLoaded - start');
     await initI18n();   // locale système, avant tout rendu dynamique
     store   = await Store.load('tabulon.json');
     console.info('[hub] store loaded');
@@ -873,12 +873,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     catch (e) { console.error('[hub] InitFileInput:', e); }
 
     // Garde : si ../browser/jocly.js n'a pas chargé (dist/ absent des assets
-    // embarqués — build fait sans dist/ ou avec un src-tauri/target périmé),
+    // embarqués - build fait sans dist/ ou avec un src-tauri/target périmé),
     // afficher la cause dans l'interface au lieu d'une liste vide muette.
     if (typeof Jocly === 'undefined') {
         console.error('[hub] window.Jocly absent : ../browser/jocly.js n\'a pas chargé.',
             'Causes probables : dist/ manquant au moment du build, ou src-tauri/target',
-            'périmé (assets embarqués sans dist) — supprimer target/ et rebuilder.');
+            'périmé (assets embarqués sans dist) - supprimer target/ et rebuilder.');
         document.getElementById('game-list-pane').style.display = '';
         const ul = document.getElementById('game-list');
         const li = document.createElement('li');
@@ -895,7 +895,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     console.info('[hub] calling ListGames()');
     await ListGames();
-    console.info('[hub] ListGames() done — allGameList has', allGameList.length, 'games');
+    console.info('[hub] ListGames() done - allGameList has', allGameList.length, 'games');
 
     // Restaurer la dernière fiche consultée (sans basculer la vue tablette)
     const lastGame = await store.get('last-game');

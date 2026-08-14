@@ -3,7 +3,7 @@
 // Tabulon n'utilise aucun bundler (vanilla JS, vrais fichiers .html/.js
 // servis tels quels par la WebView) : les imports npm classiques
 // (`import { invoke } from '@tauri-apps/api/core'`) ne fonctionnent pas
-// dans ce contexte — ce sont des "bare specifiers", que seul un bundler
+// dans ce contexte - ce sont des "bare specifiers", que seul un bundler
 // (Vite, Webpack...) sait résoudre vers le bon fichier de node_modules.
 // Sans bundler, le navigateur essaie de les interpréter comme une URL et
 // échoue avec "TypeError: Module name ... does not resolve to a valid URL".
@@ -13,7 +13,7 @@
 // de lire l'API depuis `window.__TAURI__` plutôt que via `import`. Ce
 // fichier ré-exporte ces sous-objets sous forme de vrais exports ES,
 // pour que le reste du code puisse continuer à écrire des imports
-// normaux — juste vers ce fichier (chemin relatif, donc valide) plutôt
+// normaux - juste vers ce fichier (chemin relatif, donc valide) plutôt
 // que vers le paquet npm :
 //
 //   import { invoke } from './tauri-bridge.js';        // au lieu de '@tauri-apps/api/core'
@@ -45,7 +45,7 @@ function tauri() {
     const T = window.__TAURI__;
     if (!T) {
         throw new Error(
-            'window.__TAURI__ is undefined — check app.withGlobalTauri in tauri.conf.json.'
+            'window.__TAURI__ is undefined - check app.withGlobalTauri in tauri.conf.json.'
         );
     }
     return T;
@@ -115,7 +115,7 @@ async function waitForTauri(timeoutMs = 8000, intervalMs = 15) {
             // wrappers paresseux ci-dessous leveront ensuite a l'appel, comme
             // avant ce garde-fou.
             console.error(
-                `[tauri-bridge] window.__TAURI__ toujours incomplet apres ${timeoutMs} ms — ` +
+                `[tauri-bridge] window.__TAURI__ toujours incomplet apres ${timeoutMs} ms - ` +
                 'l\'injection Tauri n\'est pas arrivee du tout (voir ' +
                 'tauri-apps/tauri#12990). Verifier app.withGlobalTauri et la CSP.'
             );
@@ -146,7 +146,7 @@ export const once   = (...args) => tauri().event.once(...args);
 export const getCurrentWindow = (...args) => tauri().window.getCurrentWindow(...args);
 export const getAllWindows    = (...args) => tauri().window.getAllWindows(...args);
 
-// @tauri-apps/api/webviewWindow — classe, même traitement que Store ci-dessous.
+// @tauri-apps/api/webviewWindow - classe, même traitement que Store ci-dessous.
 export const WebviewWindow = new Proxy(function () {}, {
     construct(_target, args) { return new (tauri().webviewWindow.WebviewWindow)(...args); },
     get(_target, prop) {
@@ -167,12 +167,12 @@ export const ask        = (...args) => tauri().dialog.ask(...args);
 export const save       = (...args) => tauri().dialog.save(...args);
 export const openDialog = (...args) => tauri().dialog.open(...args);
 
-// @tauri-apps/plugin-store — classe, pas une fonction : on ne peut pas la
+// @tauri-apps/plugin-store - classe, pas une fonction : on ne peut pas la
 // wrapper de la même façon. Store.load(...) est une méthode statique (cf.
 // jb-controller.js/worker-bridge.js qui font `Store.load('tabulon.json')`),
 // donc un Proxy paresseux sur la classe elle-même est nécessaire ici.
 // IMPORTANT : `get` doit lier (bind) la propriété récupérée à l'objet réel
-// (`tauri().store.Store`), pas la retourner détachée — sinon un éventuel
+// (`tauri().store.Store`), pas la retourner détachée - sinon un éventuel
 // usage interne de `this` dans l'implémentation Tauri (non vérifiable
 // depuis l'extérieur, le bundle est minifié) se retrouverait silencieusement
 // cassé dès qu'on appelle `Store.load(...)` via ce proxy.
@@ -189,7 +189,7 @@ export const Store = new Proxy(function () {}, {
 export const platform = (...args) => tauri().os.platform(...args);
 export const locale   = (...args) => tauri().os.locale(...args);
 
-// @tauri-apps/plugin-http — fetch execute cote Rust (reqwest), donc pas
+// @tauri-apps/plugin-http - fetch execute cote Rust (reqwest), donc pas
 // soumis au CORS du navigateur. Necessaire pour parler a un relai HTTP
 // distant (fileio.php de jocly-simple-match n'envoie pas d'en-tetes CORS).
 // L'URL doit etre autorisee dans capabilities/default.json (permission

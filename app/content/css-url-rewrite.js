@@ -1,4 +1,4 @@
-// app/content/css-url-rewrite.js — réécriture des `url(...)` d'un texte CSS.
+// app/content/css-url-rewrite.js - réécriture des `url(...)` d'un texte CSS.
 //
 // Pourquoi : les pages de règles des jeux (res/rules/<jeu>/*.html, chargées
 // par info.js) peuvent illustrer les pièces avec un SPRITE, donc en CSS :
@@ -6,7 +6,7 @@
 // Avec un dist EXTERNE, les URL d'assets doivent passer par le protocole
 // tabulon-dist:// (voir asset-rewrite.js). Or les hooks d'asset-rewrite
 // couvrent les attributs (img/src, link/href), fetch/XHR et le CSSOM (styles
-// posés en JS) — mais PAS le texte CSS d'un <style> : celui-là est analysé
+// posés en JS) - mais PAS le texte CSS d'un <style> : celui-là est analysé
 // par le moteur, aucun hook JS ne le voit passer. Résultat constaté avec le
 // dist externe : la page de règles d'Ultima demandait le PNG sur le
 // protocole d'app (assets embarqués, où le jeu n'est pas) → 500, icônes

@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnSave    = document.getElementById('button-save');
     const btnCancel  = document.getElementById('button-cancel');
 
-    // Récupérer l'état de la partie auprès de play.js — sans lui, rien à
+    // Récupérer l'état de la partie auprès de play.js - sans lui, rien à
     // sauvegarder (l'ancien flux Rust stockait un placeholder {matchId} inutile)
     await listen(`play-rep:${matchId}:get-template-data`, ({ payload }) => {
         templateData = payload;
