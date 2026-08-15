@@ -96,10 +96,16 @@ assert($('#nav-games-fav').classList.contains('active'), 'nav par défaut = Favo
 assert($$('#game-list li').length === 10, `Favorites affiche 10 jeux (défauts) — trouvé ${$$('#game-list li').length}`);
 assert($('#game-detail-empty').style.display !== 'none', 'panneau détail vide au départ (pas de last-game)');
 
-// 2. Nav All → 125 jeux
+// 2. Nav All → tout le catalogue
+// Le nombre est LU dans le dist, pas écrit en dur : il change à chaque jeu
+// ajouté en amont (125 → 128 → 129 au fil des versions de jocly), et un
+// chiffre figé transforme chaque mise à jour du dist en faux échec. Ce qu'on
+// veut vérifier ici, c'est que « All » n'oublie ni ne duplique rien.
+const catalogSize = Object.keys(await globalThis.Jocly.listGames()).length;
 $('#nav-games-all').click();
 await waitFor(() => $$('#game-list li').length > 100, 'liste All rendue');
-assert($$('#game-list li').length === 125, `All affiche 125 jeux — trouvé ${$$('#game-list li').length}`);
+assert($$('#game-list li').length === catalogSize,
+  `All affiche tout le catalogue (${catalogSize} jeux) — trouvé ${$$('#game-list li').length}`);
 assert($$('#game-list li img')[0].src.includes('/games/'), 'thumbnails de liste résolus via baseURL/games/');
 
 // 2b. Raccourcis de liste : 4 icônes sur chaque item

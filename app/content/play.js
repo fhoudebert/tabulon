@@ -780,7 +780,7 @@ function initSatelliteListeners() {
     });
 
     // input-move : joue un coup choisi dans la fenêtre "Possible moves"
-    // (équivalent joclyboard::inputMove) - on interrompt le userTurn en
+    // (équivalent joclyboard::inputMove) — on interrompt le userTurn en
     // attente puis on applique ; la boucle reprend sur le tour suivant.
     // Ce chemin contourne gameLoop() (playMove direct, pas userTurn) : on
     // reproduit donc ici l'envoi au relai distant que gameLoop fait pour tout
@@ -801,7 +801,7 @@ function initSatelliteListeners() {
     });
 
     // show-move : aperçu d'un coup au survol (best-effort : selon le jeu,
-    // le viewControl Jocly peut ne pas supporter la mise en évidence - on
+    // le viewControl Jocly peut ne pas supporter la mise en évidence — on
     // ignore alors silencieusement)
     listen(prefix + 'show-move', async ({ payload }) => {
         if (!joclyMatch) return;
@@ -1006,7 +1006,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ── Capture vidéo ─────────────────────────────────────────────────────
     // Réparation vs JoclyBoard (Linux) : la pompe n'est plus un setInterval
-    // 30 fps - quand takeSnapshot dépasse 33 ms (3D/WebGL), les captures
+    // 30 fps — quand takeSnapshot dépasse 33 ms (3D/WebGL), les captures
     // s'empilaient en concurrence (frames désordonnées, UI asphyxiée). Ici
     // une boucle SÉQUENTIELLE auto-replanifiée : capture → envoi → attente
     // du reliquat de la période. Les options de JoclyBoard sont reprises :
@@ -1086,7 +1086,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Actions rapides du footer (barre masquée) : proxys vers les boutons
-    // de la barre - un seul handler par action, zéro duplication de logique.
+    // de la barre — un seul handler par action, zéro duplication de logique.
     btn('quick-takeback', () => document.getElementById('button-takeback')?.click());
     btn('quick-restart',  () => document.getElementById('button-restart')?.click());
 
@@ -1151,12 +1151,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // se rabat sur son IA native et le bandeau #play-warning s'affiche.
     installNativeEngine(gameArea, tRpc);
 
-    // Sélecteur de skin (2D/3D) du footer, à côté des joueurs A/B - visible
+    // Sélecteur de skin (2D/3D) du footer, à côté des joueurs A/B — visible
     // seulement quand la barre de boutons est masquée (classe
     // player-select-wrap, exclusion gérée en CSS par .bar-visible).
     // Capture d'écran / vidéo : disponibles uniquement en 3D (limitation
     // Jocly : viewControl('takeSnapshot') rejette "Snapshot only available
-    // on 3D views" en 2D - c'est le rendu WebGL qui est capturé). On grise
+    // on 3D views" en 2D — c'est le rendu WebGL qui est capturé). On grise
     // les deux boutons quand le skin courant est un 2D CONNU ; si les
     // métadonnées manquent, on laisse actif (jocly signalera).
     function UpdateCaptureButtons(skinName) {

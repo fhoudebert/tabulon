@@ -144,7 +144,7 @@ export function ExtractMoves(text) {
  *     retourne dans la file. Du plus long au plus court, pour ne pas couper
  *     "…-k12+" en "…-k12" et laisser un "+" parasite devant le suivant.
  *
- * Renvoie {played, unresolved} - unresolved est le premier jeton refuse
+ * Renvoie {played, unresolved} — unresolved est le premier jeton refuse
  * (la lecture s'arrete la, comme dans JoclyBoard), ou null si tout a passe.
  */
 export async function ReplayBookMoves(tokens, { pick, play }) {
@@ -219,7 +219,7 @@ export function BookLabel(tags, opts = {}) {
     const plies = Number(tags.PlyCount) || Number(opts.plies) || 0;
     if (plies > 0) bits.push(plies + ' ' + (opts.pliesLabel || 'plies'));
 
-    let label = [head, bits.join(', ')].filter(Boolean).join(' - ');
+    let label = [head, bits.join(', ')].filter(Boolean).join(' — ');
     // Numero d'ordre : utile SEULEMENT quand le fichier contient plusieurs
     // parties, sinon "#1" est du bruit sur une liste d'une ligne.
     if (opts.count > 1 && opts.index != null) label += ' #' + (opts.index + 1);

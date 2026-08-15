@@ -1,0 +1,11 @@
+[JoclyGame "khans-chess"]
+[Event "mat3"]
+[Date "2026.8.15"]
+[White "Humain"]
+[Black "Facile"]
+[Result "1-0"]
+[PlyCount "5"]
+[FEN "2N3a1/8/2k1s1l1/4h3/1P4Ps/P4s2/1P2Q3/2KR3R w KQkq - 4 32"]
+[SetUp "1"]
+
+1. Qe2-a6+ Kc6-c7 2. Qa6-b6+ Kc7xc8 3. Rd1-d8+

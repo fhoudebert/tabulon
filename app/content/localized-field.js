@@ -1,4 +1,4 @@
-// app/content/localized-field.js - champ de manifeste de jeu pouvant être
+// app/content/localized-field.js — champ de manifeste de jeu pouvant être
 // soit une simple chaîne, soit un objet indexé par locale.
 //
 // Le manifeste d'un jeu Jocly déclare son résumé ainsi :
@@ -9,7 +9,7 @@
 //
 // Les deux formes doivent marcher côte à côte : les jeux existants gardent
 // leur chaîne, les nouveaux peuvent traduire. L'anglais reste le repli par
-// défaut - un jeu qui n'a pas la langue de l'utilisateur s'affiche en
+// défaut — un jeu qui n'a pas la langue de l'utilisateur s'affiche en
 // anglais plutôt que vide.
 //
 // Module PUR (aucun DOM, aucun import) : testable sous Node,
@@ -31,7 +31,7 @@ export function pickLocalized(value, locale, fallback = 'en') {
     const str = (v) => (typeof v === 'string' && v.trim() ? v : null);
     const base = (l) => String(l || '').split(/[-_]/)[0].toLowerCase();
 
-    // 1. locale exacte ('fr-CA'), puis 2. langue seule ('fr') - un manifeste
+    // 1. locale exacte ('fr-CA'), puis 2. langue seule ('fr') — un manifeste
     //    peut indexer par l'une ou l'autre.
     const candidates = [locale, base(locale), fallback, base(fallback)];
     for (const key of candidates) {

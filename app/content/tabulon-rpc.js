@@ -137,7 +137,7 @@ function buildPayload(method, args) {
     get_app_info:        ()                             => ({}),
     remove_template:     ([templateName])              => ({ templateName }),
     notify_user_response:([token, result])             => ({ token, result }),
-    // windows - hub actions
+    // windows — hub actions
     open_position:       ([gameName, matchId])         => ({ gameName, matchId }),
     // extensions
     open_extensions:     ()                        => ({}),
@@ -148,7 +148,7 @@ function buildPayload(method, args) {
     remove_extension:    ([gameName])              => ({ gameName }),
     export_module:       ([moduleName, destPath])  => ({ moduleName, destPath }),
     remove_module:       ([moduleName])            => ({ moduleName }),
-    // moteur natif (Fairy-Stockfish) - voir app/content/engine-native.js
+    // moteur natif (Fairy-Stockfish) — voir app/content/engine-native.js
     engine_probe:        ()                        => ({}),
     engine_search:       ([request])               => ({ request }),
     engine_stop:         ()                        => ({}),

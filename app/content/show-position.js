@@ -2,7 +2,7 @@
 //
 // "Display board state" : affiche l'état du plateau (FEN ou équivalent) de la
 // partie. L'état est demandé à play.js via le protocole satellite
-// (play-req/play-rep get-board-state) - l'ancien push rpc "setPosition"
+// (play-req/play-rep get-board-state) — l'ancien push rpc "setPosition"
 // n'avait pas d'émetteur côté Rust.
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';

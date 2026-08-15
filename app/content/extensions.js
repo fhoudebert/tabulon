@@ -1,4 +1,4 @@
-// app/content/extensions.js - écran de gestion des extensions.
+// app/content/extensions.js — écran de gestion des extensions.
 //
 // Disponible UNIQUEMENT quand un dist/ externe est actif (get_dist_info) :
 // l'embarqué est en lecture seule. Trois actions, toutes côté Rust
@@ -93,7 +93,7 @@ function render() {
         title.textContent = g.title;
         const meta = document.createElement('div');
         meta.className = 'ext-item-meta';
-        meta.textContent = `${g.name} - ${t('ext.module')} ${g.module}`;
+        meta.textContent = `${g.name} — ${t('ext.module')} ${g.module}`;
         info.append(title, meta);
         if (g.summary) {
             const summary = document.createElement('div');
