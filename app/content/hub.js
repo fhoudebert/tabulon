@@ -77,9 +77,13 @@ function UpdateGameList() {
         li.className = 'list-group-item object-list-item';
         li.dataset.game = game.gameName;
         if (game.gameName === currentGame) li.classList.add('active');
+        const fav = !!favoritesMap[game.gameName];
         li.innerHTML = `
             <img class="media-object pull-left" src="${distURL(game.thumbnail)}" width="48" height="48"/>
             <div class="media-body"><strong>${game.title}</strong><p>${game.summary}</p></div>
+            <div title="${fav ? t('tip.unfavorite') : t('tip.favorite')}" class="media-object pull-right list-shortcut list-shortcut-fav">
+                <span class="icon ${fav ? 'icon-star' : 'icon-star-empty'}"></span>
+            </div>
             <div title="${t('tip.rules')}" class="media-object pull-right list-shortcut list-shortcut-info">
                 <span class="icon icon-info-circled"></span>
             </div>
@@ -93,6 +97,21 @@ function UpdateGameList() {
         });
         shortcut('.list-shortcut-play',  () => tRpc.call('new_match', game.gameName));
         shortcut('.list-shortcut-info',  () => tRpc.call('open_info', game.gameName));
+        // Bascule OPTIMISTE : l'etoile change tout de suite, l'appel part
+        // ensuite. Le hub ne reconstruit pas la liste apres set_favorite (la
+        // reponse arrive par l'evenement updateFavorites, qui ne recharge que
+        // l'onglet Favoris), donc attendre la confirmation laisserait l'etoile
+        // muette dans l'onglet All -- l'utilisateur cliquerait deux fois.
+        shortcut('.list-shortcut-fav', () => {
+            const now = !favoritesMap[game.gameName];
+            if (now) favoritesMap[game.gameName] = Date.now();
+            else delete favoritesMap[game.gameName];
+            const box  = li.querySelector('.list-shortcut-fav');
+            box.title  = now ? t('tip.unfavorite') : t('tip.favorite');
+            box.querySelector('.icon').className = 'icon ' + (now ? 'icon-star' : 'icon-star-empty');
+            tRpc.call('set_favorite', game.gameName, now)
+                .catch(e => console.warn('[hub] set_favorite:', e.message || e));
+        });
         ul.appendChild(li);
     });
 }

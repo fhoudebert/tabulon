@@ -203,12 +203,12 @@ console.log('Exemples du dossier problems/');
 
   // Un onglet par sous-dossier, dans l'ordre du dossier.
   const tabs = [...document.querySelectorAll('.loadgame-tab')];
-  assert(tabs.length === 3, `3 onglets (${tabs.length}) — un par sous-dossier de problems.zip`);
+  assert(tabs.length === 4, `4 onglets (${tabs.length}) — un par sous-dossier de tests/fixtures-problems`);
   const labels = tabs.map(t => t.textContent);
   assert(labels[0] === 'Chu Shogi (1)' && labels[1] === 'Chess (2)',
     'le titre vient du catalogue, avec le nombre de fichiers — ' + labels.join(' | '));
-  assert(labels[2] === 'ultima (2)',
-    'un jeu absent du catalogue garde son nom de dossier — ' + labels[2]);
+  assert(labels[2] === 'khans-chess (1)' && labels[3] === 'ultima (2)',
+    'un jeu absent du catalogue garde son nom de dossier — ' + labels.slice(2).join(', '));
   assert(tabs[0].classList.contains('active'), 'le premier onglet est ouvert par defaut');
 
   // Le premier onglet affiche son unique probleme, avec sa vignette fournie.
@@ -318,7 +318,9 @@ console.log('Fichier à plusieurs problèmes');
 console.log('Onglet dont le jeu n\'est pas installe');
 {
   const tabs = [...document.querySelectorAll('.loadgame-tab')];
-  tabs[2].click();
+  // Repérage par libellé et non par index : l'ordre est alphabétique, ajouter
+  // un dossier d'exemples décalerait tout.
+  tabs.find(t => t.textContent.startsWith('ultima')).click();
   await waitFor(() => document.querySelectorAll('.loadgame-sample').length === 2, 'onglet ultima');
   const cards = [...document.querySelectorAll('.loadgame-sample')];
   const names = cards.map(c => c.querySelector('.loadgame-sample-name').textContent);

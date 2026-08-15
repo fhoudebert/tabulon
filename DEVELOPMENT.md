@@ -644,7 +644,22 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `check-webrtc-webview.py` | Empirical probe: does the embedded webview (WebKitGTK on Linux) expose `RTCPeerConnection`? Loads an offscreen WebView and, if the API exists, runs a full local WebRTC loopback (offer/answer, ICE without STUN, DataChannel ping/pong) and prints a JSON verdict. Current verdict (Ubuntu 24.04 / WebKitGTK 2.52): **no** — distribution builds are compiled without WebRTC, the finding that steered peer-to-peer play to the Rust TCP transport. **Keep it around to re-evaluate WebRTC in the future**: rerun on new distros/WebKitGTK releases; if it ever reports a working DataChannel, WebRTC (with STUN/TURN) becomes a candidate transport adding the NAT traversal TCP lacks. Needs `python3-gi gir1.2-webkit2-4.1 xvfb`; run: `xvfb-run -a python3 scripts/check-webrtc-webview.py`. Linux-only by nature (WebView2/Chromium on Windows ships WebRTC). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
+| `check-syntax.mjs` | `npm run lint`. Runs `node --check` over `app/content/`, `scripts/` and `tests/` — real syntax errors only, no style rules, **no dependency**, and it exits non-zero when it finds something. Replaces `jshint`, removed in favour of this: jshint's own last release (2.13.6) pinned `cli@1.0.1`, which brought every security advisory and both deprecation warnings in the repo, and with no `.jshintrc` it linted ES2020 code as ES5 and reported 2169 false errors that `|| true` silently discarded. If real linting is wanted later, ESLint is the candidate — there were no jshint rules to preserve. |
 | `set-version.mjs` | Propagates the release number. **`package.json` (root) is the single source**; `npm version <x.y.z>` bumps it and the `version` lifecycle hook runs this script to update `app/package.json`, `src-tauri/Cargo.toml` and both spots in `package-lock.json`. `npm run set-version <x.y.z>` does the same without the git commit/tag; with no argument it just re-propagates the current number. `src-tauri/tauri.conf.json` is *not* written: its `version` field holds `"../package.json"`, a documented form of the field, so Tauri reads the source directly. `tests/test-version-sync.mjs` fails the build if any of these drift apart. |
+
+### Dependencies
+
+`npm audit` is clean in both workspaces and no install prints a deprecation
+warning; keep it that way. Two deliberate non-upgrades, so they don't get
+"fixed" by reflex:
+
+- **jquery stays on 3.x.** It is not used by Tabulon's own code at all — it is
+  loaded as a global because *Jocly* needs it (`jocly.game.js`,
+  `jocly-xdview.js`). jQuery 4 removes long-deprecated APIs, so bumping it
+  would be a change to a third party's runtime, decided from the wrong repo.
+  3.7.1 carries no advisory.
+- **`@tauri-apps/*` are `^2` ranges** and already resolve to the latest 2.x;
+  there is nothing to pin or bump by hand.
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the
@@ -1023,3 +1038,4 @@ on the machine above.
 ## License
 
 AGPL-3.0 (see `package.json`).
+

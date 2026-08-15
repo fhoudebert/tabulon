@@ -92,7 +92,13 @@ assert(errors.some(e => e.includes('src-tauri/target')),
 // 3. Le hub reste utilisable : navigation All + raccourcis de liste
 document.getElementById('nav-games-all').click();
 await waitFor(() => $$('#game-list li').length > 100, 'nav All');
-assert($$('#game-list li').length === 125, 'navigation Favorites/All fonctionnelle');
+// Nombre LU dans le dist plutôt qu'écrit en dur : il augmente à chaque jeu
+// ajouté en amont, et un chiffre figé transforme toute mise à jour du dist en
+// faux échec. Ce qui compte ici, c'est que la navigation fonctionne malgré le
+// panneau de détail absent.
+const catalogSize = Object.keys(await globalThis.Jocly.listGames()).length;
+assert($$('#game-list li').length === catalogSize,
+  `navigation Favorites/All fonctionnelle (${catalogSize} jeux)`);
 const li0 = $$('#game-list li')[0];
 li0.querySelector('.list-shortcut-play').click();
 assert(invokeCalls.some(c => c.cmd === 'new_match'), 'raccourci Quick play fonctionnel');

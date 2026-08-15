@@ -8,7 +8,7 @@
 //
 // Usage : node tests/test-extensions.mjs   (dist/ complet requis à la racine)
 import { execFileSync } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import {
@@ -32,21 +32,37 @@ function assert(cond, msg) {
 // ── 1. Collecte seireigi : exactement le déclaré ─────────────────────────────
 const c = collectGameFiles(dist, 'seireigi');
 assert(c.module === 'chessbase', 'seireigi : module chessbase (variante shogi du module chessbase)');
+// Les visuels sont LUS dans le dist et non listés en dur : leur nombre est un
+// choix de jocly, pas un contrat de Tabulon. jocly 2.6.0 a supprimé la vue 3D
+// de seireigi, ce qui faisait échouer ce test alors que le collecteur faisait
+// exactement son travail. Le reste des fichiers, lui, reste explicite : c'est
+// la structure attendue d'une extension, et si l'un d'eux disparaît il faut
+// que quelqu'un le remarque.
+const visuals = readdirSync(path.join(dist, 'browser', 'games', c.module, 'res', 'visuals'))
+  .filter(f => f.startsWith('seireigi-'))
+  .map(f => 'res/visuals/' + f);
+assert(visuals.length > 0, `visuels seireigi présents dans le dist (${visuals.length})`);
 const expected = [
   'seireigi-config.js', 'seireigi-model.js', 'seireigi-view.js',
   'res/rules/shogi/seireigi-rules.html', 'res/rules/shogi/seireigi-rules_fr.html',
   'res/rules/shogi/seireigi-credits.html', 'res/rules/shogi/seireigi-description.html',
   'res/rules/shogi/seireigi-thumb.png',
-  'res/visuals/seireigi-600x600-3d.jpg', 'res/visuals/seireigi-600x600-2d.jpg',
+  ...visuals,
 ];
 assert(c.files.length === expected.length &&
        expected.every(f => c.files.includes(f)),
-  `collecte = STRICTEMENT le déclaré (${expected.length} fichiers : code, rules en+fr, credits, description, thumbnail, visuals)`);
+  `collecte = STRICTEMENT le déclaré (${expected.length} fichiers : code, rules en+fr, credits, description, thumbnail, ${visuals.length} visuel(s))`);
 assert(!c.files.some(f => f.includes('sprites') || f.includes('diffusemaps') || f.includes('graphs/')),
   'exclusions : sprites, diffusemaps, graphs (ressources PARTAGÉES du module)');
 assert(!c.files.some(f => f.includes('chu-seireigi')),
   'exclusions : aucun fichier de la variante chu-seireigi (pas de glob par nom)');
-assert(c.missing.length === 0, 'aucun fichier déclaré manquant dans le dist source');
+// Un fichier déclaré par le manifeste mais absent du dist n'est PAS un défaut
+// du collecteur : c'est une incohérence du dist lui-même, qui produirait une
+// extension au contenu manquant et un 404 dans l'interface. Le message nomme
+// le coupable, faute de quoi l'échec envoie chercher au mauvais endroit.
+assert(c.missing.length === 0,
+  'aucun fichier déclaré manquant dans le dist source'
+  + (c.missing.length ? ` — déclaré(s) mais absent(s) : ${c.missing.join(', ')} (à corriger côté jocly)` : ''));
 
 // ── 2. Gardes noms/chemins ───────────────────────────────────────────────────
 assert(isSafeName('3dchess') && isSafeName('chu-seireigi') && !isSafeName('../x') && !isSafeName(''),

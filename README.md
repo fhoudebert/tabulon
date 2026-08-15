@@ -1,6 +1,9 @@
 # Tabulon
 
-Play **125 board games** on your desktop — chess and its many variants, draughts, shogi, xiangqi, go-style territory games, mills, tafl, and more. Tabulon is a free, cross-platform application (Linux, Windows, macOS) built on the [Jocly](https://fhoudebert.github.io/jocly2) game library, as a [Tauri 2](https://v2.tauri.app) inspired by the abandonned JoclyBoard.
+
+Tabulon is a free, cross-platform application (Linux, Windows, macOS) for playing 125 board games on your desktop: chess and its variants, draughts, shogi, xiangqi, go-style territory games, mills, tafl, and many more.
+
+Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-defunct JoclyBoard.
 
 ![The game list](liste.png)
 
@@ -25,9 +28,10 @@ Play **125 board games** on your desktop — chess and its many variants, draugh
 These pre-built versions are not fixed: the game library of any installed Tabulon can be **customized** — up to the **full 125-game library** — in two ways:
 
 1. **Install extensions (add or remove games)** — the easiest way. Open the **Extensions** screen (hub sidebar, Configuration group) and import downloaded `.tabulon-ext` files. Browse the catalogue:
+The easiest way to add or remove games is through Configuration → Extensions.
 
-   - [Modules](https://fhoudebert.github.io/tabulon/ext/modules/index.html) — whole game families (a *module* bundles related games and their shared resources; import it with no prerequisite)
-   - [Games](https://fhoudebert.github.io/tabulon/ext/games/index.html) — individual games (importing a game requires its module to be installed first)
+   - [Modules](https://fhoudebert.github.io/tabulon/ext/modules/index.html) — complete game families containing their shared resources.
+   - [Games](https://fhoudebert.github.io/tabulon/ext/games/index.html) — individual games; the corresponding module must already be installed.
 
    The "Get extensions…" link in the Extensions screen takes you straight there. Extensions can also be **uninstalled** from the same screen, so you can add and remove games at any time.
 
@@ -44,7 +48,7 @@ Both modes are marked **experimental**: they cover normal play well, but takebac
 
 ## Languages
 
-English and French, auto-detected from your system. Game rules pages are shown in your language when the game provides a translation.
+Tabulon supports English and French and automatically selects the interface language based on the operating system. Rules pages are displayed in the preferred language whenever a translation is available.
 
 ## For developers
 

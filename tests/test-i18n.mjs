@@ -117,8 +117,15 @@ function assert(cond, msg) {
 
   // B1 : rules.fr déclaré dans la config → fichier _fr chargé
   await waitFor(() => $('.window-content [data-tab="rules"]').innerHTML.length > 0, 'règles chargées');
-  assert($('.window-content [data-tab="rules"]').innerHTML.includes('Les règles du jeu'),
-    'règles en FRANÇAIS (makromachy-rules_fr.html, déclaré rules.fr)');
+  // On compare au CONTENU du fichier _fr plutôt qu'à une phrase choisie : ces
+// pages de règles appartiennent à jocly, leur formulation change (« Les règles
+// du jeu » a disparu en 2.6.0) et le test se mettait alors à échouer pour une
+// reformulation en amont, ce qui n'est pas ce qu'il surveille.
+const rulesFr = readFileSync(
+  './dist/browser/games/chessbase/res/rules/makromachy/makromachy-rules_fr.html', 'utf-8');
+const marker = /<h1>([^<]+)</.exec(rulesFr)?.[1] || '';
+assert(marker && $('.window-content [data-tab="rules"]').innerHTML.includes(marker),
+  `règles en FRANÇAIS (makromachy-rules_fr.html, déclaré rules.fr) — repère « ${marker.slice(0, 40)} »`);
   assert(fetchedUrls.some(u => u.includes('makromachy-rules_fr.html')), 'URL _fr effectivement demandée');
   assert($('.window-content [data-tab="description"]').innerHTML.length > 0 &&
          !fetchedUrls.some(u => u.includes('description_fr') && u.includes('200')),
@@ -138,7 +145,7 @@ function assert(cond, msg) {
   const base = cfg.model.rules.en;
   const probed = base.replace(/(\.html?)$/i, '_fr$1');
   const resp = await fetch('https://tauri.localhost/games/chessbase/' + probed);
-  assert(resp.ok && (await resp.text()).includes('Les règles du jeu'),
+  assert(resp.ok && (await resp.text()).includes(marker),
     'sonde du suffixe _fr : le fichier existe et est servi sans déclaration en config');
 }
 
