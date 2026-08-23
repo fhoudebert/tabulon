@@ -8,6 +8,7 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
+import { Matches } from './text-search.js';
 import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
@@ -58,12 +59,20 @@ function Filter() {
 }
 function DoFilter(q) {
     const str = document.getElementById('gamefilter').value;
-    q = q || { title: str, summary: str, module: str };
+    // `gameName` est cherche au meme titre que le libelle : c'est le nom sous
+    // lequel un jeu apparait dans les fichiers, les dossiers d'exemples et les
+    // messages de la console, et il ne coincide pas toujours avec son titre --
+    // taper « kotaishi » ne trouvait rien, le jeu s'appelant « Sho Shogi ».
+    q = q || { gameName: str, title: str, summary: str, module: str };
     document.querySelectorAll('#game-list li.list-group-item').forEach(li => {
         const game = gamesMap[li.dataset.game];
         if (!game) return;
+        // Matches() replie accents et ponctuation des DEUX cotes : « echecs »
+        // trouve « Echecs », « kotaishi » trouve « Kotaishi », et « men's »
+        // trouve « 9 Men's Morris », dont le catalogue ecrit l'apostrophe avec
+        // un accent aigu.
         const show = Object.entries(q).some(([k, v]) =>
-            v === '' || (game[k] || '').toLowerCase().includes(v.toLowerCase()));
+            Matches(k === 'gameName' ? li.dataset.game : game[k], v));
         li.style.display = show ? '' : 'none';
     });
 }

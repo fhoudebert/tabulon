@@ -10,6 +10,7 @@
 // Après import/désinstallation, le hub est notifié (relay_to_window →
 // extensionsChanged) pour recharger sa liste de jeux.
 import tRpc from './tabulon-rpc.js';
+import { Matches } from './text-search.js';
 import { save as saveDialog, openDialog, ask, open as openExternal } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
@@ -37,7 +38,7 @@ function notifyHub() {
 // désinstallation AU NIVEAU MODULE (dossier games/<module>/ entier + toutes
 // ses entrées d'index). L'import reste unique : le manifeste décide du type.
 function renderModules() {
-    const filter = document.getElementById('ext-filter').value.trim().toLowerCase();
+    const filter = document.getElementById('ext-filter').value.trim();
     const ul = document.getElementById('ext-list');
     ul.textContent = '';
     const byModule = new Map();
@@ -46,7 +47,7 @@ function renderModules() {
         byModule.get(g.module).push(g);
     }
     for (const [mod, games] of [...byModule.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-        if (filter && !mod.toLowerCase().includes(filter)) continue;
+        if (!Matches(mod, filter)) continue;
         const li = document.createElement('li');
         li.className = 'list-group-item ext-item';
 
@@ -79,11 +80,15 @@ function renderModules() {
 
 function render() {
     if (currentTab === 'modules') return renderModules();
-    const filter = document.getElementById('ext-filter').value.trim().toLowerCase();
+    const filter = document.getElementById('ext-filter').value.trim();
     const ul = document.getElementById('ext-list');
     ul.textContent = '';
     for (const g of allGames) {
-        if (filter && !(`${g.title} ${g.name} ${g.module} ${g.summary}`.toLowerCase().includes(filter))) continue;
+        // Meme normalisation que la liste du hub : « echecs » trouve
+        // « Echecs », « kotaishi » trouve « Kotaishi ». Deux champs de
+        // recherche cote a cote qui ne repondraient pas pareil seraient
+        // le genre d'incoherence qu'on met longtemps a s'expliquer.
+        if (!Matches(`${g.title} ${g.name} ${g.module} ${g.summary}`, filter)) continue;
         const li = document.createElement('li');
         li.className = 'list-group-item ext-item';
 
