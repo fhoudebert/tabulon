@@ -1293,30 +1293,6 @@ function UsiToJocly(square, files) {
     return String.fromCharCode(97 + file) + rank;
 }
 
-// La lettre portee par chaque case, lue dans le FEN : l'abreviation FEN de la
-// piece, celle qu'emploie la notation de ChuShogiLite.
-function BoardLetters(fen) {
-    const rows = String(fen || '').split(' ')[0].split('/');
-    const map = {};
-    rows.forEach((row, index) => {
-        const rank = rows.length - index;
-        let file = 0;
-        for (let k = 0; k < row.length; ) {
-            const c = row[k];
-            if (c >= '0' && c <= '9') {
-                let n = c;
-                while (row[k + 1] >= '0' && row[k + 1] <= '9') n += row[++k];
-                file += parseInt(n, 10); k++; continue;
-            }
-            let piece = c; k++;
-            if (c === '+') { piece += row[k]; k++; }
-            map[String.fromCharCode(97 + file) + rank] = piece;
-            file++;
-        }
-    });
-    return (square) => map[square] || null;
-}
-
 // La partie reecrite en notation occidentale, pour un export que
 // ChuShogiLite relit.
 //

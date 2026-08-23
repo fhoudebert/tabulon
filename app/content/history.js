@@ -121,8 +121,17 @@ async function SavePJN() {
     // pour le format de Tabulon, « .pgn » pour celui que ChuShogiLite relit.
     // Pas de case a cocher supplementaire — l'utilisateur nomme deja son
     // fichier, et le nom porte l'intention.
+    // Nom propose SANS extension : c'est le dialogue natif qui ajoute celle du
+    // filtre choisi, et qui la remplace quand on change de filtre. La figer
+    // ici — « chu-shogi.pjn » — la laissait au contraire telle quelle quand on
+    // passait a PGN, et il fallait la corriger a la main.
+    //
+    // Windows et macOS suivent le filtre ; certains gestionnaires de fichiers
+    // Linux se contentent d'ajouter l'extension sans en retirer d'autre, d'ou
+    // le controle ci-dessous qui se fie a ce que le chemin porte REELLEMENT,
+    // et non au filtre qu'on croit avoir choisi.
     const path = await saveDialog({
-        defaultPath: gameName + '.pjn',
+        defaultPath: gameName,
         filters: [
             { name: 'PJN (Tabulon)', extensions: ['pjn'] },
             { name: 'PGN (ChuShogiLite)', extensions: ['pgn'] },
@@ -132,6 +141,9 @@ async function SavePJN() {
 
     const event = path.replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, '');
     if (/\.pgn$/i.test(path)) {
+        // C'est l'extension ECRITE qui decide, pas le filtre : l'utilisateur
+        // peut taper « partie.pgn » sous le filtre PJN, et c'est son nom qui
+        // dit ce qu'il attend.
         // La notation occidentale demande le moteur : seul play.js peut la
         // produire. S'il ne sait pas — jeu sans SFEN, coup non traduisible —
         // on le dit et on n'ecrit rien, plutot que de livrer sous l'extension
