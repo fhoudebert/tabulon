@@ -26,7 +26,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
-         ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves }
+         ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution }
     from '../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
@@ -189,6 +189,50 @@ console.log('Rejeu intégral');
     await match.rollback(0);
     ok((await match.getPossibleMoves()).length > 0,
        'revenu au départ, la position reste jouable — l\'option survit au rechargement');
+}
+
+console.log('Enregistrer puis rouvrir un tsume');
+{
+    // Le mode tsume est une OPTION passée à load(), pas un fait du plateau :
+    // une position sans roi ne dit pas d'elle-même si elle est un problème ou
+    // une erreur de saisie. joclyMatch.save() ne peut donc pas le connaître,
+    // et Tabulon l'ajoute à côté des coups (SaveMatch, play.js).
+    const raw = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite.pgn'), 'utf-8');
+    const tags2 = {};
+    for (const line of raw.split('\n')) {
+        const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+        if (m) tags2[m[1]] = m[2].replace(/^"|"$/g, '');
+    }
+    const match = await Jocly.createMatch('chu-shogi');
+    await match.load({ game: 'chu-shogi', initialBoard: PgnFenToJocly(BookFen(tags2)),
+                       playedMoves: [], tsume: true });
+    const tokens = ExtractMoves(raw);
+    await ReplayBookMoves(tokens, {
+        pick: (s) => match.pickMove(s).catch(() => null),
+        exact: westernResolver(match),
+        play: (m) => match.playMove(m),
+    });
+
+    const saved = await match.save();
+    saved.tsume = true;                       // ce que fait SaveMatch()
+    const json = JSON.stringify(saved);
+    ok(ParseSolution(json)?.tsume === true,
+       'le drapeau traverse la sauvegarde JSON et sa relecture');
+
+    // Sans lui, rouvrir la partie enregistrée échoue : les coups sont rejoués
+    // depuis une position que jocly tient pour perdue, donc sans coup légal.
+    const sol = ParseSolution(json);
+    let refused = null;
+    try {
+        const bare = await Jocly.createMatch('chu-shogi');
+        await bare.load({ ...sol, tsume: undefined });
+    } catch (e) { refused = e; }
+    ok(refused, 'sans le drapeau, la partie enregistrée ne se recharge pas — ' + (refused?.message || ''));
+
+    const back = await Jocly.createMatch('chu-shogi');
+    await back.load({ ...sol, tsume: !!sol.tsume });
+    ok((await back.getPlayedMoves()).length === tokens.length,
+       `avec le drapeau, les ${tokens.length} coups reviennent et l'Historique est de nouveau navigable`);
 }
 
 console.log('');

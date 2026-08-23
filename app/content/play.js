@@ -35,6 +35,24 @@ const clockConfig = (() => {
         return raw ? JSON.parse(decodeURIComponent(raw)) : null;
     } catch { return null; }
 })();
+// La sauvegarde de la partie, telle que Tabulon la transmet ou l'ecrit.
+//
+// joclyMatch.save() rend ce que jocly sait de la partie : les coups et la
+// position de depart. Il ne sait rien du mode tsume, qui est une OPTION passee
+// a load() et non un fait du plateau -- une position sans roi ne dit pas si
+// elle est un probleme ou une erreur. Le drapeau est donc ajoute ici, a cote
+// des coups, pour que la partie rechargee retrouve le mode dans lequel elle a
+// ete jouee ; sans lui, rouvrir un tsume enregistre donne un plateau fige.
+//
+// Absent quand il est faux, plutot qu'ecrit `false` : une sauvegarde ordinaire
+// garde exactement la forme qu'elle avait, et un fichier deja enregistre se
+// relit sans rien de nouveau a interpreter.
+async function SaveMatch() {
+    const saved = await joclyMatch.save().catch(() => null);
+    if (saved && tsumeMatch) saved.tsume = true;
+    return saved;
+}
+
 // Position de tsume : retenu pour toute la partie, parce que CHAQUE
 // rechargement doit reposer l'option -- la navigation dans l'historique
 // recharge la position de depart avant de rejouer jusqu'au coup voulu.
@@ -406,7 +424,7 @@ async function gameLoop() {
             // pour une resynchronisation complete si besoin plus tard.
             if (playedLocally && remoteChannel) {
                 const moves = await joclyMatch.getPlayedMoves().catch(() => []);
-                const state = await joclyMatch.save().catch(() => null);
+                const state = await SaveMatch();
                 remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null, state })
                     .catch(e => console.warn('[play] envoi du coup au relai distant échoué :', e.message || e));
             }
@@ -705,7 +723,7 @@ function initSatelliteListeners() {
         // position standard). La fenetre Historique en a besoin pour ecrire
         // un tag [FEN] a la sauvegarde, sans quoi une partie partie d'un
         // probleme se rechargerait depuis la position initiale du jeu.
-        const saved = await joclyMatch.save().catch(() => null);
+        const saved = await SaveMatch();
         await emit(`play-rep:${matchId}:get-played-moves`, {
             moves: Array.isArray(strings) ? strings : moves.map(() => '?'),
             initialBoard: saved?.initialBoard || null,
@@ -735,7 +753,7 @@ function initSatelliteListeners() {
     // (save-template.html les transmet ensuite à la commande Rust save_template)
     listen(prefix + 'get-template-data', async () => {
         if (!joclyMatch) return;
-        const gameData = await joclyMatch.save().catch(() => null);
+        const gameData = await SaveMatch();
         await emit(`play-rep:${matchId}:get-template-data`, {
             gameName,
             gameData,
@@ -1382,7 +1400,14 @@ async function BookReplay(book) {
             // qu'on vient d'ouvrir -- et on previent la fenetre Historique,
             // qui n'a aucun autre moyen de savoir que des coups existent.
             try {
-                await joclyMatch.load(saveData.solution);
+                // Le mode est relu dans la sauvegarde et retenu pour la suite :
+                // la navigation dans l'Historique rechargera la position, et
+                // chaque rechargement doit reposer l'option.
+                if (saveData.solution.tsume) {
+                    tsumeMatch = true;
+                    console.info('[play] solution: position de tsume');
+                }
+                await joclyMatch.load({ ...saveData.solution, tsume: tsumeMatch });
                 // Meme regle que pour un livre : une sauvegarde sans coup est
                 // une POSITION, pas une partie a relire. On la laisse jouable.
                 if ((saveData.solution.playedMoves || []).length > 0) {
@@ -1397,7 +1422,9 @@ async function BookReplay(book) {
             }
             store?.delete('fork:' + forkId).catch(() => {});
         } else if (saveData) {
-            await joclyMatch.load(saveData).catch(e => console.warn('[play] fork load failed:', e));
+            if (saveData.tsume) tsumeMatch = true;
+            await joclyMatch.load({ ...saveData, tsume: tsumeMatch })
+                .catch(e => console.warn('[play] fork load failed:', e));
             store?.delete('fork:' + forkId).catch(() => {});
         }
     }
