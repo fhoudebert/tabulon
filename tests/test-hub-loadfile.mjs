@@ -41,7 +41,9 @@ function parsePjn(data) {
     const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
     if (m) tags[m[1]] = m[2].replace(/^"|"$/g, '');
   }
-  return [{ label: 'test #1', text: blocks.slice(0, 2).join('\n\n'), tags }];
+  let j = 1;
+  while (j < blocks.length && !blocks[j].startsWith('[')) j++;
+  return [{ label: 'test #1', text: blocks.slice(0, j).join('\n\n'), tags }];
 }
 
 const mockTauri = {

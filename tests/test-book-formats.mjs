@@ -304,8 +304,10 @@ console.log('Test 14 - livre reel multi-jeux (all-tests.pgn)');
     const matches = [];
     for (let i = 0; i < blocks.length; ) {
         if (!blocks[i].startsWith('[')) { i++; continue; }
-        matches.push({ tags: ParseTags(blocks[i]), text: blocks[i] + '\n\n' + (blocks[i + 1] || '') });
-        i += 2;
+        let j = i + 1;
+        while (j < blocks.length && !blocks[j].startsWith('[')) j++;
+        matches.push({ tags: ParseTags(blocks[i]), text: [blocks[i], ...blocks.slice(i + 1, j)].join('\n\n') });
+        i = j;
     }
     ok(matches.length === 12, `12 parties dans le fichier (${matches.length})`);
 
@@ -443,15 +445,19 @@ console.log('Test 16 - commentaires d\'une partie');
 
 console.log('Test 17 - retrait des coups (bouton « Essayer »)');
 {
-    // Le decoupage de parse_pjn, reproduit : un bloc de tags apparie avec le
-    // bloc suivant. C'est LUI qui contraint le format du texte produit.
+    // Le decoupage de parse_pjn, reproduit : un bloc de tags emporte tout ce
+    // qui le suit jusqu'au prochain bloc de tags. C'est LUI qui contraint le
+    // format du texte produit -- d'ou le corps non vide ecrit par
+    // StripBookMoves, sans quoi deux blocs de tags consecutifs se suivraient.
     const split = (txt) => {
         const b = txt.replace(/\r\n?/g, '\n').split('\n\n').map(x => x.trim()).filter(Boolean);
         const out = [];
         for (let i = 0; i < b.length; ) {
             if (!b[i].startsWith('[')) { i++; continue; }
-            out.push({ tags: ParseTags(b[i]), text: b[i] + '\n\n' + (b[i + 1] || '') });
-            i += 2;
+            let j = i + 1;
+            while (j < b.length && !b[j].startsWith('[')) j++;
+            out.push({ tags: ParseTags(b[i]), text: [b[i], ...b.slice(i + 1, j)].join('\n\n') });
+            i = j;
         }
         return out;
     };

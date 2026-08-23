@@ -296,6 +296,64 @@ console.log('Une position sans roi est signalée');
        'entrée vide : rien, pas d\'exception');
 }
 
+console.log('Le découpage en parties, sur lequel tout repose');
+{
+    // Reproduction du découpage de parse_pjn (fs_cmds.rs). C'est ce que la
+    // fenêtre livre reçoit — et NON le fichier entier, sur lequel portaient
+    // jusqu'ici toutes les assertions de rejeu de cette suite. Le décalage
+    // entre les deux est ce qui a laissé passer le défaut : les coups étaient
+    // trouvés dans le fichier complet et perdus par le chemin réel.
+    const SplitPjn = (txt) => {
+        const b = txt.replace(/\r\n?/g, '\n').split('\n\n').map(x => x.trim()).filter(Boolean);
+        const out = [];
+        for (let i = 0; i < b.length; ) {
+            if (!b[i].startsWith('[')) { i++; continue; }
+            let j = i + 1;
+            while (j < b.length && !b[j].startsWith('[')) j++;
+            out.push([b[i], ...b.slice(i + 1, j)].join('\n\n'));
+            i = j;
+        }
+        return out;
+    };
+
+    // ChuShogiLite intercale un diagramme du plateau entre l'en-tête et les
+    // coups, séparé par des lignes vides. S'arrêter au bloc suivant donnait
+    // une partie faite des tags et du diagramme, sans un seul coup : la
+    // fenêtre Historique restait vide et rien ne le signalait.
+    for (const [name, count] of [['fixtures-chushogilite.pgn', 17],
+                                 ['fixtures-chushogilite-c22.pgn', 33]]) {
+        const txt = readFileSync(path.join(root, 'tests', name), 'utf-8');
+        const parts = SplitPjn(txt);
+        ok(parts.length === 1, `${name} : une seule partie (${parts.length})`);
+        ok(/\{-+/.test(parts[0]), 'le diagramme est entre les tags et les coups');
+        ok(ExtractMoves(parts[0]).length === count,
+           `${count} coups par le chemin réel (${ExtractMoves(parts[0]).length})`);
+    }
+
+    // Le témoin : un PGN sans diagramme, dont les coups suivent les tags.
+    // C'est lui qui s'affichait correctement dans l'Historique, et il doit
+    // continuer — la correction élargit l'appariement, elle ne le déplace pas.
+    const cz = readFileSync(path.join(root, 'tests', 'fixtures-crazyhouse.pgn'), 'utf-8');
+    const czParts = SplitPjn(cz);
+    ok(czParts.length === 1, 'crazyhouse : une partie');
+    const czMoves = ExtractMoves(czParts[0]);
+    ok(czMoves.length === 112, `56 coups entiers, soit 112 demi-coups (${czMoves.length})`);
+    ok(czMoves.includes('N@h5') && czMoves.includes('O-O'),
+       'parachutages et roque figurent parmi les coups');
+
+    // Ce fichier porte du texte libre APRÈS la partie — un résumé, puis un
+    // extrait de format CSA — et sans ligne vide pour l'en séparer. Le
+    // découpage ne peut pas savoir où une partie s'arrête : un commentaire
+    // peut aussi PRÉCÉDER les coups, c'est tout le cas du chu shogi. C'est
+    // donc ExtractMoves qui tranche, sur le jeton de résultat, comme la
+    // spécification PGN le prescrit.
+    ok(cz.includes('csaV2.2'), 'le fichier porte bien du texte libre après la partie');
+    ok(czMoves[czMoves.length - 1] === 'R@g1#',
+       'l\'extraction s\'arrête au mat, pas dans le texte qui suit — ' + czMoves.slice(-1));
+    ok(!czMoves.some(m => /csa|Classé|ans/i.test(m)),
+       'aucun mot du texte libre ne se retrouve pris pour un coup');
+}
+
 console.log('');
 console.log(`RESULTAT chushogi-pgn: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

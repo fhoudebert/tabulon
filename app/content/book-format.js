@@ -118,13 +118,28 @@ export function ExtractMoves(text) {
     // point en tete (".FKi10-k12+"), donc deux jetons irrecuperables.
     // On la retire ici, une fois, plutot que jeton par jeton.
     s = s.replace(/(^|\s)(\d+)\s*\.+/g, '$1');
-    return s.split(/\s+/)
-        .map(tok => tok.replace(/^\d+\.+/, ''))     // "12.Nf3" → "Nf3"
-        .filter(tok => tok
-            && !/^\d+\.+$/.test(tok)                 // "12."
-            && !/^\$\d+$/.test(tok)                  // NAG
-            && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok) // résultat
-            && !/^\[/.test(tok));
+    const out = [];
+    for (let tok of s.split(/\s+/)) {
+        tok = tok.replace(/^\d+\.+/, '');            // "12.Nf3" → "Nf3"
+        // Le marqueur de resultat TERMINE la partie, il ne se saute pas.
+        //
+        // Un fichier peut porter du texte apres sa derniere partie -- notes,
+        // resume, extrait colle d'un autre format -- et le decoupage en blocs
+        // n'a aucun moyen de savoir ou la partie s'arrete : il rattache tout
+        // ce qui suit les tags jusqu'aux tags suivants, ce qui est la seule
+        // regle possible quand un commentaire peut aussi PRECEDER les coups.
+        // C'est ici que la question se tranche, et la specification PGN donne
+        // la reponse : une partie finit a son jeton de resultat. Sans cet
+        // arret, un fichier de crazyhouse suivi de quelques paragraphes
+        // donnait 240 "coups" au lieu de 136.
+        if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok)) break;
+        if (!tok) continue;
+        if (/^\d+\.+$/.test(tok)) continue;          // "12."
+        if (/^\$\d+$/.test(tok)) continue;           // NAG
+        if (/^\[/.test(tok)) continue;
+        out.push(tok);
+    }
+    return out;
 }
 
 /**
