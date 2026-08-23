@@ -1,0 +1,196 @@
+// tests/test-chushogi-pgn.mjs — lire un PGN de ChuShogiLite.
+//
+// La fixture est un fichier RÉEL exporté par l'applet (tests/fixtures-
+// chushogilite.pgn). Ça compte : une reconstitution écrite d'après la
+// documentation s'était trompée sur les trois points ci-dessous, et chacun
+// aurait produit une partie fausse plutôt qu'une erreur.
+//
+// 1. LE [FEN] A CINQ CHAMPS — plateau, trait, case de la dernière prise de
+//    Lion, puis « 0 1 » ajoutés. jocly n'y reconnaît ni un FEN (six champs) ni
+//    un SFEN (trois ou quatre, qu'il sait lire seul) et refuse la position.
+//
+// 2. LE TRAIT NE BOUGE PAS. Deux inversions se compensent : le SFEN note « b »
+//    le trait de sente, jocly note ce même trait « w », et ChuShogiLite écrit
+//    « w » dans son [FEN] là où son SFEN porte « b ». Le retoucher, comme le
+//    laissait croire une lecture trop rapide, charge la position à l'envers.
+//
+// 3. LES COUPS NE SONT PAS EN USI mais dans la notation « occidentale » de
+//    l'applet : lettre FEN de la pièce (« +H » et non « +DH »), case de départ
+//    omise, deux pas du Lion séparés par une virgule. Donnés à pickMove — qui
+//    choisit par distance d'édition et ne peut pas échouer — ces jetons
+//    auraient été joués comme le coup le plus ressemblant, en silence.
+//
+// Usage : npm test  (ou node tests/test-chushogi-pgn.mjs)
+import { createRequire } from 'module';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
+         ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves }
+    from '../app/content/book-format.js';
+
+const require = createRequire(import.meta.url);
+const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const Jocly = require(path.join(root, 'dist/node/jocly.core.js'));
+
+let PASS = 0, FAIL = 0;
+const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
+
+const pgn = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite.pgn'), 'utf-8');
+const tags = {};
+for (const line of pgn.split('\n')) {
+    const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+    if (m) tags[m[1]] = m[2].replace(/^"|"$/g, '');
+}
+
+// La lettre portée par chaque case du plateau : l'abréviation FEN, celle
+// qu'emploie la notation de l'applet. Copie de BoardLetters (play.js), qui ne
+// peut pas être importée — play.js touche au DOM.
+function boardLetters(fen) {
+    const rows = String(fen || '').split(' ')[0].split('/');
+    const map = {};
+    rows.forEach((row, index) => {
+        const rank = rows.length - index;
+        let file = 0;
+        for (let k = 0; k < row.length; ) {
+            const c = row[k];
+            if (c >= '0' && c <= '9') {
+                let n = c;
+                while (row[k + 1] >= '0' && row[k + 1] <= '9') n += row[++k];
+                file += parseInt(n, 10); k++; continue;
+            }
+            let piece = c; k++;
+            if (c === '+') { piece += row[k]; k++; }
+            map[String.fromCharCode(97 + file) + rank] = piece;
+            file++;
+        }
+    });
+    return (square) => map[square] || null;
+}
+const westernResolver = (match) => async (token) => {
+    const parsed = ParseWesternMove(token);
+    if (!parsed) return null;
+    const moves = await match.getPossibleMoves();
+    if (!moves?.length) return null;
+    const natural = await match.getMoveString(moves);
+    const letterAt = boardLetters(await match.getBoardState());
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        if (!WesternMatches(parsed, natural[i], letterAt)) continue;
+        if (found) return null;
+        found = moves[i];
+    }
+    return found;
+};
+
+console.log('Le fichier désigne son jeu');
+{
+    ok(VariantGame(BookVariant(tags)) === 'chu-shogi',
+       '[Variant "chu"] → chu-shogi (aucune variante Fairy-Stockfish ne joue le chu shogi)');
+}
+
+console.log('Le [FEN] à cinq champs');
+{
+    const raw = BookFen(tags);
+    ok(raw.trim().split(/\s+/).length === 5,
+       'le fichier réel en porte cinq — ni six comme un FEN jocly, ni quatre comme un SFEN');
+
+    const jocly = PgnFenToJocly(raw);
+    ok(jocly && jocly.split(' ').length === 6, 'recomposé en six champs');
+    ok(jocly.split(' ')[0] === raw.split(' ')[0], 'le plateau est repris octet pour octet');
+    ok(jocly.split(' ')[1] === raw.split(' ')[1],
+       'et le TRAIT est repris tel quel : les deux inversions se compensent');
+
+    // Ce qui arrive si on ne recompose pas, et si on inverse le trait.
+    let refused = false;
+    try { await (await Jocly.createMatch('chu-shogi')).load({ game: 'chu-shogi', initialBoard: raw, playedMoves: [] }); }
+    catch { refused = true; }
+    ok(refused, 'sans recomposition, jocly refuse la position (« FEN should have 6 parts »)');
+
+    ok(PgnFenToJocly('board w - - 0 1') === null, 'un FEN jocly à six champs n\'est pas retouché');
+    ok(PgnFenToJocly('board b - 1') === null, 'un SFEN à quatre champs non plus : jocly le lit seul');
+}
+
+console.log('Les coups sont en notation « occidentale »');
+{
+    const tokens = ExtractMoves(pgn);
+    ok(tokens.length === 17, `${tokens.length} demi-coups extraits`);
+    ok(MoveFormat(tokens) === 'western', 'reconnus comme occidentaux, et non comme de l\'USI');
+    ok(tokens.includes('+Oxc7,b8'), 'dont un coup à deux pas du Lion, séparé par une virgule');
+
+    const lion = ParseWesternMove('+Oxc7,b8');
+    ok(lion.piece === '+O' && lion.steps.length === 2 && lion.steps[0].square === 'c7'
+       && lion.steps[1].square === 'b8', 'la virgule est lue comme deux pas');
+    ok(ParseWesternMove('+Hxe11').piece === '+H',
+       'la lettre est l\'abréviation FEN (« +H »), pas la naturelle (« +DH »)');
+    ok(ParseNaturalMove('+DHh8xe11+').from === 'h8',
+       'côté jocly, la case de départ est présente — l\'applet l\'omet');
+
+    // Le point qui n'était devinable que sur un fichier réel : l'applet
+    // n'écrit le « x » que devant la PREMIÈRE case d'un coup à deux pas, alors
+    // que les deux sont des prises.
+    ok(WesternMatches(lion, '+KNxc7xb8', () => '+O'),
+       '« +Oxc7,b8 » désigne bien « +KNxc7xb8 », dont les DEUX pas prennent');
+    ok(!WesternMatches(ParseWesternMove('+Hxe11'), '+DHh8-e11', () => '+H'),
+       'mais la prise du premier pas, elle, doit correspondre');
+    ok(!WesternMatches(ParseWesternMove('+Hxe11'), '+DHh8xe11+', () => 'Q'),
+       'et la lettre du plateau tranche entre deux pièces sur la même case');
+}
+
+console.log('Rejeu intégral');
+{
+    const raw = BookFen(tags);
+    const fen = PgnFenToJocly(raw);
+    const tokens = ExtractMoves(pgn);
+
+    // C'est un TSUME : le camp attaquant n'a pas de roi, et le modèle
+    // chu-shogi de jocly déclare perdant un camp sans roi. La position du
+    // fichier ne peut donc pas être jouée telle quelle — c'est une limite
+    // côté moteur, pas côté lecture, et le test la constate au lieu de la
+    // contourner en silence.
+    const asIs = await Jocly.createMatch('chu-shogi');
+    await asIs.load({ game: 'chu-shogi', initialBoard: fen, playedMoves: [] });
+    ok((await asIs.getPossibleMoves()).length === 0,
+       'position de tsume : aucun coup légal, le camp attaquant n\'ayant pas de roi');
+    ok(!/K/.test(fen.split(' ')[0]) && /k/.test(fen.split(' ')[0]),
+       'le plateau confirme le diagnostic : un roi noir, aucun roi blanc');
+
+    // On ajoute un roi blanc dans un coin vide pour valider la LECTURE, qui
+    // est ce que cette suite couvre. Le jour où jocly saura jouer un tsume,
+    // ces deux lignes sautent et le reste tient tel quel.
+    const playable = fen.replace('/12 w', '/11K w');
+    const match = await Jocly.createMatch('chu-shogi');
+    await match.load({ game: 'chu-shogi', initialBoard: playable, playedMoves: [] });
+
+    const r = await ReplayBookMoves(tokens, {
+        pick: (s) => match.pickMove(s).catch(() => null),
+        exact: westernResolver(match),
+        play: (m) => match.playMove(m),
+    });
+    ok(r.unresolved === null && r.played === tokens.length,
+       `${r.played}/${tokens.length} demi-coups rejoués exactement`
+       + (r.unresolved ? ` — bloqué sur « ${r.unresolved} »` : ''));
+
+    const played = await match.getPlayedMoves();
+    const natural = await match.getMoveString(played);
+    ok(natural[0] === '+DHh8xe11+' && natural[6] === '+KNxc7xb8',
+       'traduits dans la notation de jocly — ' + natural.slice(0, 3).join(' ') + ' …');
+
+    // Ce que la fenêtre Historique reçoit, et ce qu'elle en fait : la liste
+    // complète, puis la navigation dans les deux sens. Sans le mode tsume rien
+    // de tout cela n'existe, la partie étant finie avant son premier coup —
+    // c'est donc ici que l'option se voit vraiment.
+    ok(natural.length === tokens.length && natural.every(x => x && x !== '?'),
+       `${natural.length} coups libellés pour l'Historique`);
+    await match.rollback(3);
+    ok((await match.getPlayedMoves()).length === 3, 'reculer au 3e coup');
+    await match.rollback(played.length);
+    ok((await match.getPlayedMoves()).length === played.length, 'ré-avancer jusqu\'au bout');
+    await match.rollback(0);
+    ok((await match.getPossibleMoves()).length > 0,
+       'revenu au départ, la position reste jouable — l\'option survit au rechargement');
+}
+
+console.log('');
+console.log(`RESULTAT chushogi-pgn: ${PASS} OK / ${FAIL} ECHEC`);
+process.exit(FAIL ? 1 : 0);

@@ -8,7 +8,7 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
-import { ParseSolution, BookGame, BookVariant, FairyGameIndex, FairyVariantAlias,
+import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
@@ -400,10 +400,16 @@ async function OpenGameFile(text, fileName, hintGame) {
             // qu'on ecrive [JoclyGame "knightmate"] en croyant nommer un jeu
             // Jocly, alors que "knightmate" est le nom Fairy-Stockfish et que
             // le jeu s'appelle "knightmate-chess". Le catalogue tranche.
-            const variant = FairyVariantAlias(BookVariant(tags) || declared);
-            const mapped = variant ? (await FairyMap())[variant] : null;
+            const raw = BookVariant(tags) || declared;
+            // Un [Variant] peut aussi nommer directement un jeu Jocly sans
+            // passer par Fairy-Stockfish : ChuShogiLite ecrit [Variant "chu"],
+            // et le chu shogi n'est joue par aucune variante du moteur.
+            const direct = VariantGame(raw);
+            const variant = FairyVariantAlias(raw);
+            const mapped = (direct && gamesMap[direct]) ? direct
+                         : variant ? (await FairyMap())[variant] : null;
             if (mapped) {
-                console.info('[hub]', variant, 'est une variante Fairy-Stockfish — jeu Jocly :', mapped);
+                console.info('[hub]', raw, '→ jeu Jocly :', mapped);
                 declared = mapped;
             }
         }

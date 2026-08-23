@@ -144,15 +144,37 @@ export function ExtractMoves(text) {
  *     retourne dans la file. Du plus long au plus court, pour ne pas couper
  *     "…-k12+" en "…-k12" et laisser un "+" parasite devant le suivant.
  *
+ * `exact(str)` -> coup, ou null. Fourni pour les notations dont un jeton ne
+ * se devine pas : il court-circuite les deux tolerances ci-dessus, qui
+ * feraient plus de mal que de bien. Voir MoveFormat().
+ *
  * Renvoie {played, unresolved} — unresolved est le premier jeton refuse
  * (la lecture s'arrete la, comme dans JoclyBoard), ou null si tout a passe.
  */
-export async function ReplayBookMoves(tokens, { pick, play }) {
+export async function ReplayBookMoves(tokens, { pick, play, exact }) {
     const queue = (tokens || []).slice();
     let played = 0;
     while (queue.length) {
         const tok = queue.shift();
         if (!tok) continue;
+
+        // Resolution EXACTE quand l'appelant en fournit une (coups en USI).
+        // Aucune des tolerances ci-dessous ne s'applique alors, et c'est le
+        // point : `pick` passe par GetBestMatchingMove, qui choisit par
+        // distance d'edition et ne peut pas echouer -- il y a toujours un plus
+        // proche. Donner "12i12h" a une position de chu shogi n'y renverrait
+        // pas « inconnu » mais un coup ressemblant, joue en silence. Tolerer
+        // les decorations d'un PGN ecrit a la main est une chose ; traduire
+        // d'un systeme de coordonnees a un autre en est une autre, et la
+        // deuxieme exige de savoir dire non.
+        if (exact) {
+            const move = await exact(tok);
+            if (!move) return { played, unresolved: tok };
+            await play(move);
+            played++;
+            continue;
+        }
+
         let move = await pick(tok);
         let rest = '';
         if (!move) {
@@ -290,6 +312,225 @@ const VARIANT_ALIASES = {
     'losing chess': 'antichess',
     'giveaway': 'antichess',
 };
+
+/**
+ * Le meme SFEN, trait inverse — ou null si ce n'est pas un SFEN.
+ *
+ * POURQUOI. Le trait fait deux inversions entre ChuShogiLite et jocly, et
+ * elles ne se compensent pas :
+ *
+ *   SFEN            "b" = sente = les majuscules  (le parseur lit
+ *                   isWhite = char === char.toLowerCase())
+ *   jocly           note ce meme trait "w"        -> ImportSFEN echange les
+ *                                                   deux, dans les deux sens
+ *   [FEN] d'un PGN  ChuShogiLite y ecrit "w" la ou son SFEN porte "b"
+ *                   (« CSL player b = sente = PGN white », dit son code)
+ *
+ * Les deux inversions se COMPENSENT : un [FEN] de PGN arrive dans la
+ * convention de jocly et ne doit PAS etre retouche (voir PgnFenToJocly). Cette
+ * fonction sert au cas restant, celui d'un SFEN a quatre champs dont on ne
+ * sait pas s'il vient d'un export brut ou d'un producteur qui l'a deja
+ * inverse. On ne peut pas deviner ; on peut verifier : la position et le
+ * premier coup doivent s'accorder. C'est ce que fait play.js — un essai, puis
+ * le trait inverse, et un message si c'est la deuxieme lecture qui est bonne.
+ *
+ * Ne touche qu'a un SFEN (3 ou 4 champs). Un FEN jocly en a six et repart
+ * inchange : l'inverser serait une corruption silencieuse.
+ */
+export function FlipSfenTurn(fen) {
+    const fields = String(fen || '').trim().split(/\s+/);
+    if (fields.length < 3 || fields.length > 4) return null;
+    if (fields[1] !== 'b' && fields[1] !== 'w') return null;
+    fields[1] = fields[1] === 'b' ? 'w' : 'b';
+    return fields.join(' ');
+}
+
+/**
+ * Le [FEN] d'un PGN ChuShogiLite, recompose en FEN jocly — ou null.
+ *
+ * CSL ecrit CINQ champs : le plateau, le trait, la case de la derniere prise
+ * de Lion, puis « 0 1 » ajoutes pour ressembler a un FEN d'echecs. jocly en
+ * attend six (il reconnait aussi un SFEN a trois ou quatre champs, mais cinq
+ * ne ressemble a rien de connu et part en « FEN should have 6 parts »).
+ *
+ * Le trait, LUI, ne bouge pas. C'est contre-intuitif et ca se demontre en
+ * deux temps : le SFEN note « b » le trait de sente, jocly note ce meme trait
+ * « w », et CSL ecrit « w » dans son [FEN] la ou son SFEN porte « b ». Les
+ * deux inversions se compensent, et un [FEN] de PGN arrive donc dans la
+ * convention de jocly. C'est un SFEN a quatre champs qu'il faudrait inverser,
+ * et jocly s'en charge tout seul dans ImportSFEN.
+ *
+ * La case de prise de Lion est perdue : jocly la relit dans son historique
+ * (locust-move-model.js) et non dans une position. Consequence a connaitre --
+ * la regle d'anti-echange ne sera pas armee sur le tout premier coup d'une
+ * position ainsi chargee.
+ */
+export function PgnFenToJocly(fen) {
+    const f = String(fen || '').trim().split(/\s+/);
+    if (f.length !== 5) return null;
+    if (f[1] !== 'b' && f[1] !== 'w') return null;
+    const move = /^\d+$/.test(f[4]) ? f[4] : '1';
+    return `${f[0]} ${f[1]} - - 0 ${move}`;
+}
+
+/**
+ * Notation « occidentale » de ChuShogiLite : "+Hxe11", "Tc11", "+Oxc7,b8".
+ *
+ * Elle ressemble a celle de jocly sans lui etre identique, et c'est le piege :
+ *   - la lettre est l'abreviation FEN de la piece ("+H") la ou jocly ecrit son
+ *     abreviation naturelle ("+DH") ;
+ *   - la case de DEPART est omise ;
+ *   - les deux pas du Lion sont separes par une virgule, jocly par un tiret.
+ * Donnee a pickMove, "+Hxe11" trouverait donc un « plus proche » et le
+ * jouerait. D'ou cette lecture explicite, qui rend les elements a comparer.
+ *
+ * Renvoie { piece, steps:[{capture, square}] } ou null si ce n'en est pas.
+ */
+export function ParseWesternMove(token) {
+    const m = /^(\+?[A-Z]+)?((?:[-x]?[a-l][0-9]{1,2})(?:\s*,\s*[-x]?[a-l][0-9]{1,2})*)([+=!?#]*)$/
+        .exec(String(token || '').trim());
+    if (!m) return null;
+    const steps = m[2].split(',').map(part => {
+        const p = /^\s*([-x]?)([a-l][0-9]{1,2})\s*$/.exec(part);
+        return p ? { capture: p[1] === 'x', square: p[2] } : null;
+    });
+    if (steps.some(x => !x)) return null;
+    return { piece: m[1] || null, steps };
+}
+
+/**
+ * La meme lecture, sur une chaine produite par jocly (format `natural`) :
+ * "+DHh8xe11+", "a4-a5", "+KNxc7-b8" — ce dernier, un coup a deux pas, n'a
+ * pas de case de depart chez jocly non plus.
+ *
+ * Renvoie { piece, from, steps:[{capture, square}] } ou null.
+ */
+export function ParseNaturalMove(text) {
+    const s = String(text || '').trim().replace(/[+#!?]*$/, '').replace(/=.*$/, '');
+    const m = /^(\+?[A-Z]+)?(?:([a-l][0-9]{1,2}))?((?:[-x][a-l][0-9]{1,2})+)$/.exec(s);
+    if (!m) return null;
+    const steps = [];
+    const re = /([-x])([a-l][0-9]{1,2})/g;
+    let step;
+    while ((step = re.exec(m[3])) !== null) steps.push({ capture: step[1] === 'x', square: step[2] });
+    return { piece: m[1] || null, from: m[2] || null, steps };
+}
+
+/**
+ * Un coup jocly correspond-il au jeton occidental lu ?
+ *
+ * On compare la SUITE DES CASES et les prises, qui sont dites de la meme
+ * facon des deux cotes. La lettre de piece ne peut pas se comparer
+ * directement — abreviation FEN contre abreviation naturelle — d'ou
+ * `letterAt` : l'appelant fournit la lettre que porte le plateau sur une case,
+ * qui est justement l'abreviation FEN. Sans case de depart connue (coup a deux
+ * pas), la lettre n'est pas verifiee et c'est la suite des cases qui doit
+ * suffire a distinguer.
+ */
+export function WesternMatches(parsedToken, naturalText, letterAt) {
+    const nat = ParseNaturalMove(naturalText);
+    if (!nat || !parsedToken) return false;
+    if (nat.steps.length !== parsedToken.steps.length) return false;
+    for (let i = 0; i < nat.steps.length; i++) {
+        if (nat.steps[i].square !== parsedToken.steps[i].square) return false;
+        // La prise n'est comparee strictement que sur le PREMIER pas. Sur un
+        // coup a deux pas, ChuShogiLite n'ecrit le "x" que devant la premiere
+        // case : "+Oxc7,b8" designe le coup que jocly nomme "+KNxc7xb8", ou
+        // les DEUX pas sont des prises. Exiger la correspondance sur le
+        // second refuserait un coup parfaitement valide ; la case, elle,
+        // reste comparee a l'identique, et c'est l'unicite qui tranche.
+        if (i === 0 && nat.steps[i].capture !== parsedToken.steps[i].capture) return false;
+    }
+    if (!parsedToken.piece || !nat.from || !letterAt) return true;
+    const onBoard = letterAt(nat.from);
+    return !onBoard || onBoard.toUpperCase() === parsedToken.piece.toUpperCase();
+}
+
+/**
+ * Le fichier annonce-t-il un probleme de mat (tsume) ?
+ *
+ * ChuShogiLite ne pose pas de tag : il ecrit le nom du probleme en COMMENTAIRE
+ * devant le premier coup — « {Tsume A22} ». On lit donc le commentaire, et on
+ * accepte aussi un tag explicite pour qui voudrait en poser un.
+ *
+ * Pourquoi le declarer plutot que le deduire : un tsume donne a l'attaquant
+ * ses pieces d'attaque et rien d'autre, pas de roi, et jocly tient pour perdu
+ * un camp sans piece royale. L'option `tsume` de jocly leve ce seul verdict.
+ * On pourrait la poser des qu'un camp n'a pas de roi -- mais une position sans
+ * roi est bien plus souvent une faute de frappe qu'un probleme, et l'activer
+ * en silence transformerait une erreur visible en partie bancale.
+ */
+export function IsTsume(text, tags) {
+    for (const key of ['Tsume', 'tsume', 'Problem']) {
+        const v = tags && tags[key];
+        if (typeof v === 'string' && v.trim() && v.trim() !== '0') return true;
+    }
+    return /\{\s*tsume\b/i.test(String(text || ''));
+}
+
+/**
+ * Un jeton est-il de l'USI ? Une case USI est un NUMERO de colonne suivi
+ * d'une LETTRE de rangee ("12i", "7g") ; la notation naturelle de jocly fait
+ * l'inverse ("a4-a5"), et son format `engine` aussi ("f4f5"). Les deux ne
+ * peuvent donc pas se confondre, meme sur quatre caracteres.
+ *
+ * Trois formes :
+ *   depart+arrivee         "7g7f", avec "+" suffixe pour une promotion
+ *   depart+milieu+arrivee  "12i11h10g" — les coups a deux pas du Lion, du
+ *                          Faucon et de l'Aigle du chu shogi
+ *   parachutage            "P*5e" — la lettre de la piece, une etoile, la case
+ */
+export function IsUSIToken(token) {
+    return /^(?:[A-Za-z]\*[0-9]{1,2}[a-l]|(?:[0-9]{1,2}[a-l]){2,3}\+?)$/.test(String(token || ''));
+}
+
+/**
+ * Format des coups d'une partie : 'usi' ou 'natural'.
+ *
+ * Exiger que TOUS les jetons soient de l'USI, et non la majorite : un fichier
+ * ou un seul jeton n'en serait pas est un fichier qu'on ne comprend pas, et
+ * mieux vaut le rejouer en mode tolerant -- qui refusera bruyamment le jeton
+ * fautif -- que d'imposer une resolution exacte a une notation qui n'est
+ * peut-etre pas celle qu'on croit.
+ */
+export function MoveFormat(tokens) {
+    const list = (tokens || []).filter(Boolean);
+    if (!list.length) return 'natural';
+    if (list.every(IsUSIToken)) return 'usi';
+    // « Occidentale » = tous les jetons se lisent comme tels. Ce n'est qu'une
+    // CANDIDATURE : la notation SAN des echecs se lit aussi de cette facon
+    // ("Qb8+"), et la resolution exacte y serait plus juste que la floue mais
+    // refuserait un roque ou une promotion. C'est donc a l'appelant de
+    // verifier que le premier coup se resout avant d'engager tout le fichier
+    // dans cette lecture -- voir BookReplay dans play.js.
+    if (list.every(tok => ParseWesternMove(tok))) return 'western';
+    return 'natural';
+}
+
+/**
+ * Jeux Jocly designes par un [Variant] qui n'est PAS un nom de variante
+ * Fairy-Stockfish.
+ *
+ * Table separee de VARIANT_ALIASES a dessein : celle-ci reste dans la
+ * nomenclature du moteur (orthographe -> nom Fairy), c'est le catalogue qui
+ * traduit ensuite vers un nom Jocly. Ici il n'y a pas de moteur du tout --
+ * "chu" est ce qu'ecrit ChuShogiLite, dont le chu shogi n'est joue par aucune
+ * variante Fairy-Stockfish. Les rares cas de ce genre sont ecrits a la main,
+ * et c'est le catalogue qui a le dernier mot : un nom absent du catalogue est
+ * ignore, jamais impose.
+ */
+const VARIANT_GAMES = {
+    'chu': 'chu-shogi',
+    'chushogi': 'chu-shogi',
+    'chu shogi': 'chu-shogi',
+};
+
+/**
+ * Jeu Jocly designe directement par un [Variant], ou null.
+ */
+export function VariantGame(name) {
+    return VARIANT_GAMES[String(name || '').trim().toLowerCase()] || null;
+}
 
 /**
  * Nom Fairy-Stockfish canonique d'une orthographe de [Variant].
