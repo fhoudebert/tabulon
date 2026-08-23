@@ -26,7 +26,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
-         ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution }
+         ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution, BuildPJN, SideWithoutKing, IsTsume }
     from '../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
@@ -233,6 +233,67 @@ console.log('Enregistrer puis rouvrir un tsume');
     await back.load({ ...sol, tsume: !!sol.tsume });
     ok((await back.getPlayedMoves()).length === tokens.length,
        `avec le drapeau, les ${tokens.length} coups reviennent et l'Historique est de nouveau navigable`);
+}
+
+console.log('La promotion, marquée par un « + » final');
+{
+    // Au shogi la promotion est FACULTATIVE : jocly produit les deux versions
+    // du même déplacement. Sans lire le « + » du fichier, les deux
+    // correspondent au même jeton et la lecture s'arrête sur une ambiguïté —
+    // c'est ce qui bloquait « Ok9+ » au 13e demi-coup de C22.
+    const promote = ParseWesternMove('Ok9+');
+    ok(promote.promote === true, 'le « + » final est lu comme une promotion');
+    ok(ParseWesternMove('Ok9').promote === false, 'et son absence comme un refus de promouvoir');
+    ok(ParseNaturalMove('KNk7-k9=+KN+').promote === true, 'côté jocly, « =+KN » promeut');
+    ok(ParseNaturalMove('KNk7-k9=KN').promote === false, 'et « =KN » décline');
+    ok(ParseNaturalMove('BTd12-c11').promote === null,
+       'aucun choix ne se posait : rien à comparer');
+    ok(WesternMatches(promote, 'KNk7-k9=+KN+', () => 'O')
+       && !WesternMatches(promote, 'KNk7-k9=KN', () => 'O'),
+       'les deux versions se distinguent');
+
+    // Le fichier C22, 33 demi-coups, dont deux coups de Lion à deux pas.
+    const c22 = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.pgn'), 'utf-8');
+    const t22 = {};
+    for (const line of c22.split('\n')) {
+        const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+        if (m) t22[m[1]] = m[2].replace(/^"|"$/g, '');
+    }
+    const tk = ExtractMoves(c22);
+    const match = await Jocly.createMatch('chu-shogi');
+    await match.load({ game: 'chu-shogi', initialBoard: PgnFenToJocly(BookFen(t22)),
+                       playedMoves: [], tsume: IsTsume(c22, t22) });
+    const r = await ReplayBookMoves(tk, {
+        pick: (s) => match.pickMove(s).catch(() => null),
+        exact: westernResolver(match),
+        play: (m) => match.playMove(m),
+    });
+    ok(r.unresolved === null && r.played === tk.length,
+       `${r.played}/${tk.length} demi-coups rejoués` + (r.unresolved ? ` — bloqué sur « ${r.unresolved} »` : ''));
+}
+
+console.log('Enregistrer un tsume en PJN');
+{
+    // La marque va en COMMENTAIRE, pas dans un tag : c'est la forme qu'écrit
+    // ChuShogiLite et celle que IsTsume relit. Un tag de notre invention
+    // obligerait l'autre bout à apprendre notre convention pour rien.
+    const pjn = BuildPJN('chu-shogi', ['a', 'b'], 'X w - - 0 1', new Date(2026, 0, 1), { tsume: true });
+    ok(/\{Tsume\}/.test(pjn), 'la marque est écrite');
+    ok(IsTsume(pjn, {}), 'et se relit — le fichier enregistré rouvre en mode tsume');
+    ok(!IsTsume(BuildPJN('x', ['a'], null, new Date(2026, 0, 1), {}), {}),
+       'une partie ordinaire n\'en porte pas');
+}
+
+console.log('Une position sans roi est signalée');
+{
+    const fen = PgnFenToJocly(BookFen(tags)).split(' ')[0];
+    ok(SideWithoutKing(fen) === 'white',
+       'le camp attaquant du tsume est repéré comme sans roi');
+    ok(SideWithoutKing('rnbqkbnr/8/8/8/8/8/8/RNBQKBNR w - - 0 1') === null,
+       'une position ordinaire ne déclenche rien');
+    ok(SideWithoutKing('8/8/8/8/8/8/8/8 w - - 0 1') === 'both', 'plateau vide : les deux');
+    ok(SideWithoutKing('') === null && SideWithoutKing(null) === null,
+       'entrée vide : rien, pas d\'exception');
 }
 
 console.log('');

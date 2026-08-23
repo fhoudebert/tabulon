@@ -1,0 +1,28 @@
+[Event "ChuShogiLite PGN Record"]
+[Site "ChuShogiLite Applet"]
+[Date "2026.08.23"]
+[Round "-"]
+[White "?"]
+[Black "?"]
+[Result "*"]
+[Variant "chu"]
+[SetUp "1"]
+[FEN "7+v1tfl/6g4k/6f1r3/4+D3+D3/8g1d1/5QP3O1/12/12/12/7+V4/12/5+m6 w - 0 1"]
+
+{--------------
+. . . . . . . + . t f l
+. . . . . . g . . . . k
+. . . . . . f . r . . .
+. . . . + . . . + . . .
+. . . . . . . . g . d .
+. . . . . Q P . . . O .
+. . . . . . . . . . . .
+. . . . . . . . . . . .
+. . . . . . . . . . . .
+. . . . . . . + . . . .
+. . . . . . . . . . . .
+. . . . . + . . . . . .
+white to play
+--------------}
+
+{Tsume C22} 1. Ql1 +Mxl1 2. +Vl7 Dxl7 3. +Dj9 Kk11 4. +Dj10 +Vxj10 5. +Dk9 Kj11 6. +Dxj10,i11 Kxi11 7. Ok9+ Kh10 8. +Oj9 Kg9 9. +Oxi10 Kf10 10. +Og8 Kf11 11. +Oe9 Kg12 12. +Oe10 Kh12 13. +Of12 Ki11 14. +Oxg11,g10 Kj11 15. +Oh11 Kk10 16. +Oi10 Kl11 17. +Oxj12 *

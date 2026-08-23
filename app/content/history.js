@@ -25,6 +25,8 @@ let moveStrings  = [];  // liste de chaines de coups (ex. ["e4", "e5", ...])
 let initialBoard = null;
 // Qui a joue et resultat, rapportes par play.js : tags [White]/[Black]/[Result].
 let white = null, black = null, result = null;
+// Probleme de mat, rapporte par play.js : marque a la sauvegarde.
+let tsume = false;
 
 function btn(action) {
     return document.querySelector('.toolbar-actions button[data-action=' + action + ']');
@@ -66,6 +68,7 @@ function UpdateHistory(data) {
     white  = data.white  || null;
     black  = data.black  || null;
     result = data.result || null;
+    tsume  = !!data.tsume;
     moveStrings = moves.map(m => typeof m === 'string' ? m : (m.toString ? m.toString() : JSON.stringify(m)));
     moveCount   = moveStrings.length;
 
@@ -123,6 +126,7 @@ async function SavePJN() {
         white:  named ? white : null,
         black:  named ? black : null,
         result,
+        tsume,
     });
     await tRpc.call('save_text_file', path, text)
         .catch(e => console.warn('[history] save book failed:', e));

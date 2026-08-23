@@ -702,6 +702,7 @@ function initSatelliteListeners() {
     // n'avait rien a mettre dans [White]/[Black] et les fichiers relus
     // s'affichaient "? vs ?".
     const HistoryMeta = () => ({
+        tsume:  tsumeMatch,
         white:  PlayerLabel(Jocly.PLAYER_A),
         black:  PlayerLabel(Jocly.PLAYER_B),
         result: gameResult,

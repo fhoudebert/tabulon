@@ -395,7 +395,15 @@ export function ParseWesternMove(token) {
         return p ? { capture: p[1] === 'x', square: p[2] } : null;
     });
     if (steps.some(x => !x)) return null;
-    return { piece: m[1] || null, steps };
+    // Le "+" final est une PROMOTION, pas une decoration d'echec.
+    //
+    // Au shogi la promotion est facultative : jocly produit les deux versions
+    // du meme deplacement, et il faut donc savoir laquelle le fichier demande
+    // -- sinon les deux correspondent et le jeton est refuse pour ambiguite,
+    // ce qui arrete la lecture net. Le fichier de reference ne marque nulle
+    // part l'echec, dans une position ou presque chaque coup en donne un : le
+    // "+" ne peut donc pas vouloir dire ca.
+    return { piece: m[1] || null, steps, promote: /\+/.test(m[3] || '') };
 }
 
 /**
@@ -406,14 +414,23 @@ export function ParseWesternMove(token) {
  * Renvoie { piece, from, steps:[{capture, square}] } ou null.
  */
 export function ParseNaturalMove(text) {
-    const s = String(text || '').trim().replace(/[+#!?]*$/, '').replace(/=.*$/, '');
+    const raw = String(text || '').trim();
+    // "=<abbrev>" : le type obtenu. jocly ne l'ecrit que lorsqu'un CHOIX
+    // existait, et les types promus sont ceux dont l'abreviation commence par
+    // "+" -- refuser de promouvoir donne "=KN", promouvoir "=+KN".
+    const promo = /=(\+?[A-Z]+)/.exec(raw);
+    const s = raw.replace(/[+#!?]*$/, '').replace(/=.*$/, '');
     const m = /^(\+?[A-Z]+)?(?:([a-l][0-9]{1,2}))?((?:[-x][a-l][0-9]{1,2})+)$/.exec(s);
     if (!m) return null;
     const steps = [];
     const re = /([-x])([a-l][0-9]{1,2})/g;
     let step;
     while ((step = re.exec(m[3])) !== null) steps.push({ capture: step[1] === 'x', square: step[2] });
-    return { piece: m[1] || null, from: m[2] || null, steps };
+    return {
+        piece: m[1] || null, from: m[2] || null, steps,
+        // null quand aucun choix ne se posait : il n'y a alors rien a comparer.
+        promote: promo ? promo[1].startsWith('+') : null,
+    };
 }
 
 /**
@@ -441,9 +458,39 @@ export function WesternMatches(parsedToken, naturalText, letterAt) {
         // reste comparee a l'identique, et c'est l'unicite qui tranche.
         if (i === 0 && nat.steps[i].capture !== parsedToken.steps[i].capture) return false;
     }
+    // La promotion n'est comparee que lorsque jocly a offert le choix. Quand il
+    // ne l'a pas offert, un "+" dans le fichier ne peut designer que l'echec,
+    // et le comparer refuserait un coup parfaitement identifie.
+    if (nat.promote !== null && nat.promote !== parsedToken.promote) return false;
     if (!parsedToken.piece || !nat.from || !letterAt) return true;
     const onBoard = letterAt(nat.from);
     return !onBoard || onBoard.toUpperCase() === parsedToken.piece.toUpperCase();
+}
+
+/**
+ * Le camp qui n'a AUCUNE piece royale dans une position, ou null si les deux
+ * en ont une.
+ *
+ * Sert a prevenir : jocly tient pour perdu un camp sans piece royale, donc une
+ * telle position se pose sur un plateau fige -- aucun coup legal, aucun
+ * message. C'est normal pour un probleme de mat (le mode tsume est fait pour
+ * ca) et c'est une faute de frappe le reste du temps ; dans les deux cas
+ * l'utilisateur merite de l'apprendre avant de rester devant un plateau muet.
+ *
+ * La lettre du roi n'est pas la meme partout ("K" aux echecs et au shogi,
+ * mais un jeu peut en definir une autre) : `royals` la laisse a l'appelant,
+ * qui la tient du catalogue. "K" par defaut, ce qui couvre le cas courant.
+ */
+export function SideWithoutKing(fen, royals) {
+    const board = String(fen || '').trim().split(/\s+/)[0];
+    if (!board) return null;
+    const letters = (royals && royals.length ? royals : ['K']).join('');
+    const upper = new RegExp('[' + letters.toUpperCase() + ']');
+    const lower = new RegExp('[' + letters.toLowerCase() + ']');
+    const hasWhite = upper.test(board), hasBlack = lower.test(board);
+    if (hasWhite && hasBlack) return null;
+    if (!hasWhite && !hasBlack) return 'both';
+    return hasWhite ? 'black' : 'white';
 }
 
 /**
@@ -611,7 +658,14 @@ export function BuildPJN(gameName, moveStrings, initialBoard, date, meta) {
     const numbered = moves
         .map((mv, i) => (i % 2 === 0 ? Math.floor(i / 2) + 1 + '. ' : '') + mv)
         .join(' ');
-    return tags.join('\n') + '\n\n' + numbered + '\n';
+    // Probleme de mat : la marque va en COMMENTAIRE devant le premier coup,
+    // et non dans un tag. C'est la forme qu'ecrit ChuShogiLite -- « {Tsume A22} »
+    // -- et celle que IsTsume() relit ; un tag de notre invention obligerait
+    // l'autre bout a apprendre notre convention pour rien. Sans cette marque,
+    // un tsume enregistre se rouvre sur un plateau fige : le camp attaquant
+    // n'a pas de roi, et jocly le tient pour perdu d'avance.
+    const head = m.tsume ? '{Tsume} ' : '';
+    return tags.join('\n') + '\n\n' + head + numbered + '\n';
 }
 
 /**
