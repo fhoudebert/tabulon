@@ -1,0 +1,133 @@
+; Shogi examples from PyChess / Lishogi
+; IMPORTANT:
+; Lishogi n'exporte pas nativement le shogi en PGN : son format officiel
+; d'export est KIF/CSA. Les quatre entrées Lishogi ci-dessous sont donc
+; des extraits de parties/lignes réelles publiées sur Lishogi, conservés
+; dans une enveloppe PGN pour faciliter les tests.
+;
+; Source 1: Lishogi forum, exemple PyChess complet
+; https://lishogi.org/forum/lishogi-feedback/how-to-import
+
+[Event "PyChess casual game"]
+[Site "www.pychess.org/Pv22gKbJ"]
+[Date "2024.10.17"]
+[Round "-"]
+[White "Fairy-Stockfish"]
+[Black "Anon-BTUDWESR"]
+[Result "1-0"]
+[TimeControl "420+10"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Shogi"]
+[FEN "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL[-] w 0 1"]
+[SetUp "1"]
+
+1. Sg2 Pg6 2. Ph4 Bg7 3. Sc2 Rf8 4. Pe4 Kd8
+5. Gfe2 Kc8 6. Pi4 Pi6 7. Pa4 Pa6 8. Ph5 Kb8
+9. Bc1 Pf6 10. Bd2 Sg8 11. Pd4 Pf5 12. Gd3 Pe6
+13. Pg4 Gfe8 14. Pc4 Sc8 15. Sc3 Ge7 16. Ge2 Gd6
+17. Sg3 Pe5 18. Gee3 Pxe4 19. Gexe4 Ge5 20. Gxe5 Bxe5
+21. G@e7 Rf9 22. Kd1 Re9 23. P@e6 G@e8 24. Ph6 Gxe7
+25. Pxe7 Rxe7 26. Kc2 G@g7 27. Pxh7 Sxh7 28. Pb4 Pc6
+29. P@e4 Bf6 30. Kb2 Pd6 31. Pb5 Sc7 32. G@c2 Gd8
+33. La2 Gd7 34. Sb4 P@h6 35. Nc3 La8 36. Rg2 Ge6
+37. Rh2 P@e5 38. Pi5 Pxi5 39. Re2 Pxe4 40. Gxe4 P@e5
+41. Ge3 Pi4 42. P@h8 Ni7 43. Lxi4 Re9 44. Ged3 Gg8
+45. P@i6 Nh5 46. Pi7=G Nxg3=G 47. Nxg3 S@h3
+48. Gxh7 Gxh7 49. N@f7 Rc9 50. S@d7 Lxi4 51. Sxe6=G Bxh8
+52. Pg5 Pxg5 53. G@d7 L@e4 54. Gxe4 Pxe4 55. Bxg5 Ri9
+56. Be7=H G@e3 57. Rxe3 Pxe3=G 58. P@h2 R@g2 59. G@c8+
+Ka7 60. Pa5 Pxa5 61. L@a6+ Kxa6 62. Lxa5# 1-0
+
+; ----------------------------------------------------------------------
+
+; Source 2: Lishogi study "How to think in Shogi - Fundamental Strategy"
+; https://lishogi.org/study/embed/Wz9ESwvj/Ye5okFXs
+; Partie/lignée réelle publiée dans une étude Lishogi. Extrait jusqu'à
+; la résignation indiquée dans la source.
+
+[Event "Lishogi study"]
+[Site "lishogi.org"]
+[Date "unknown"]
+[Round "-"]
+[White "Study line"]
+[Black "Study line"]
+[Result "1-0"]
+[Variant "Shogi"]
+
+1. P-26 2. G-32 3. P-76 4. P-34 5. P-66 6. P-84
+7. G-78 8. P-85 9. B-77 10. G-52 11. G-58 12. S-42
+13. S-68 14. S-72 15. P-25 16. S-33 17. S-67 18. P-44
+19. S-38 20. G52-43 21. P-56 22. P-54 23. S-27 24. B-31
+25. S-26 26. P-14 27. P-64 28. S-15 29. P-74 30. P-24
+31. Px24 32. Sx24 33. Sx24 34. Rx24 35. P-65 36. B-42
+37. S-66 38. K-69 39. K-41 40. P-36 41. P-86 42. Px86
+43. Bx86 44. Bx86 45. Rx86 46. P*87 47. R-82 48. N-37
+49. B*39 50. R-48 51. Bx48+ 52. Gx48 53. R*29 54. B*49
+55. Rx26+ 56. N-45 57. +Rx36 58. Px45 59. B*71 60. Nx33+
+61. Nx33 62. B*71 63. R-83 64. B-62+ 65. +Rx56 66. S*61
+67. G-57 68. +R-36 69. +Bx72 70. Sx57 71. S*61 72. R*51
+73. K-42 74. S*53 75. Gote-resigns
+
+; ----------------------------------------------------------------------
+
+; Source 3: Lishogi study "[ShogiTips] Ranging Rook (振り飛車)"
+; https://lishogi.org/study/GJV6VqCY/6zRAUtyN
+; Extrait réel visible dans l'étude.
+
+[Event "Lishogi study - Ranging Rook"]
+[Site "lishogi.org"]
+[Round "-"]
+[White "Study line"]
+[Black "Study line"]
+[Result "*"]
+[Variant "Shogi"]
+
+1. P-76 2. P-34 3. P-96 4. P-84 5. P-66 6. P-85
+7. B-77 8. S-62 9. R-88 10. K-42 11. S-68 12. K-32
+13. S-67 14. P-54 15. K-48 16. G61-52 17. K-38
+18. S-53 19. G-78 20. P-74 21. S-48 22. B-33
+23. P-86 24. Px86 25. Rx86 26. P*85 27. R-88
+28. K-22 29. N-97 30. N-73 31. P-75 32. R-84 33. B-95
+
+; ----------------------------------------------------------------------
+
+; Source 4: Lishogi study "Hidetchi's Famous Shogi Games"
+; https://lishogi.org/study/N4qoW11S/b6ey1JDD
+; Extrait réel de la partie visible dans l'indexation Lishogi.
+
+[Event "Lishogi study - Hidetchi's Famous Shogi Games"]
+[Site "lishogi.org"]
+[Round "-"]
+[White "Study line"]
+[Black "Study line"]
+[Result "*"]
+[Variant "Shogi"]
+
+129. Kx66 130. R*26 131. S*75 132. N*46 133. S*31
+134. K-23 135. +Bx24 136. Rx24 137. G*22 138. Kx34
+139. N*46 140. K-45 141. B-36 142. Kx36 143. P*37
+144. K-25 145. G*36 146. Kx34 147. B*23 148. Kx23
+149. R*24 150. K-33 151. N*25 152. S*55 153. Kx65
+154. Sx56 155. K-64 156. R-65 157. Gote wins by checkmate.
+
+; ----------------------------------------------------------------------
+
+; Source 5: Lishogi study "Shogi in anime and manga"
+; https://lishogi.org/study/lSHbX5Tv/SF3N05ri
+; Extrait réel d'un problème/position de shogi publié sur Lishogi.
+; Inclus ici comme cas de test pour drops, promotions et mats.
+
+[Event "Lishogi study - Shogi in anime and manga"]
+[Site "lishogi.org"]
+[Round "-"]
+[White "Study line"]
+[Black "Study line"]
+[Result "*"]
+[Variant "Shogi"]
+
+1. L*24 L*23 2. K-12 3. L-22+ 4. K-13 5. +P-23
+6. K-14 7. S*23 8. K-12 9. +P-23 10. K-21
+11. +P-22 12. P*23 13. P*22 14. K-11 15. P*12
+16. Kx12 17. +Px23 18. K-11 19. P-21+ 20. Kx21
+21. +P-22

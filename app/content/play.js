@@ -13,7 +13,7 @@ import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
-import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly,
+import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen,
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
@@ -1332,16 +1332,24 @@ function BoardLetters(fen) {
 async function WesternGame() {
     const played = await joclyMatch.getPlayedMoves().catch(() => []);
     if (!played || !played.length) return { moves: [], sfen: null };
-    const sfen = await joclyMatch.getBoardState('sfen').catch(() => null);
-    if (!sfen || sfen.split(' ').length > 4) return null;   // pas un SFEN : jeu non gere
-    const files = (sfen.split(' ')[0].split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
-        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0);
+    // La position de depart est FACULTATIVE : ChuShogiLite n'ecrit [FEN] que
+    // pour une position non standard, et une partie jouee depuis le debut n'en
+    // a pas besoin. La refuser faute de SFEN privait d'export toutes les
+    // parties ordinaires -- le cas le plus courant, et celui qui a ete
+    // signale.
+    const raw = await joclyMatch.getBoardState('sfen').catch(() => null);
+    const sfenOk = !!raw && raw.trim().split(/\s+/).length <= 4;
+    if (!sfenOk) console.info('[play] pas de SFEN pour ce jeu — PGN sans [FEN] :', raw);
+    const board = (raw || '').split(' ')[0];
+    const files = (board.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
+        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0) || 12;
 
     const here = played.length;
     const out = [];
     try {
         await joclyMatch.rollback(0);
-        const start = await joclyMatch.getBoardState('sfen').catch(() => null);
+        const first = await joclyMatch.getBoardState('sfen').catch(() => null);
+        const start = (sfenOk && first && first.trim().split(/\s+/).length <= 4) ? first : null;
         for (let ply = 0; ply < here; ply++) {
             const legal = await joclyMatch.getPossibleMoves();
             const naturals = await joclyMatch.getMoveString(legal);
@@ -1349,7 +1357,10 @@ async function WesternGame() {
             const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
                 && (m.via || null) === (played[ply].via || null)
                 && (m.pr || null) === (played[ply].pr || null));
-            if (index < 0) { out.push('?'); await joclyMatch.rollback(ply + 1); continue; }
+            if (index < 0) {
+                console.warn('[play] export : coup', ply + 1, 'introuvable dans la liste legale');
+                out.push('?'); await joclyMatch.rollback(ply + 1); continue;
+            }
 
             const mine = ParseNaturalMove(naturals[index]) || { steps: [] };
             if (!mine.from) {
@@ -1371,7 +1382,10 @@ async function WesternGame() {
                 if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
                     rivals.push(other.from);
             }
-            out.push(BuildWesternMove(mine, letter, rivals) || '?');
+            const token = BuildWesternMove(mine, letter, rivals);
+            if (!token) console.warn('[play] export : coup', ply + 1,
+                '(' + naturals[index] + ') non traduisible en notation occidentale');
+            out.push(token || '?');
             await joclyMatch.rollback(ply + 1);
         }
         return { moves: out, sfen: start };
@@ -1415,7 +1429,15 @@ async function BookReplay(book) {
         // de la derniere prise de Lion, puis « 0 1 ») : ni un FEN jocly, qui
         // en a six, ni un SFEN, qui en a trois ou quatre et que jocly
         // reconnait seul. On le recompose ; tout le reste passe inchange.
-        if (book.initialBoard) book.initialBoard = PgnFenToJocly(book.initialBoard) || book.initialBoard;
+        // Deux dialectes de [FEN] a ramener a ce que jocly lit : celui du chu
+        // shogi (cinq champs) et celui du shogi de PyChess (reserve entre
+        // crochets, a la maniere du crazyhouse). L'ordre importe peu, les deux
+        // formes s'excluent.
+        if (book.initialBoard) {
+            book.initialBoard = PgnFenToJocly(book.initialBoard)
+                || PgnFenToShogiSfen(book.initialBoard)
+                || book.initialBoard;
+        }
         // `tsume` accompagne la position partout ou elle est rechargee : la
         // fenetre Historique fait revenir play.js a la position de depart pour
         // rejouer jusqu'au coup demande, et sans l'option ce rechargement

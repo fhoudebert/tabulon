@@ -27,7 +27,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
          ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution, BuildPJN, SideWithoutKing, IsTsume,
-         BuildWesternMove, SfenToPgnFen, BuildPGN }
+         BuildWesternMove, SfenToPgnFen, BuildPGN, PgnFenToShogiSfen }
     from '../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
@@ -517,6 +517,79 @@ console.log('Le fichier exporté se relit — par Tabulon, et comme l\'applet l\
     const black = BuildPGN(['a1', 'b2'], 'board w - 1', {});
     ok(black.includes('[FEN "board b - 0 1"]') && black.includes('1... a1'),
        'et « 1... » quand les Noirs ouvrent — ' + black.split('\n\n')[1].trim());
+}
+
+console.log('Une partie ordinaire, sans position de départ');
+{
+    // Le cas signalé : une partie de chu shogi jouée depuis le début, donc
+    // sans tag [FEN]. L'export la refusait, parce qu'il exigeait une position
+    // de départ — or ChuShogiLite n'écrit [FEN] que pour une position NON
+    // standard. La position est facultative ; les coups sont l'essentiel.
+    const pjn = readFileSync(path.join(root, 'tests', 'fixtures-chu-ordinaire.pjn'), 'utf-8');
+    const tokens = ExtractMoves(pjn);
+    ok(tokens.length === 6, `${tokens.length} coups en notation jocly`);
+    ok(BookFen({}) === null, 'et aucune position de départ dans le fichier');
+
+    const match = await Jocly.createMatch('chu-shogi');
+    await match.load({ game: 'chu-shogi', playedMoves: [] });
+    const r = await ReplayBookMoves(tokens, {
+        pick: (s) => match.pickMove(s).catch(() => null),
+        play: (m) => match.playMove(m),
+    });
+    ok(r.played === tokens.length, 'rejoués depuis la position standard');
+
+    // Réécriture, sans SFEN : le PGN doit sortir sans [FEN] ni [SetUp], et
+    // rester relisible.
+    const played = await match.getPlayedMoves();
+    await match.rollback(0);
+    const written = [];
+    for (let ply = 0; ply < played.length; ply++) {
+        const legal = await match.getPossibleMoves();
+        const naturals = await match.getMoveString(legal);
+        const letterAt = boardLetters(await match.getBoardState());
+        const idx = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t);
+        const mine = { ...ParseNaturalMove(naturals[idx]),
+                       from: await fromSquare(match, legal[idx], naturals[idx]) };
+        written.push(BuildWesternMove(mine, mine.from ? letterAt(mine.from) : null, []));
+        await match.rollback(ply + 1);
+    }
+    ok(written.every(w => w && w !== '?'), 'tous les coups se traduisent — ' + written.join(' '));
+    ok(written[0] === 'Pe5' && written[1] === 'Nf8',
+       'la lettre vient du plateau, en majuscules quel que soit le camp');
+
+    const pgn = BuildPGN(written, null, { event: 'ordinaire', variant: 'chu' });
+    ok(!/\[FEN /.test(pgn) && !/\[SetUp /.test(pgn),
+       'sans position de départ, ni [FEN] ni [SetUp] — comme l\'applet');
+    ok(ExtractMoves(pgn).join(' ') === written.join(' '), 'et le fichier se relit');
+    ok(/^1\. Pe5 Nf8 2\./.test(ExtractMoves(pgn).length ? pgn.split('\n\n')[1] : ''),
+       'numérotation depuis les Blancs, faute de [FEN] pour dire le contraire');
+}
+
+console.log('Le [FEN] d\'un PGN de shogi (PyChess)');
+{
+    // PyChess écrit la réserve à la manière du crazyhouse — entre crochets,
+    // collée au plateau — là où le SFEN standard en fait un champ séparé.
+    // Sans conversion, jocly compte les crochets comme des cases : « rank 9
+    // covers 12 files, expected 9 », puis le chargement casse plus loin sur un
+    // plateau à moitié construit.
+    const pgnFen = 'lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL[-] w 0 1';
+    const sfen = PgnFenToShogiSfen(pgnFen);
+    ok(sfen === 'lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1',
+       'réserve extraite en champ, « 0 1 » ramenés au numéro de coup — ' + sfen);
+    ok(PgnFenToShogiSfen('board[2Pl] b 0 12') === 'board w 2Pl 12',
+       'une réserve non vide passe telle quelle');
+    ok(PgnFenToShogiSfen('board w - 0 1') === null,
+       'un [FEN] sans crochets n\'est pas concerné — c\'est le dialecte du chu');
+
+    // Le trait s'inverse, comme au chu shogi : le [FEN] du PGN est dans la
+    // convention de jocly, le SFEN dans l'inverse, et ImportSFEN rééchange.
+    const match = await Jocly.createMatch('shogi');
+    await match.load({ game: 'shogi', initialBoard: sfen, playedMoves: [] });
+    ok((await match.getBoardState()).split(' ')[1] === 'w',
+       'chargé avec le trait aux Blancs, celui qu\'annonce le PGN');
+    const legal = await match.getMoveString(await match.getPossibleMoves());
+    ok(legal.length === 30, `${legal.length} coups légaux à la position de départ`);
+    ok(legal.includes('a3-a4'), 'et ce sont bien ceux des Blancs — ' + legal.slice(0, 3).join(' '));
 }
 
 console.log('');

@@ -1,0 +1,8 @@
+[JoclyGame "chu-shogi"]
+[Event "chu-shogi"]
+[Date "2026.8.23"]
+[White "Humain"]
+[Black "Facile"]
+[PlyCount "6"]
+
+1. e4-e5 LNg10-f8 2. LNf3-f5 Sd12-d11 3. LNf5-e6 h9-h8

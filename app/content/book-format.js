@@ -632,6 +632,38 @@ export function BuildPGN(moves, sfen, meta) {
 }
 
 /**
+ * Le [FEN] d'un PGN de shogi (PyChess, lishogi) ramene a un SFEN que jocly
+ * accepte — ou null si ce n'en est pas un.
+ *
+ * PyChess ecrit la reserve A LA MANIERE DU CRAZYHOUSE, entre crochets et
+ * collee au plateau, la ou le SFEN standard en fait un champ separe :
+ *
+ *   PyChess   lnsgkgsnl/…/LNSGKGSNL[-] w 0 1
+ *   SFEN      lnsgkgsnl/…/LNSGKGSNL b - 1
+ *
+ * Sans conversion, jocly compte les crochets comme des cases et refuse la
+ * position (« rank 9 covers 12 files, expected 9 »), puis le chargement
+ * echoue plus loin sur un plateau a moitie construit.
+ *
+ * LE TRAIT S'INVERSE, et c'est la meme mecanique qu'au chu shogi : un [FEN]
+ * de PGN est dans la convention de jocly, un SFEN dans l'inverse, et
+ * ImportSFEN echangera les deux. On ne peut pas ici produire un FEN jocly
+ * directement — la reserve du shogi est faite de COLONNES de plateau, pas
+ * d'un champ — donc on passe par le SFEN et on inverse une fois.
+ */
+export function PgnFenToShogiSfen(fen) {
+    const text = String(fen || '').trim();
+    const m = /^(\S+?)\[([^\]]*)\]\s+([bw])\b(.*)$/.exec(text);
+    if (!m) return null;
+    const hand = m[2].trim() === '' ? '-' : m[2].trim();
+    // Le dernier nombre de la queue est le numero de coup ; PyChess ecrit
+    // « 0 1 » a la maniere des echecs (demi-coups puis coups).
+    const tail = m[4].trim().split(/\s+/).filter(Boolean);
+    const move = tail.length ? tail[tail.length - 1] : '1';
+    return `${m[1]} ${m[3] === 'w' ? 'b' : 'w'} ${hand} ${/^\d+$/.test(move) ? move : '1'}`;
+}
+
+/**
  * Le fichier annonce-t-il un probleme de mat (tsume) ?
  *
  * ChuShogiLite ne pose pas de tag : il ecrit le nom du probleme en COMMENTAIRE
