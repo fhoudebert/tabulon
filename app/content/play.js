@@ -860,6 +860,179 @@ function initSatelliteListeners() {
 }
 
 // -- DOMContentLoaded ---------------------------------------------------------
+// ── Notations d'export (USI, occidentale) ────────────────────────────────────
+//
+// Au niveau MODULE, et non dans le callback DOMContentLoaded ou elles se
+// trouvaient : les ecouteurs d'evenements sont installes par
+// initSatelliteListeners(), une autre fonction, d'ou ces helpers etaient
+// invisibles. Le symptome ne designait pas la cause -- « Can't find variable:
+// WesternGame » a l'appel, alors que la declaration est bien la, quelques
+// centaines de lignes plus bas et en colonne 0.
+
+// La lettre que porte le plateau sur chaque case, lue dans le FEN courant.
+//
+// C'est l'abreviation FEN de la piece — precisement ce qu'ecrit la notation de
+// ChuShogiLite ("+H"), la ou jocly ecrit son abreviation naturelle ("+DH").
+// Plutot que de transporter une table de correspondance entre les deux, on lit
+// la lettre a la source : le plateau la donne, et il est deja a notre portee.
+function BoardLetters(fen) {
+    const rows = String(fen || '').split(' ')[0].split('/');
+    const map = {};
+    rows.forEach((row, index) => {
+        const rank = rows.length - index;
+        let file = 0;
+        for (let k = 0; k < row.length; ) {
+            const c = row[k];
+            if (c >= '0' && c <= '9') {
+                let n = c;
+                while (row[k + 1] >= '0' && row[k + 1] <= '9') n += row[++k];
+                file += parseInt(n, 10); k++; continue;
+            }
+            let piece = c; k++;
+            if (c === '+') { piece += row[k]; k++; }   // piece promue : deux caracteres
+            map[String.fromCharCode(97 + file) + rank] = piece;
+            file++;
+        }
+    });
+    return (square) => map[square] || null;
+}
+
+// Le coup que designe un jeton en notation « occidentale » (ChuShogiLite),
+// ou null. Meme exigence que pour l'USI : exact, ou rien.
+async function MoveFromWestern(token) {
+    const parsed = ParseWesternMove(token);
+    if (!parsed) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const natural = await joclyMatch.getMoveString(moves);
+    const letterAt = BoardLetters(await joclyMatch.getBoardState());
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        if (!WesternMatches(parsed, natural[i], letterAt)) continue;
+        if (found) { console.warn('[play] notation ambiguë:', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
+// Un index de plateau USI ramene aux coordonnees de jocly.
+//
+// Le numero de colonne se compte depuis la DROITE et la lettre de rangee
+// depuis le HAUT — l'exact inverse de jocly. `files` est la largeur du
+// plateau, que l'appelant tient de la position : la formule de ChuShogiLite
+// vaut pour ses 12 colonnes, elle ne s'y limite pas.
+function UsiToJocly(square, files) {
+    const m = /^(\d+)([a-z])$/.exec(square || '');
+    if (!m) return null;
+    const file = files - parseInt(m[1], 10);
+    const rank = files - (m[2].charCodeAt(0) - 97);
+    if (file < 0 || rank < 1) return null;
+    return String.fromCharCode(97 + file) + rank;
+}
+
+// La partie reecrite en notation occidentale, pour un export que
+// ChuShogiLite relit.
+//
+// Il faut REJOUER la partie : la lettre de la piece se lit sur le plateau
+// AVANT le coup, et la desambiguisation depend des autres coups legaux a cet
+// instant. On revient donc au depart, on avance coup par coup, puis on
+// restaure la position ou l'utilisateur se trouvait — l'Historique fait
+// exactement ce va-et-vient a chaque clic, ce n'est pas un detour exotique.
+//
+// Renvoie null si le jeu ne sait pas ecrire l'USI (pas de sfen-model.js) :
+// l'appelant retombe alors sur le PJN, plutot que d'ecrire un fichier
+// bancal dans un format qu'il annonce.
+async function WesternGame() {
+    const played = await joclyMatch.getPlayedMoves().catch(() => []);
+    if (!played || !played.length) return { moves: [], sfen: null };
+    // La position de depart est FACULTATIVE : ChuShogiLite n'ecrit [FEN] que
+    // pour une position non standard, et une partie jouee depuis le debut n'en
+    // a pas besoin. La refuser faute de SFEN privait d'export toutes les
+    // parties ordinaires -- le cas le plus courant, et celui qui a ete
+    // signale.
+    const raw = await joclyMatch.getBoardState('sfen').catch(() => null);
+    const sfenOk = !!raw && raw.trim().split(/\s+/).length <= 4;
+    if (!sfenOk) console.info('[play] pas de SFEN pour ce jeu — PGN sans [FEN] :', raw);
+    const board = (raw || '').split(' ')[0];
+    const files = (board.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
+        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0) || 12;
+
+    const here = played.length;
+    const out = [];
+    try {
+        await joclyMatch.rollback(0);
+        const first = await joclyMatch.getBoardState('sfen').catch(() => null);
+        const start = (sfenOk && first && first.trim().split(/\s+/).length <= 4) ? first : null;
+        for (let ply = 0; ply < here; ply++) {
+            const legal = await joclyMatch.getPossibleMoves();
+            const naturals = await joclyMatch.getMoveString(legal);
+            const letterAt = BoardLetters(await joclyMatch.getBoardState());
+            const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
+                && (m.via || null) === (played[ply].via || null)
+                && (m.pr || null) === (played[ply].pr || null));
+            if (index < 0) {
+                console.warn('[play] export : coup', ply + 1, 'introuvable dans la liste legale');
+                out.push('?'); await joclyMatch.rollback(ply + 1); continue;
+            }
+
+            const mine = ParseNaturalMove(naturals[index]) || { steps: [] };
+            if (!mine.from) {
+                const usi = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
+                const first = /^(\d+[a-z])/.exec(usi || '');
+                mine.from = first ? UsiToJocly(first[1], files) : null;
+            }
+            const letter = mine.from ? letterAt(mine.from) : null;
+
+            // Les rivales : les autres coups legaux de la MEME piece menant
+            // aux memes cases. La piece n'est pas sa propre rivale — elle
+            // offre deux coups pour un seul deplacement, promouvoir ou non.
+            const rivals = [];
+            for (let i = 0; i < legal.length; i++) {
+                if (i === index) continue;
+                const other = ParseNaturalMove(naturals[i]);
+                if (!other || other.steps.length !== mine.steps.length) continue;
+                if (!other.steps.every((st, k) => st.square === mine.steps[k].square)) continue;
+                if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
+                    rivals.push(other.from);
+            }
+            const token = BuildWesternMove(mine, letter, rivals);
+            if (!token) console.warn('[play] export : coup', ply + 1,
+                '(' + naturals[index] + ') non traduisible en notation occidentale');
+            out.push(token || '?');
+            await joclyMatch.rollback(ply + 1);
+        }
+        return { moves: out, sfen: start };
+    } finally {
+        // Quoi qu'il arrive, l'utilisateur retrouve la position qu'il avait.
+        await joclyMatch.rollback(here).catch(() => {});
+    }
+}
+
+// Le coup que designe un jeton USI dans la position courante, ou null.
+//
+// On NE PASSE PAS par pickMove : celui-ci appelle GetBestMatchingMove, qui
+// choisit par distance d'edition sur la notation naturelle et ne peut pas
+// echouer -- « 12i12h » y trouverait toujours un plus proche, joue en silence.
+// On demande donc au moteur d'ecrire chaque coup legal en USI (format ajoute
+// par shogi/sfen-model.js) et on compare litteralement.
+//
+// Deux refus explicites, comme MoveFromUSI cote jocly : aucun coup ne
+// correspond, ou plusieurs -- auquel cas on ne choisit pas.
+async function MoveFromUSI(token) {
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    let strings;
+    try { strings = await joclyMatch.getMoveString(moves, 'usi'); }
+    catch (e) { console.warn('[play] USI indisponible pour ce jeu:', e.message || e); return null; }
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        if (strings[i] !== token) continue;
+        if (found) { console.warn('[play] USI ambigu:', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     console.info('[play] DOMContentLoaded, game:', gameName, 'id:', matchId);
@@ -1232,169 +1405,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // l'API Jocly pickMove (qui matche la notation contre les coups légaux)
     // puis appliqués par playMove. On tolère les décorations (+ # ! ?) en
     // retentant sans elles si pickMove ne trouve pas.
-    // La lettre que porte le plateau sur chaque case, lue dans le FEN courant.
-//
-// C'est l'abreviation FEN de la piece — precisement ce qu'ecrit la notation de
-// ChuShogiLite ("+H"), la ou jocly ecrit son abreviation naturelle ("+DH").
-// Plutot que de transporter une table de correspondance entre les deux, on lit
-// la lettre a la source : le plateau la donne, et il est deja a notre portee.
-function BoardLetters(fen) {
-    const rows = String(fen || '').split(' ')[0].split('/');
-    const map = {};
-    rows.forEach((row, index) => {
-        const rank = rows.length - index;
-        let file = 0;
-        for (let k = 0; k < row.length; ) {
-            const c = row[k];
-            if (c >= '0' && c <= '9') {
-                let n = c;
-                while (row[k + 1] >= '0' && row[k + 1] <= '9') n += row[++k];
-                file += parseInt(n, 10); k++; continue;
-            }
-            let piece = c; k++;
-            if (c === '+') { piece += row[k]; k++; }   // piece promue : deux caracteres
-            map[String.fromCharCode(97 + file) + rank] = piece;
-            file++;
-        }
-    });
-    return (square) => map[square] || null;
-}
-
-// Le coup que designe un jeton en notation « occidentale » (ChuShogiLite),
-// ou null. Meme exigence que pour l'USI : exact, ou rien.
-async function MoveFromWestern(token) {
-    const parsed = ParseWesternMove(token);
-    if (!parsed) return null;
-    const moves = await joclyMatch.getPossibleMoves();
-    if (!moves || !moves.length) return null;
-    const natural = await joclyMatch.getMoveString(moves);
-    const letterAt = BoardLetters(await joclyMatch.getBoardState());
-    let found = null;
-    for (let i = 0; i < moves.length; i++) {
-        if (!WesternMatches(parsed, natural[i], letterAt)) continue;
-        if (found) { console.warn('[play] notation ambiguë:', token); return null; }
-        found = moves[i];
-    }
-    return found;
-}
-
-// Un index de plateau USI ramene aux coordonnees de jocly.
-//
-// Le numero de colonne se compte depuis la DROITE et la lettre de rangee
-// depuis le HAUT — l'exact inverse de jocly. `files` est la largeur du
-// plateau, que l'appelant tient de la position : la formule de ChuShogiLite
-// vaut pour ses 12 colonnes, elle ne s'y limite pas.
-function UsiToJocly(square, files) {
-    const m = /^(\d+)([a-z])$/.exec(square || '');
-    if (!m) return null;
-    const file = files - parseInt(m[1], 10);
-    const rank = files - (m[2].charCodeAt(0) - 97);
-    if (file < 0 || rank < 1) return null;
-    return String.fromCharCode(97 + file) + rank;
-}
-
-// La partie reecrite en notation occidentale, pour un export que
-// ChuShogiLite relit.
-//
-// Il faut REJOUER la partie : la lettre de la piece se lit sur le plateau
-// AVANT le coup, et la desambiguisation depend des autres coups legaux a cet
-// instant. On revient donc au depart, on avance coup par coup, puis on
-// restaure la position ou l'utilisateur se trouvait — l'Historique fait
-// exactement ce va-et-vient a chaque clic, ce n'est pas un detour exotique.
-//
-// Renvoie null si le jeu ne sait pas ecrire l'USI (pas de sfen-model.js) :
-// l'appelant retombe alors sur le PJN, plutot que d'ecrire un fichier
-// bancal dans un format qu'il annonce.
-async function WesternGame() {
-    const played = await joclyMatch.getPlayedMoves().catch(() => []);
-    if (!played || !played.length) return { moves: [], sfen: null };
-    // La position de depart est FACULTATIVE : ChuShogiLite n'ecrit [FEN] que
-    // pour une position non standard, et une partie jouee depuis le debut n'en
-    // a pas besoin. La refuser faute de SFEN privait d'export toutes les
-    // parties ordinaires -- le cas le plus courant, et celui qui a ete
-    // signale.
-    const raw = await joclyMatch.getBoardState('sfen').catch(() => null);
-    const sfenOk = !!raw && raw.trim().split(/\s+/).length <= 4;
-    if (!sfenOk) console.info('[play] pas de SFEN pour ce jeu — PGN sans [FEN] :', raw);
-    const board = (raw || '').split(' ')[0];
-    const files = (board.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
-        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0) || 12;
-
-    const here = played.length;
-    const out = [];
-    try {
-        await joclyMatch.rollback(0);
-        const first = await joclyMatch.getBoardState('sfen').catch(() => null);
-        const start = (sfenOk && first && first.trim().split(/\s+/).length <= 4) ? first : null;
-        for (let ply = 0; ply < here; ply++) {
-            const legal = await joclyMatch.getPossibleMoves();
-            const naturals = await joclyMatch.getMoveString(legal);
-            const letterAt = BoardLetters(await joclyMatch.getBoardState());
-            const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
-                && (m.via || null) === (played[ply].via || null)
-                && (m.pr || null) === (played[ply].pr || null));
-            if (index < 0) {
-                console.warn('[play] export : coup', ply + 1, 'introuvable dans la liste legale');
-                out.push('?'); await joclyMatch.rollback(ply + 1); continue;
-            }
-
-            const mine = ParseNaturalMove(naturals[index]) || { steps: [] };
-            if (!mine.from) {
-                const usi = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
-                const first = /^(\d+[a-z])/.exec(usi || '');
-                mine.from = first ? UsiToJocly(first[1], files) : null;
-            }
-            const letter = mine.from ? letterAt(mine.from) : null;
-
-            // Les rivales : les autres coups legaux de la MEME piece menant
-            // aux memes cases. La piece n'est pas sa propre rivale — elle
-            // offre deux coups pour un seul deplacement, promouvoir ou non.
-            const rivals = [];
-            for (let i = 0; i < legal.length; i++) {
-                if (i === index) continue;
-                const other = ParseNaturalMove(naturals[i]);
-                if (!other || other.steps.length !== mine.steps.length) continue;
-                if (!other.steps.every((st, k) => st.square === mine.steps[k].square)) continue;
-                if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
-                    rivals.push(other.from);
-            }
-            const token = BuildWesternMove(mine, letter, rivals);
-            if (!token) console.warn('[play] export : coup', ply + 1,
-                '(' + naturals[index] + ') non traduisible en notation occidentale');
-            out.push(token || '?');
-            await joclyMatch.rollback(ply + 1);
-        }
-        return { moves: out, sfen: start };
-    } finally {
-        // Quoi qu'il arrive, l'utilisateur retrouve la position qu'il avait.
-        await joclyMatch.rollback(here).catch(() => {});
-    }
-}
-
-// Le coup que designe un jeton USI dans la position courante, ou null.
-//
-// On NE PASSE PAS par pickMove : celui-ci appelle GetBestMatchingMove, qui
-// choisit par distance d'edition sur la notation naturelle et ne peut pas
-// echouer -- « 12i12h » y trouverait toujours un plus proche, joue en silence.
-// On demande donc au moteur d'ecrire chaque coup legal en USI (format ajoute
-// par shogi/sfen-model.js) et on compare litteralement.
-//
-// Deux refus explicites, comme MoveFromUSI cote jocly : aucun coup ne
-// correspond, ou plusieurs -- auquel cas on ne choisit pas.
-async function MoveFromUSI(token) {
-    const moves = await joclyMatch.getPossibleMoves();
-    if (!moves || !moves.length) return null;
-    let strings;
-    try { strings = await joclyMatch.getMoveString(moves, 'usi'); }
-    catch (e) { console.warn('[play] USI indisponible pour ce jeu:', e.message || e); return null; }
-    let found = null;
-    for (let i = 0; i < moves.length; i++) {
-        if (strings[i] !== token) continue;
-        if (found) { console.warn('[play] USI ambigu:', token); return null; }
-        found = moves[i];
-    }
-    return found;
-}
 
 async function BookReplay(book) {
         // Tag [FEN] du PGN/PJN : la partie ne commence PAS a la position

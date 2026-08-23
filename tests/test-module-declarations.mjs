@@ -23,11 +23,45 @@ const content = path.join(root, 'app', 'content');
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
 
-// Déclarations de PREMIER NIVEAU : en début de ligne, sans indentation. Une
-// fonction imbriquée est indentée, et deux fonctions homonymes dans des portées
-// différentes sont parfaitement légales — ce n'est pas ce qu'on traque.
+// Deux contrôles, et ils ne mesurent pas la même chose.
+//
+// 1. LES DOUBLONS, repérés en colonne 0. Redéclarer un nom au niveau module
+//    est une erreur dure ; le symptôme est trompeur (le fichier se charge, une
+//    fonction déclarée plus loin devient introuvable).
+//
+// 2. LA PORTÉE RÉELLE de quelques fonctions nommées, par comptage d'accolades.
+//    L'indentation ne dit rien : cinq fonctions d'export vivaient en colonne 0
+//    À L'INTÉRIEUR du callback DOMContentLoaded, donc invisibles depuis les
+//    écouteurs installés par une autre fonction. « Can't find variable:
+//    WesternGame », alors que la déclaration était bien là, sans un espace
+//    devant.
 const DECL = /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm;
 const LET  = /^(?:export\s+)?(?:const|let|class)\s+([A-Za-z_$][\w$]*)/gm;
+
+// Profondeur d'accolades à un index donné, chaînes, gabarits et commentaires
+// sautés. `0` est la seule définition fiable de « niveau module ».
+function DepthAt(src, target) {
+    let depth = 0, i = 0, quote = null;
+    while (i < target && i < src.length) {
+        const c = src[i], n = src[i + 1];
+        if (quote) {
+            if (c === '\\') { i += 2; continue; }
+            if (c === quote) quote = null;
+            i++; continue;
+        }
+        if (c === '/' && n === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+        if (c === '/' && n === '*') {
+            i += 2;
+            while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
+            i += 2; continue;
+        }
+        if (c === '\'' || c === '"' || c === '`') { quote = c; i++; continue; }
+        if (c === '{') depth++;
+        else if (c === '}') depth--;
+        i++;
+    }
+    return depth;
+}
 
 const files = readdirSync(content).filter(f => f.endsWith('.js')).sort();
 ok(files.length > 0, `${files.length} modules inspectés`);
@@ -51,6 +85,21 @@ for (const file of files) {
        + (dupes.length ? ' — ' + dupes.map(([n, l]) => `${n} (lignes ${l.join(', ')})`).join(' ; ') : ''));
 }
 ok(total > 100, `${total} déclarations de premier niveau au total — l'inspection porte bien`);
+
+console.log('Les fonctions appelées entre écouteurs sont bien au niveau module');
+{
+    // Le cas concret : `WesternGame` est appelée par un écouteur installé
+    // dans initSatelliteListeners(), et déclarée ailleurs dans play.js. Si
+    // elle glisse à nouveau dans le callback DOMContentLoaded, elle redevient
+    // invisible — sans que rien ne le signale avant l'appel.
+    const play = readFileSync(path.join(content, 'play.js'), 'utf-8');
+    for (const name of ['WesternGame', 'BoardLetters', 'UsiToJocly', 'MoveFromUSI', 'MoveFromWestern']) {
+        const at = play.search(new RegExp('^(?:async )?function ' + name + '\\b', 'm'));
+        ok(at >= 0 && DepthAt(play, at) === 0,
+           `play.js : ${name} est au niveau module`
+           + (at < 0 ? ' — introuvable' : ` (profondeur ${DepthAt(play, at)})`));
+    }
+}
 
 console.log('');
 console.log(`RESULTAT module-declarations: ${PASS} OK / ${FAIL} ECHEC`);
