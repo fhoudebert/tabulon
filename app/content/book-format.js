@@ -509,6 +509,74 @@ export function SideWithoutKing(fen, royals) {
 }
 
 /**
+ * L'ecriture d'un coup en notation « occidentale » — l'inverse exact de
+ * ParseWesternMove, pour produire un PGN que ChuShogiLite relit.
+ *
+ * `move`   : le coup, tel que ParseNaturalMove le rend, plus `from` (la case
+ *            de depart, que jocly omet sur les coups a deux pas et que
+ *            l'appelant tient de l'objet coup).
+ * `letter` : l'abreviation FEN de la piece — celle du plateau, pas celle de
+ *            jocly. « +H » et non « +DH ».
+ * `rivals` : les autres coups LEGAUX de la meme position qui menent aux memes
+ *            cases avec la meme piece. C'est eux qui decident de la
+ *            desambiguisation ; sans rival, la case de depart est omise.
+ *
+ * Les regles sont celles de chushogi-lite.js (moveToSAN, getSANDisambiguation) :
+ *   - coup ordinaire  : piece + desambiguisation + ("x" si prise) + arrivee
+ *   - coup a deux pas : piece + desambiguisation + ("x" si UNE prise au moins)
+ *                       + passage + "," + arrivee
+ *   - suffixe         : "+" promotion, "=" promotion refusee, rien sinon
+ *   - desambiguisation : la colonne si elle suffit, sinon la rangee, sinon la
+ *                        case entiere
+ *
+ * A noter, parce que ce n'est pas symetrique : en notation PGN, CSL n'ecrit
+ * PAS le "-" du coup sans prise (son format « shogi » le fait, son format PGN
+ * non). ParseWesternMove accepte les deux, l'ecriture suit le PGN.
+ */
+export function BuildWesternMove(move, letter, rivals) {
+    if (!move || !move.steps || !move.steps.length) return null;
+    const steps = move.steps;
+    const captures = steps.some(st => st.capture);
+
+    let disambig = '';
+    const from = move.from || '';
+    if (from && rivals && rivals.length) {
+        const file = from[0], rank = from.slice(1);
+        if (!rivals.some(r => r && r[0] === file)) disambig = file;
+        else if (!rivals.some(r => r && r.slice(1) === rank)) disambig = rank;
+        else disambig = from;
+    }
+
+    // La lettre est TOUJOURS en majuscules : CSL ecrit le TYPE de la piece
+    // (« T », « +M »), pas la lettre coloree du plateau, ou la minuscule
+    // designe le camp. Sans cette mise en forme le fichier reste relisible --
+    // WesternMatches compare sans la casse -- mais il ne ressemble plus a ce
+    // que l'applet produit, et c'est justement ce qu'on cherche a obtenir.
+    const head = String(letter || move.piece || '').toUpperCase() + disambig;
+    const body = steps.length > 1
+        ? (captures ? 'x' : '') + steps.map(st => st.square).join(',')
+        : (steps[0].capture ? 'x' : '') + steps[0].square;
+    const suffix = move.promote === true ? '+' : (move.promote === false ? '=' : '');
+    return head + body + suffix;
+}
+
+/**
+ * Le [FEN] d'un PGN ChuShogiLite, ecrit depuis un SFEN — l'inverse de
+ * PgnFenToJocly.
+ *
+ * Cinq champs : plateau, trait, case de la derniere prise de Lion, puis
+ * « 0 1 ». Le trait ne bouge PAS entre le SFEN de jocly et ce tag : les deux
+ * inversions se compensent (voir PgnFenToJocly). Renvoie null si l'entree
+ * n'est pas un SFEN.
+ */
+export function SfenToPgnFen(sfen) {
+    const f = String(sfen || '').trim().split(/\s+/);
+    if (f.length < 3 || f.length > 4) return null;
+    if (f[1] !== 'b' && f[1] !== 'w') return null;
+    return `${f[0]} ${f[1]} ${f[2] || '-'} 0 1`;
+}
+
+/**
  * Le fichier annonce-t-il un probleme de mat (tsume) ?
  *
  * ChuShogiLite ne pose pas de tag : il ecrit le nom du probleme en COMMENTAIRE

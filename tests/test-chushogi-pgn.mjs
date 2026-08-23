@@ -26,7 +26,8 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
-         ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution, BuildPJN, SideWithoutKing, IsTsume }
+         ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution, BuildPJN, SideWithoutKing, IsTsume,
+         BuildWesternMove, SfenToPgnFen }
     from '../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
@@ -67,6 +68,23 @@ function boardLetters(fen) {
     });
     return (square) => map[square] || null;
 }
+// jocly n'écrit pas la case de départ sur un coup à deux pas ; l'USI, lui,
+// commence toujours par elle. La conversion est celle de cslSqToPgn : le
+// numéro de colonne se compte depuis la droite, la lettre de rangée depuis le
+// haut — l'exact inverse des coordonnées de jocly.
+function usiToJocly(square) {
+    const m = /^(\d+)([a-l])$/.exec(square || '');
+    if (!m) return null;
+    return String.fromCharCode(109 - parseInt(m[1], 10)) + (12 - (m[2].charCodeAt(0) - 97));
+}
+async function fromSquare(match, move, natural) {
+    const parsed = ParseNaturalMove(natural);
+    if (parsed && parsed.from) return parsed.from;
+    const usi = await match.getMoveString(move, 'usi').catch(() => null);
+    const first = /^(\d+[a-l])/.exec(usi || '');
+    return first ? usiToJocly(first[1]) : null;
+}
+
 const westernResolver = (match) => async (token) => {
     const parsed = ParseWesternMove(token);
     if (!parsed) return null;
@@ -352,6 +370,71 @@ console.log('Le découpage en parties, sur lequel tout repose');
        'l\'extraction s\'arrête au mat, pas dans le texte qui suit — ' + czMoves.slice(-1));
     ok(!czMoves.some(m => /csa|Classé|ans/i.test(m)),
        'aucun mot du texte libre ne se retrouve pris pour un coup');
+}
+
+console.log('Écrire la notation occidentale : l\'aller-retour');
+{
+    // L'épreuve : rejouer chaque fichier réel et RÉÉCRIRE chaque coup dans la
+    // notation de ChuShogiLite. Le résultat doit être le fichier de départ,
+    // jeton pour jeton. Comparer à une valeur écrite à la main ne prouverait
+    // que mon interprétation ; comparer à ce que l'applet a produit prouve
+    // l'interopérabilité.
+    for (const [name, expected] of [['fixtures-chushogilite.pgn', 17],
+                                    ['fixtures-chushogilite-c22.pgn', 33]]) {
+        const txt = readFileSync(path.join(root, 'tests', name), 'utf-8');
+        const tg = {};
+        for (const line of txt.split('\n')) {
+            const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+            if (m) tg[m[1]] = m[2].replace(/^"|"$/g, '');
+        }
+        const tokens = ExtractMoves(txt);
+        const match = await Jocly.createMatch('chu-shogi');
+        await match.load({ game: 'chu-shogi', initialBoard: PgnFenToJocly(BookFen(tg)),
+                           playedMoves: [], tsume: IsTsume(txt, tg) });
+
+        const written = [];
+        for (const token of tokens) {
+            // État AVANT le coup : c'est lui qui donne la lettre de la pièce
+            // et les rivales, exactement comme getSANDisambiguation les lit.
+            const legal = await match.getPossibleMoves();
+            const naturals = await match.getMoveString(legal);
+            const letterAt = boardLetters(await match.getBoardState());
+            const chosen = await westernResolver(match)(token);
+            const idx = legal.findIndex(m => m === chosen);
+            const mine = { ...ParseNaturalMove(naturals[idx]), from: await fromSquare(match, chosen, naturals[idx]) };
+            const letter = mine.from ? letterAt(mine.from) : null;
+
+            // Rivales : les autres coups légaux de la MÊME pièce menant aux
+            // mêmes cases. C'est ce que CSL appelle « rivals ».
+            const rivals = [];
+            for (let i = 0; i < legal.length; i++) {
+                if (i === idx) continue;
+                const other = ParseNaturalMove(naturals[i]);
+                if (!other || other.steps.length !== mine.steps.length) continue;
+                if (!other.steps.every((st, k) => st.square === mine.steps[k].square)) continue;
+                const f = other.from;
+                // La MÊME pièce n'est pas sa propre rivale : elle offre deux
+                // coups pour un seul déplacement, promouvoir ou non. CSL
+                // écarte sa propre case de la même façon.
+                if (f && f !== mine.from && letterAt(f) === letter) rivals.push(f);
+            }
+            written.push(BuildWesternMove(mine, letter, rivals));
+            await match.playMove(chosen);
+        }
+        ok(written.length === expected, `${name} : ${written.length} coups réécrits`);
+        ok(written.join(' ') === tokens.join(' '),
+           'réécrits À L\'IDENTIQUE de ce qu\'a produit l\'applet'
+           + (written.join(' ') === tokens.join(' ') ? ''
+              : ' — ' + written.find((w, i) => w !== tokens[i]) + ' au lieu de '
+                + tokens[written.findIndex((w, i) => w !== tokens[i])]));
+    }
+
+    // Le tag [FEN] : cinq champs, trait inchangé.
+    const sfen = 'board w 6f 2';
+    ok(SfenToPgnFen(sfen) === 'board w 6f 0 1', '[FEN] à cinq champs, « 0 1 » ajoutés');
+    ok(PgnFenToJocly(SfenToPgnFen(sfen)).split(' ')[1] === 'w',
+       'et le trait revient inchangé par le chemin inverse');
+    ok(SfenToPgnFen('board w - - 0 1') === null, 'un FEN jocly à six champs n\'est pas converti');
 }
 
 console.log('');
