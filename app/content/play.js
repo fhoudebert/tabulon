@@ -14,7 +14,7 @@ import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly,
-         ParseWesternMove, WesternMatches } from './book-format.js';
+         ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -736,6 +736,17 @@ function initSatelliteListeners() {
         });
     });
 
+    // get-western-moves : la partie en notation occidentale, pour l'export PGN
+    // de la fenetre Historique. Calcule A LA DEMANDE — il faut rejouer la
+    // partie — et non joint a chaque reponse get-played-moves.
+    listen(prefix + 'get-western-moves', async () => {
+        if (!joclyMatch) return;
+        let data = null;
+        try { data = await WesternGame(); }
+        catch (e) { console.warn('[play] export occidental:', e.message || e); }
+        await emit(`play-rep:${matchId}:get-western-moves`, data || { moves: null, sfen: null });
+    });
+
     // rollback-to : annuler jusqu'a l'index demande
     listen(prefix + 'rollback-to', async ({ payload }) => {
         if (!joclyMatch) return;
@@ -1265,6 +1276,109 @@ async function MoveFromWestern(token) {
         found = moves[i];
     }
     return found;
+}
+
+// Un index de plateau USI ramene aux coordonnees de jocly.
+//
+// Le numero de colonne se compte depuis la DROITE et la lettre de rangee
+// depuis le HAUT — l'exact inverse de jocly. `files` est la largeur du
+// plateau, que l'appelant tient de la position : la formule de ChuShogiLite
+// vaut pour ses 12 colonnes, elle ne s'y limite pas.
+function UsiToJocly(square, files) {
+    const m = /^(\d+)([a-z])$/.exec(square || '');
+    if (!m) return null;
+    const file = files - parseInt(m[1], 10);
+    const rank = files - (m[2].charCodeAt(0) - 97);
+    if (file < 0 || rank < 1) return null;
+    return String.fromCharCode(97 + file) + rank;
+}
+
+// La lettre portee par chaque case, lue dans le FEN : l'abreviation FEN de la
+// piece, celle qu'emploie la notation de ChuShogiLite.
+function BoardLetters(fen) {
+    const rows = String(fen || '').split(' ')[0].split('/');
+    const map = {};
+    rows.forEach((row, index) => {
+        const rank = rows.length - index;
+        let file = 0;
+        for (let k = 0; k < row.length; ) {
+            const c = row[k];
+            if (c >= '0' && c <= '9') {
+                let n = c;
+                while (row[k + 1] >= '0' && row[k + 1] <= '9') n += row[++k];
+                file += parseInt(n, 10); k++; continue;
+            }
+            let piece = c; k++;
+            if (c === '+') { piece += row[k]; k++; }
+            map[String.fromCharCode(97 + file) + rank] = piece;
+            file++;
+        }
+    });
+    return (square) => map[square] || null;
+}
+
+// La partie reecrite en notation occidentale, pour un export que
+// ChuShogiLite relit.
+//
+// Il faut REJOUER la partie : la lettre de la piece se lit sur le plateau
+// AVANT le coup, et la desambiguisation depend des autres coups legaux a cet
+// instant. On revient donc au depart, on avance coup par coup, puis on
+// restaure la position ou l'utilisateur se trouvait — l'Historique fait
+// exactement ce va-et-vient a chaque clic, ce n'est pas un detour exotique.
+//
+// Renvoie null si le jeu ne sait pas ecrire l'USI (pas de sfen-model.js) :
+// l'appelant retombe alors sur le PJN, plutot que d'ecrire un fichier
+// bancal dans un format qu'il annonce.
+async function WesternGame() {
+    const played = await joclyMatch.getPlayedMoves().catch(() => []);
+    if (!played || !played.length) return { moves: [], sfen: null };
+    const sfen = await joclyMatch.getBoardState('sfen').catch(() => null);
+    if (!sfen || sfen.split(' ').length > 4) return null;   // pas un SFEN : jeu non gere
+    const files = (sfen.split(' ')[0].split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
+        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0);
+
+    const here = played.length;
+    const out = [];
+    try {
+        await joclyMatch.rollback(0);
+        const start = await joclyMatch.getBoardState('sfen').catch(() => null);
+        for (let ply = 0; ply < here; ply++) {
+            const legal = await joclyMatch.getPossibleMoves();
+            const naturals = await joclyMatch.getMoveString(legal);
+            const letterAt = BoardLetters(await joclyMatch.getBoardState());
+            const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
+                && (m.via || null) === (played[ply].via || null)
+                && (m.pr || null) === (played[ply].pr || null));
+            if (index < 0) { out.push('?'); await joclyMatch.rollback(ply + 1); continue; }
+
+            const mine = ParseNaturalMove(naturals[index]) || { steps: [] };
+            if (!mine.from) {
+                const usi = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
+                const first = /^(\d+[a-z])/.exec(usi || '');
+                mine.from = first ? UsiToJocly(first[1], files) : null;
+            }
+            const letter = mine.from ? letterAt(mine.from) : null;
+
+            // Les rivales : les autres coups legaux de la MEME piece menant
+            // aux memes cases. La piece n'est pas sa propre rivale — elle
+            // offre deux coups pour un seul deplacement, promouvoir ou non.
+            const rivals = [];
+            for (let i = 0; i < legal.length; i++) {
+                if (i === index) continue;
+                const other = ParseNaturalMove(naturals[i]);
+                if (!other || other.steps.length !== mine.steps.length) continue;
+                if (!other.steps.every((st, k) => st.square === mine.steps[k].square)) continue;
+                if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
+                    rivals.push(other.from);
+            }
+            out.push(BuildWesternMove(mine, letter, rivals) || '?');
+            await joclyMatch.rollback(ply + 1);
+        }
+        return { moves: out, sfen: start };
+    } finally {
+        // Quoi qu'il arrive, l'utilisateur retrouve la position qu'il avait.
+        await joclyMatch.rollback(here).catch(() => {});
+    }
 }
 
 // Le coup que designe un jeton USI dans la position courante, ou null.

@@ -564,16 +564,71 @@ export function BuildWesternMove(move, letter, rivals) {
  * Le [FEN] d'un PGN ChuShogiLite, ecrit depuis un SFEN — l'inverse de
  * PgnFenToJocly.
  *
- * Cinq champs : plateau, trait, case de la derniere prise de Lion, puis
- * « 0 1 ». Le trait ne bouge PAS entre le SFEN de jocly et ce tag : les deux
- * inversions se compensent (voir PgnFenToJocly). Renvoie null si l'entree
- * n'est pas un SFEN.
+ * Cinq champs : plateau, trait INVERSE, case de la derniere prise de Lion,
+ * puis « 0 1 ».
+ *
+ * Le trait s'inverse ici alors qu'il ne bouge pas dans PgnFenToJocly, et ce
+ * n'est pas une incoherence : il y a trois conventions, pas deux.
+ *
+ *   SFEN   « b » = sente = les majuscules
+ *   jocly  note ce meme trait « w » — ImportSFEN echange les deux
+ *   PGN    ChuShogiLite y ecrit l'inverse de son SFEN
+ *
+ * Donc PGN == jocly, et SFEN == l'inverse des deux. PgnFenToJocly va de PGN a
+ * jocly : rien a faire. Cette fonction-ci part du SFEN, celui que rend
+ * getBoardState('sfen') : il faut inverser une fois.
  */
 export function SfenToPgnFen(sfen) {
     const f = String(sfen || '').trim().split(/\s+/);
     if (f.length < 3 || f.length > 4) return null;
     if (f[1] !== 'b' && f[1] !== 'w') return null;
-    return `${f[0]} ${f[1]} ${f[2] || '-'} 0 1`;
+    return `${f[0]} ${f[1] === 'b' ? 'w' : 'b'} ${f[2] || '-'} 0 1`;
+}
+
+/**
+ * Construit un PGN lisible par ChuShogiLite : tags de l'applet, [FEN] a cinq
+ * champs, coups en notation occidentale.
+ *
+ * Distinct de BuildPJN, et pas une option de celui-ci : les deux formats ne
+ * partagent ni les tags ([JoclyGame] n'a pas de sens ici), ni la notation, ni
+ * la position ([FEN] SFEN contre FEN jocly). Les melanger produirait un
+ * fichier que ni l'un ni l'autre ne relit entierement.
+ *
+ * `moves` sont deja en notation occidentale — c'est play.js qui les produit,
+ * seul a disposer du moteur (voir BuildWesternMove).
+ */
+export function BuildPGN(moves, sfen, meta) {
+    const m = meta || {};
+    const d = m.date || new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const tag = (k, v) => '[' + k + ' "' + String(v).replace(/"/g, "'") + '"]';
+    const tags = [
+        tag('Event', m.event || 'Tabulon PGN Record'),
+        tag('Site', 'Tabulon'),
+        tag('Date', `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`),
+        tag('Round', '-'),
+        tag('White', m.white || '?'),
+        tag('Black', m.black || '?'),
+        tag('Result', m.result || '*'),
+        tag('Variant', m.variant || 'chu'),
+    ];
+    // [SetUp] AVANT [FEN] : c'est l'ordre qu'impose la specification PGN, et
+    // celui qu'ecrit l'applet.
+    const fen = SfenToPgnFen(sfen);
+    if (fen) { tags.push(tag('SetUp', '1')); tags.push(tag('FEN', fen)); }
+
+    // Numerotation par paires, le numero sur le coup des Blancs. Le camp qui
+    // commence vient du trait de la position : quand ce sont les Noirs, leur
+    // premier coup porte « 1... », seule occurrence de cette forme.
+    const blackStarts = fen ? fen.split(' ')[1] === 'b' : false;
+    const list = (moves || []).map((mv, i) => {
+        const white = blackStarts ? i % 2 === 1 : i % 2 === 0;
+        if (blackStarts && i === 0) return '1... ' + mv;
+        if (!white) return mv;
+        return (blackStarts ? Math.floor((i + 1) / 2) + 1 : Math.floor(i / 2) + 1) + '. ' + mv;
+    });
+    const head = m.tsume ? '{Tsume} ' : '';
+    return tags.join('\n') + '\n\n' + head + list.join(' ') + (list.length ? ' ' : '') + '*\n';
 }
 
 /**

@@ -5,7 +5,7 @@
 
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
-import { BuildPJN } from './book-format.js';
+import { BuildPJN, BuildPGN } from './book-format.js';
 import { listen, emit, save as saveDialog, Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
 
@@ -100,15 +100,62 @@ function RequestHistory() {
 // ne fait rien dans la WebView Tauri : dialogue natif + save_text_file (même
 // correctif que le bouton Save de la fenêtre de jeu). Coups numérotés
 // ("1. e2-e4 e7-e5 2. …") pour rester relisible par parse_pjn/pickMove.
+// Demande a play.js la partie en notation occidentale. Elle se calcule en
+// rejouant la partie, d'ou l'aller-retour plutot qu'un champ joint a chaque
+// rafraichissement de l'Historique.
+function AskWesternMoves() {
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(null), 5000);
+        listen(`play-rep:${matchId}:get-western-moves`, ({ payload }) => {
+            clearTimeout(timer);
+            resolve(payload);
+        }).then(() => emit(`play-req:${matchId}:get-western-moves`, null));
+    });
+}
+
 async function SavePJN() {
     // Sans le nom du jeu, le fichier serait ecrit avec un mauvais tag
     // [JoclyGame] et deviendrait irrechargeable : mieux vaut ne rien ecrire.
     if (!gameName) { console.warn('[history] save book : jeu inconnu, sauvegarde annulee'); return; }
+    // Le FORMAT se choisit par l'extension, dans le dialogue natif : « .pjn »
+    // pour le format de Tabulon, « .pgn » pour celui que ChuShogiLite relit.
+    // Pas de case a cocher supplementaire — l'utilisateur nomme deja son
+    // fichier, et le nom porte l'intention.
     const path = await saveDialog({
         defaultPath: gameName + '.pjn',
-        filters: [{ name: 'PJN', extensions: ['pjn', 'pgn'] }],
+        filters: [
+            { name: 'PJN (Tabulon)', extensions: ['pjn'] },
+            { name: 'PGN (ChuShogiLite)', extensions: ['pgn'] },
+        ],
     }).catch(() => null);
     if (!path) return;
+
+    const event = path.replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, '');
+    if (/\.pgn$/i.test(path)) {
+        // La notation occidentale demande le moteur : seul play.js peut la
+        // produire. S'il ne sait pas — jeu sans SFEN, coup non traduisible —
+        // on le dit et on n'ecrit rien, plutot que de livrer sous l'extension
+        // .pgn un fichier que le destinataire ne relira pas.
+        const data = await AskWesternMoves();
+        if (!data || !data.moves || data.moves.some(mv => !mv || mv === '?')) {
+            // Ecrire sous l'extension .pgn un fichier que le destinataire ne
+            // relira pas serait pire que de refuser.
+            console.warn('[history]', t('history.noPgn'));
+            // Pas de banniere dans cette fenetre : le titre de la fenetre
+            // porte le message le temps qu'il soit lu, puis reprend sa valeur.
+            const previous = document.title;
+            document.title = t('history.noPgn');
+            setTimeout(() => { document.title = previous; }, 6000);
+            return;
+        }
+        const pgn = BuildPGN(data.moves, data.sfen, {
+            event, white, black, result, tsume,
+            variant: gameName === 'chu-shogi' ? 'chu' : gameName,
+        });
+        await tRpc.call('save_text_file', path, pgn)
+            .catch(e => console.warn('[history] save book (pgn) failed:', e));
+        return;
+    }
 
     // Tags d'identification. Trois choix assumes :
     //  - [Event] = le nom que l'utilisateur vient de donner au fichier. C'est
@@ -122,7 +169,7 @@ async function SavePJN() {
     const human = t('common.human');
     const named = (white || black) && !(white === human && black === human);
     const text  = BuildPJN(gameName, moveStrings, initialBoard, null, {
-        event:  path.replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, ''),
+        event,
         white:  named ? white : null,
         black:  named ? black : null,
         result,

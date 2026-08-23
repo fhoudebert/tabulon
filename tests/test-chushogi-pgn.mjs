@@ -27,7 +27,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
          ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution, BuildPJN, SideWithoutKing, IsTsume,
-         BuildWesternMove, SfenToPgnFen }
+         BuildWesternMove, SfenToPgnFen, BuildPGN }
     from '../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
@@ -431,10 +431,92 @@ console.log('Écrire la notation occidentale : l\'aller-retour');
 
     // Le tag [FEN] : cinq champs, trait inchangé.
     const sfen = 'board w 6f 2';
-    ok(SfenToPgnFen(sfen) === 'board w 6f 0 1', '[FEN] à cinq champs, « 0 1 » ajoutés');
-    ok(PgnFenToJocly(SfenToPgnFen(sfen)).split(' ')[1] === 'w',
-       'et le trait revient inchangé par le chemin inverse');
+    ok(SfenToPgnFen(sfen) === 'board b 6f 0 1',
+       '[FEN] à cinq champs, « 0 1 » ajoutés, trait inversé depuis le SFEN');
+    // Trois conventions : SFEN « b » = sente, jocly note ce trait « w », et le
+    // PGN de l'applet écrit l'inverse de son SFEN — donc PGN == jocly.
+    ok(PgnFenToJocly(SfenToPgnFen(sfen)).split(' ')[1] === 'b',
+       'et l\'aller-retour redonne le trait de jocly');
     ok(SfenToPgnFen('board w - - 0 1') === null, 'un FEN jocly à six champs n\'est pas converti');
+}
+
+console.log('Le fichier exporté se relit — par Tabulon, et comme l\'applet l\'écrit');
+{
+    // Boucle complète : lire le fichier de l'applet, le rejouer, le RÉÉCRIRE
+    // entièrement, puis relire le résultat. Le tour de force n'est pas d'y
+    // arriver mais de tomber sur le fichier de départ : c'est ce qui prouve
+    // que l'export est lisible par le destinataire et pas seulement par nous.
+    const src = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.pgn'), 'utf-8');
+    const tg = {};
+    for (const line of src.split('\n')) {
+        const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+        if (m) tg[m[1]] = m[2].replace(/^"|"$/g, '');
+    }
+    const tokens = ExtractMoves(src);
+    const match = await Jocly.createMatch('chu-shogi');
+    const sfen0 = BookFen(tg);
+    await match.load({ game: 'chu-shogi', initialBoard: PgnFenToJocly(sfen0),
+                       playedMoves: [], tsume: true });
+
+    const written = [];
+    for (const token of tokens) {
+        const legal = await match.getPossibleMoves();
+        const naturals = await match.getMoveString(legal);
+        const letterAt = boardLetters(await match.getBoardState());
+        const chosen = await westernResolver(match)(token);
+        const idx = legal.findIndex(m => m === chosen);
+        const mine = { ...ParseNaturalMove(naturals[idx]),
+                       from: await fromSquare(match, chosen, naturals[idx]) };
+        const letter = mine.from ? letterAt(mine.from) : null;
+        const rivals = [];
+        for (let i = 0; i < legal.length; i++) {
+            if (i === idx) continue;
+            const other = ParseNaturalMove(naturals[i]);
+            if (!other || other.steps.length !== mine.steps.length) continue;
+            if (!other.steps.every((st, k) => st.square === mine.steps[k].square)) continue;
+            if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
+                rivals.push(other.from);
+        }
+        written.push(BuildWesternMove(mine, letter, rivals));
+        await match.playMove(chosen);
+    }
+
+    const out = BuildPGN(written, await (async () => {
+        const m2 = await Jocly.createMatch('chu-shogi');
+        await m2.load({ game: 'chu-shogi', initialBoard: PgnFenToJocly(sfen0), playedMoves: [], tsume: true });
+        return m2.getBoardState('sfen');
+    })(), { event: 'C22', variant: 'chu', tsume: true });
+
+    // 1. Les tags que l'applet attend.
+    for (const tag of ['[Variant "chu"]', '[SetUp "1"]', '[FEN "'])
+        ok(out.includes(tag), 'tag présent : ' + tag);
+    ok(/\[FEN "[^"]+ [bw] \S+ 0 1"\]/.test(out), '[FEN] à cinq champs, comme l\'applet l\'écrit');
+    ok(out.trimEnd().endsWith('*'), 'le texte des coups se termine par le marqueur de partie inachevée');
+
+    // 2. Le [FEN] écrit est celui du fichier d'origine.
+    const outTags = {};
+    for (const line of out.split('\n')) {
+        const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+        if (m) outTags[m[1]] = m[2].replace(/^"|"$/g, '');
+    }
+    ok(BookFen(outTags) === BookFen(tg),
+       'la position exportée est exactement celle du fichier lu');
+
+    // 3. Les coups aussi, jeton pour jeton.
+    ok(ExtractMoves(out).join(' ') === tokens.join(' '),
+       `${ExtractMoves(out).length} coups identiques à l'original`);
+    ok(MoveFormat(ExtractMoves(out)) === 'western', 'et reconnus comme occidentaux à la relecture');
+    ok(IsTsume(out, outTags), 'la marque {Tsume} survit à l\'aller-retour');
+
+    // 4. Numérotation : le numéro sur le coup des Blancs, « 1... » si les
+    //    Noirs commencent. Ici les Blancs commencent.
+    ok(/\{Tsume\} 1\. \S+ \S+ 2\. /.test(out),
+       'numérotation par paires — ' + out.split('\n\n')[1].slice(0, 34));
+    // SFEN « w » -> PGN « b » : ce sont les Noirs qui ouvrent, et leur
+    // premier coup porte « 1... », seule occurrence de cette forme.
+    const black = BuildPGN(['a1', 'b2'], 'board w - 1', {});
+    ok(black.includes('[FEN "board b - 0 1"]') && black.includes('1... a1'),
+       'et « 1... » quand les Noirs ouvrent — ' + black.split('\n\n')[1].trim());
 }
 
 console.log('');
