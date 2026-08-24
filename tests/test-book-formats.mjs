@@ -658,6 +658,25 @@ console.log('Test 22 - le chancelier, « C » ailleurs et « M » chez jocly');
        'mais l\'alias ne rend pas les pieces interchangeables');
 }
 
+console.log('Test 23 - le pion nomme (xiangqi de PyChess, shogi occidentalise)');
+{
+    // Aux echecs le pion n'est jamais nomme : « e4 ». PyChess ecrit « Pg6 »
+    // pour le xiangqi, et le shogi occidentalise « P-4d ». Sans « P » parmi
+    // les lettres de piece, ces jetons ne se lisaient pas du tout — et comme
+    // la detection exige que TOUS se lisent, une seule poussee de pion faisait
+    // retomber la partie entiere sur la resolution floue.
+    ok(ParseSanMove('Pg6')?.piece === 'P', '« Pg6 » nomme son pion');
+    ok(ParseSanMove('e4')?.piece === '', 'et « e4 » n\'en nomme toujours pas');
+
+    // Deux vraies parties de PyChess, l'une avec des poussees de pion.
+    for (const name of ['fixtures-xiangqi-pychess-1.pgn', 'fixtures-xiangqi-pychess-2.pgn']) {
+        const moves = ExtractMoves(fixture(name));
+        ok(moves.length > 30, `${name} : ${moves.length} coups extraits`);
+        ok(moves.every(mv => ParseSanMove(mv)), 'tous se lisent');
+        ok(MoveFormat(moves) === 'san', 'et la partie est reconnue comme du SAN');
+    }
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

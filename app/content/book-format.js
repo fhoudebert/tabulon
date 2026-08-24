@@ -1049,7 +1049,12 @@ export function ParseSanMove(token) {
     const drop = /^([A-Z])[@*]([a-o][0-9]{1,2})[+#]?$/.exec(t);
     if (drop) return { castle: null, drop: true, piece: drop[1], fromFile: null, fromRank: null,
                        capture: false, square: drop[2], promotion: null };
-    const m = /^([KQRBNACMEHJ])?([a-o])?([0-9]{1,2})?(x)?([a-o][0-9]{1,2})(?:=([A-Z]))?[+#]?$/.exec(t);
+    // « P » figure parmi les lettres de piece : aux echecs le pion n'est jamais
+    // nomme, mais le xiangqi de PyChess ecrit « Pg6 » et le shogi occidentalise
+    // « P-4d ». Sans lui, ces coups-la ne se lisent pas du tout — et comme la
+    // detection exige que TOUS les jetons se lisent, une seule poussee de pion
+    // faisait retomber la partie entiere sur la resolution floue.
+    const m = /^([KQRBNACMEHJP])?([a-o])?([0-9]{1,2})?(x)?([a-o][0-9]{1,2})(?:=([A-Z]))?[+#]?$/.exec(t);
     if (!m) return null;
     // Un pion qui prend s'ecrit « exf5 » : la lettre de tete est sa COLONNE de
     // depart, pas une piece. Le groupe 1 n'a capture que des majuscules, donc

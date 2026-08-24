@@ -1,0 +1,21 @@
+Analyse de l'ordinateurFEN & PGN
+FEN
+Télécharger la PGN
+Copier l'UCI/USI
+Image PNG
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/NR48qcv6"]
+[Date "2023.09.25"]
+[Round "-"]
+[White "Fairy-Stockfish"]
+[Black "Shogi_Harbour"]
+[Result "1-0"]
+[TimeControl "300+3"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Xiangqi"]
+[FEN "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"]
+[SetUp "1"]
+
+1. Hc3 Pc6 2. Ce3 Hc8 3. Hg3 Cb4 4. Pg5 Ege8 5. Ra2 Cg8 6. Rh1 Cxg5 7. Ei3 Cg6 8. Pe5 Hf9 9. Rf2 Ra9 10. Pe6 Pxe6 11. Rh5 Cb7 12. Rf8 Ce7 13. Hf5 Cxe3 14. Cxe3 Rh10 15. Rxh10 Hxh10 16. He4 Rh9 17. Cxe6+ Ade9 18. Rf7 Hf9 19. Pc5 Pxc5 20. Rc7 Rh5 21. Rxc8 Rxf5 22. Rxc10# 1-0
+
