@@ -6,7 +6,7 @@
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
 import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel,
-         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves, VariantFen, FairyVariantAlias } from '../app/content/book-format.js';
+         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves, VariantFen, FairyVariantAlias, ParseWxfMove, WxfMatches, MoveFormat } from '../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -534,6 +534,38 @@ console.log('Test 18 - PGN de variantes (PyChess, chessvariants)');
        'et un FEN deja jocly ne bouge pas : la conversion est idempotente');
     ok(VariantFen('board w - - 0 1', 'shogi') === 'board w - - 0 1',
        'un FEN a six champs n\'est pas retouche');
+}
+
+console.log('Test 19 - notation WXF du xiangqi');
+{
+    // Elle est ecrite DU POINT DE VUE DU JOUEUR, et c'est ce qui la rend
+    // intraduisible sans connaitre le trait : la colonne 2 des Rouges et la
+    // colonne 2 des Noirs sont a l'oppose du plateau.
+    ok(MoveFormat(['H2+3', 'C2=5', 'P7+1']) === 'wxf', 'reconnue en demi-largeur');
+    ok(MoveFormat(['\uff23\uff12\uff1d\uff15', '\uff28\uff18\uff0b\uff17']) === 'wxf',
+       'et en pleine largeur, la forme des archives chinoises');
+    ok(MoveFormat(['Ch2', 'Ae6']) === 'western', 'un SAN de variante n\'est pas pris pour du WXF');
+
+    const p = ParseWxfMove('\uff23\uff12\uff1d\uff15');
+    ok(p && p.piece === 'C' && p.file === 2 && p.dir === '=' && p.num === 5,
+       'les chiffres pleine largeur sont ramenes a l\'ASCII');
+
+    // Les colonnes se comptent depuis la droite du camp au trait : la meme
+    // « colonne 2 » designe deux colonnes opposees selon le camp.
+    ok(WxfMatches(ParseWxfMove('C2=5'), 'h2', 'e2', 'C', true, 9),
+       'Rouge : colonne 2 = la 8e depuis la gauche');
+    ok(WxfMatches(ParseWxfMove('C2=5'), 'b7', 'e7', 'c', false, 9),
+       'Noir : la meme colonne 2 est la 2e depuis la gauche');
+    ok(!WxfMatches(ParseWxfMove('C2=5'), 'h2', 'e2', 'c', false, 9),
+       'et la casse de la lettre doit s\'accorder au camp');
+
+    // Le dernier chiffre change de SENS selon la piece.
+    ok(WxfMatches(ParseWxfMove('P7+1'), 'c3', 'c4', 'P', true, 9),
+       'pion : « +1 » est un nombre de rangees');
+    ok(WxfMatches(ParseWxfMove('H2+3'), 'h0', 'g2', 'H', true, 9),
+       'cheval : « +3 » est la colonne d\'arrivee');
+    ok(!WxfMatches(ParseWxfMove('H2+3'), 'h0', 'g2', 'H', false, 9),
+       'et « + » avance dans le sens du camp, pas du plateau');
 }
 
 console.log('');

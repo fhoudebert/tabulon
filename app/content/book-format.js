@@ -901,6 +901,93 @@ export function VariantFen(fen, game) {
     return text;
 }
 
+// ── Xiangqi : la notation WXF ────────────────────────────────────────────────
+//
+// « H2+3 », « C2=5 » — et en pleine largeur « Ｈ２＋３ », qui est la forme des
+// archives chinoises. Elle ne ressemble a aucune autre notation d'echecs, pour
+// une raison de fond : elle est ecrite DU POINT DE VUE DU JOUEUR.
+//
+//   - les colonnes se comptent depuis la DROITE DU CAMP AU TRAIT. La colonne 2
+//     des Rouges et la colonne 2 des Noirs sont a l'oppose du plateau ;
+//   - « + » avance, « − » recule, toujours relativement au camp — donc dans
+//     des sens opposes sur le plateau ;
+//   - le dernier chiffre change de SENS selon la piece : pour le pion, le
+//     char, le canon et le general, c'est un NOMBRE DE RANGEES parcourues ;
+//     pour le mandarin, le cheval et l'elephant, qui se deplacent en diagonale,
+//     c'est la COLONNE d'arrivee.
+//
+// Aucun de ces trois points ne se devine, et se tromper sur l'un donne un coup
+// legal mais faux — la faute silencieuse habituelle. La lecture s'appuie donc
+// sur le parseur de reference de wukong-xiangqi (Code Monkey King), dont les
+// regles sont reprises ici telles quelles.
+
+const WXF_PIECES = { P: 'P', A: 'A', E: 'E', H: 'H', C: 'C', R: 'R', K: 'K' };
+// Les chiffres pleine largeur des archives chinoises, ramenes a l'ASCII.
+const WXF_WIDE = { '\uff10': '0', '\uff11': '1', '\uff12': '2', '\uff13': '3', '\uff14': '4',
+                   '\uff15': '5', '\uff16': '6', '\uff17': '7', '\uff18': '8', '\uff19': '9',
+                   '\uff0b': '+', '\uff1d': '=', '\uff0d': '-', '\u2212': '-',
+                   '\uff30': 'P', '\uff21': 'A', '\uff25': 'E', '\uff28': 'H',
+                   '\uff23': 'C', '\uff32': 'R', '\uff2b': 'K' };
+
+/**
+ * Un jeton WXF, ramene a ses quatre elements — ou null.
+ *
+ * { piece, file, dir, num, rank } ou `file` est la colonne de depart vue par le
+ * joueur, `dir` vaut '+', '-' ou '=', et `num` le dernier chiffre. `rank` porte
+ * le prefixe des pieces empilees (« + » devant, « - » derriere), qui remplace
+ * la colonne de depart quand deux pieces identiques occupent la meme colonne.
+ */
+export function ParseWxfMove(token) {
+    const t = String(token || '').trim().replace(/[\uff00-\uffef\u2212]/g,
+        (c) => WXF_WIDE[c] || c);
+    const m = /^([+-])?([PAEHCRK])([1-9])([+=-])([1-9])$/.exec(t);
+    if (!m) return null;
+    return { rank: m[1] || null, piece: WXF_PIECES[m[2]], file: +m[3], dir: m[4], num: +m[5] };
+}
+
+// La colonne du joueur, ramenee a l'index de jocly (0 a gauche). Les Rouges
+// comptent depuis leur droite, qui est la droite du plateau ; les Noirs depuis
+// la leur, qui est la gauche.
+function WxfFile(n, red, files) { return red ? files - n : n - 1; }
+
+/**
+ * Le jeton decrit-il le coup qui va de `from` a `to` ?
+ *
+ * `from`/`to` sont des cases jocly (« c0 », « e2 »), `letter` la lettre du
+ * plateau a la case de depart, et `red` dit si le camp au trait est celui des
+ * majuscules. La geometrie est passee en parametre plutot que codee en dur :
+ * les regles valent pour un plateau de xiangqi, mais rien n'oblige a en figer
+ * les dimensions ici.
+ */
+export function WxfMatches(parsed, from, to, letter, red, files) {
+    if (!parsed || !from || !to || !letter) return false;
+    if (letter.toUpperCase() !== parsed.piece) return false;
+    if ((letter === letter.toUpperCase()) !== !!red) return false;
+    const width = files || 9;
+    const fileOf = (sq) => sq.charCodeAt(0) - 97;
+    const rankOf = (sq) => parseInt(sq.slice(1), 10);
+    const forward = red ? 1 : -1;
+
+    // Sans prefixe, la colonne de depart doit correspondre. Avec prefixe, deux
+    // pieces se partagent la colonne et c'est l'appelant qui tranche entre
+    // elles — on ne verifie alors que l'arrivee.
+    if (!parsed.rank && fileOf(from) !== WxfFile(parsed.file, red, width)) return false;
+
+    if (parsed.dir === '=') {
+        return rankOf(to) === rankOf(from)
+            && fileOf(to) === WxfFile(parsed.num, red, width);
+    }
+    const step = parsed.dir === '+' ? forward : -forward;
+    if ('PRCK'.includes(parsed.piece)) {
+        // Deplacement en ligne : le chiffre est un nombre de rangees.
+        return fileOf(to) === fileOf(from) && rankOf(to) - rankOf(from) === step * parsed.num;
+    }
+    // Deplacement en diagonale : le chiffre est la colonne d'arrivee, et le
+    // signe dit seulement de quel cote de la rangee de depart on tombe.
+    return fileOf(to) === WxfFile(parsed.num, red, width)
+        && Math.sign(rankOf(to) - rankOf(from)) === step;
+}
+
 /**
  * Le fichier annonce-t-il un probleme de mat (tsume) ?
  *
@@ -958,6 +1045,12 @@ export function MoveFormat(tokens) {
     // refuserait un roque ou une promotion. C'est donc a l'appelant de
     // verifier que le premier coup se resout avant d'engager tout le fichier
     // dans cette lecture -- voir BookReplay dans play.js.
+    // Le WXF avant l'occidentale : « C2=5 » se lit aussi comme une piece C et
+    // une case... non, « 2=5 » n'est pas une case. Mais « P7+1 » et un SAN de
+    // variante peuvent se ressembler, et le WXF est le plus contraint des
+    // deux -- cinq caracteres, une grammaire fermee -- donc le plus sur a
+    // reconnaitre en premier.
+    if (list.every(tok => ParseWxfMove(tok))) return 'wxf';
     if (list.every(tok => ParseWesternMove(tok))) return 'western';
     return 'natural';
 }

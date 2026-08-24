@@ -15,7 +15,8 @@ import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
-         ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove } from './book-format.js';
+         ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove,
+         ParseWxfMove, WxfMatches } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -1044,6 +1045,33 @@ async function MoveFromSquares(token) {
     return found;
 }
 
+// Le coup que designe un jeton WXF (xiangqi), ou null.
+//
+// La notation est ecrite du point de vue du joueur : colonnes comptees depuis
+// sa droite, « + » vers l'avant. Le camp au trait est donc indispensable pour
+// la lire, et c'est le moteur qui le donne — pas le fichier.
+async function MoveFromWxf(token) {
+    const parsed = ParseWxfMove(token);
+    if (!parsed) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    const state = await joclyMatch.getBoardState();
+    const letterAt = BoardLetters(state);
+    const width = (state.split(' ')[0].split('/')[0].match(/\d+|[A-Za-z]/g) || [])
+        .reduce((n, tok2) => n + (/^\d+$/.test(tok2) ? parseInt(tok2, 10) : 1), 0) || 9;
+    const red = (await joclyMatch.getTurn()) === Jocly.PLAYER_A;
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        const m = /^([a-z]\d{1,2})([a-z]\d{1,2})$/.exec(naturals[i]);
+        if (!m) continue;
+        if (!WxfMatches(parsed, m[1], m[2], letterAt(m[1]), red, width)) continue;
+        if (found) { console.warn('[play] WXF : jeton ambigu', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
 // Le coup que designe un jeton USI dans la position courante, ou null.
 //
 // On NE PASSE PAS par pickMove : celui-ci appelle GetBestMatchingMove, qui
@@ -1493,6 +1521,7 @@ async function BookReplay(book) {
         const format = book.kif ? 'kif' : MoveFormat(book.moves);
         let exact = null;
         if (format === 'kif') exact = MoveFromSquares;
+        else if (format === 'wxf') exact = MoveFromWxf;
         else if (format === 'usi') exact = MoveFromUSI;
         else if (format === 'western' && await MoveFromWestern(book.moves[0]).catch(() => null))
             exact = MoveFromWestern;
