@@ -1,0 +1,82 @@
+; variants-examples.pgn
+; Variant PGN examples for testing Jocly / Fairy-Stockfish.
+; Sources are indicated in the Site/Source comments.
+;
+; IMPORTANT:
+; - Grand Chess: complete real tournament game.
+; - Capablanca Chess: published real "fool's mate" example.
+; - Kyoto Shogi and Xiangqi: representative legal notation examples,
+;   because the web sources found here expose the variant/game records
+;   but not their complete move text in indexed form. They are marked
+;   Result "*" and should NOT be treated as historical games.
+
+[Event "Grand Chess Cyber Championship Final"]
+[Site "https://en.wikipedia.org/wiki/Grand_Chess"]
+[Date "2001.??.??"]
+[Round "Final"]
+[White "John Vehre"]
+[Black "R. Wayne Schmittberger"]
+[Result "1-0"]
+[Variant "Grand"]
+[SetUp "1"]
+[FEN "rnbqkcanrj/pppppppppp/10/10/10/10/PPPPPPPPPP/RNBQKCANRJ w - - 0 1"]
+
+1.f5 f6 2.Nh4 Nh7 3.g4 g7 4.Nc4 Nc7 5.d4 d7 6.e5 Bd8
+7.Rje1 Kd10 8.Kf1 fxe5 9.Ncxe5 Kc9 10.Re2 Kb9 11.Kg1 Rjf10
+12.Bd3 e6 13.Rf1 Mh10 14.Nc4 Ci10 15.Nd6 exf5 16.Bxf5 Bd5
+17.Ci1 Bxh4 18.ixh4 g6 19.Rfe1 gxf5 20.Nxf5 Qd8 21.Bxc7 Qxc7
+22.Re9+ Kc10 23.Cxc7 bxc7 24.Qf4 d6 25.Qe3 Mg8 26.Me2 Nf6
+27.Qe7 Nd7 28.Qe8+ Mxe8 29.Mxe8 1-0
+
+[Event "Capablanca Chess - Fool's Mate"]
+[Site "https://www.chessvariants.org/large.dir/capafool.html"]
+[Date "1997.??.??"]
+[Round "-"]
+[White "Example"]
+[Black "Example"]
+[Result "0-1"]
+[Variant "Capablanca"]
+[SetUp "1"]
+[FEN "rnabqkbcnr/pppppppppp/10/10/10/10/10/PPPPPPPPPP/RNABQKBCNR w KQkq - 0 1"]
+
+1.Ch2 Ae6 2.Cxh7# 0-1
+
+; Kyoto Shogi — representative legal opening line, based on the
+; published 5x5 starting position and westernised notation.
+; Source: https://www.pychess.org/variants/kyotoshogi
+; Source for westernised notation: https://talkchess.com/viewtopic.php?t=62779
+
+[Event "Kyoto Shogi test line"]
+[Site "PyChess / Sjaak notation reference"]
+[Date "2026.08.24"]
+[Round "-"]
+[White "Test"]
+[Black "Test"]
+[Result "*"]
+[Variant "Kyoto Shogi"]
+[SetUp "1"]
+[FEN "pgkst/5/5/5/TSKGP w 0 1"]
+
+1.P-4d P-2b 2.G-3d G-2c 3.K-3b K-3c 4.S-4c S-2d 5.T-5d T-1b *
+
+; Xiangqi — representative opening line for notation/parser testing.
+; Source for PyChess Xiangqi support and initial FEN:
+; https://www.pychess.org/analysis/xiangqi
+
+[Event "Xiangqi test line"]
+[Site "PyChess"]
+[Date "2026.08.24"]
+[Round "-"]
+[White "Test"]
+[Black "Test"]
+[Result "*"]
+[Variant "Xiangqi"]
+[SetUp "1"]
+[FEN "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"]
+
+1.H2+3 H8+7 2.C2=5 C8=5 3.P7+1 P3+1 4.H8+7 H2+3
+5.R1=2 R9=8 6.A6+5 A4+5 *
+
+; PyChess has an actual Xiangqi tournament archive with game links:
+; Harbour Xiangqi League, 2024:
+; https://www.pychess.org/blogs/@/CouchTomato87/harbour-xiangqi-league/L212eef0

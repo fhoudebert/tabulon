@@ -6,7 +6,7 @@
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
 import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel,
-         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves } from '../app/content/book-format.js';
+         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves, VariantFen, FairyVariantAlias } from '../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -497,6 +497,43 @@ console.log('Test 17 - retrait des coups (bouton « Essayer »)');
        'un corps de coups sans tags devant ne produit rien : il n\'y a pas de position a ouvrir');
     ok(!/1\. e4/.test(StripBookMoves('[Event "x"]\n\n1. e4 { note } e5')),
        'les commentaires partent avec les coups');
+}
+
+console.log('Test 18 - PGN de variantes (PyChess, chessvariants)');
+{
+    // Les exportateurs de variantes ecrivent le nom du jeu en toutes lettres
+    // la ou Fairy-Stockfish le colle. Sans alias, le jeu ne se resout pas et
+    // le fichier n'ouvre rien.
+    ok(FairyVariantAlias('Kyoto Shogi') === 'kyotoshogi', '« Kyoto Shogi » -> kyotoshogi');
+    ok(FairyVariantAlias('Grand') === 'grand' && FairyVariantAlias('Capablanca') === 'capablanca',
+       'les noms deja colles passent inchanges');
+    ok(FairyVariantAlias('Xiangqi') === 'xiangqi', 'et ceux qui coincident aussi');
+
+    // XIANGQI : le plateau est le meme, les LETTRES non. PyChess ecrit le
+    // cavalier « n » et l'elephant « b » (convention occidentale), jocly « h »
+    // et « e ». Un FEN parfaitement valide etait refuse -- « FEN invalid board
+    // spec n » -- pour cette seule raison.
+    const py = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1';
+    const jocly = VariantFen(py, 'xiangqi');
+    ok(jocly.startsWith('rheakaehr/'), 'cavaliers et elephants traduits — ' + jocly.split('/')[0]);
+    ok(jocly.endsWith(' w - - 0 1'), 'les autres champs sont intacts');
+    ok(VariantFen(py, 'classic-chess') === py, 'et rien n\'est touche pour un autre jeu');
+    ok(VariantFen(jocly, 'xiangqi').startsWith('rheakaehr/'),
+       'la conversion est idempotente : un FEN deja jocly ne bouge pas');
+
+    // Les shogi a reserve : « plateau trait 0 1 » est un SFEN dont le champ de
+    // main a ete omis, avec le trait dans la convention du PGN.
+    // KYOTO SHOGI : chaque piece a deux faces et se retourne a chaque coup.
+    // PyChess donne une lettre par face (T = tokin, G = or), jocly ecrit la
+    // face « promue » de la lance et du cavalier. Meme retournement, deux
+    // facons de le nommer -- sans la traduction, le FEN se charge a moitie et
+    // il ne reste qu'un pion sur le plateau.
+    ok(VariantFen('pgkst/5/5/5/TSKGP w 0 1', 'kyoto-shogi') === 'p+nks+l/5/5/5/+LSK+NP b - 1',
+       'lettres traduites, main recomposee et trait inverse');
+    ok(VariantFen('p+nks+l/5/5/5/+LSK+NP b - 1', 'kyoto-shogi') === 'p+nks+l/5/5/5/+LSK+NP b - 1',
+       'et un FEN deja jocly ne bouge pas : la conversion est idempotente');
+    ok(VariantFen('board w - - 0 1', 'shogi') === 'board w - - 0 1',
+       'un FEN a six champs n\'est pas retouche');
 }
 
 console.log('');

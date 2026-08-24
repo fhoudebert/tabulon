@@ -13,7 +13,7 @@ import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
-import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen,
+import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
@@ -1458,7 +1458,7 @@ async function BookReplay(book) {
         if (book.initialBoard) {
             book.initialBoard = PgnFenToJocly(book.initialBoard)
                 || PgnFenToShogiSfen(book.initialBoard)
-                || book.initialBoard;
+                || VariantFen(book.initialBoard, gameName);
         }
         // `tsume` accompagne la position partout ou elle est rechargee : la
         // fenetre Historique fait revenir play.js a la position de depart pour

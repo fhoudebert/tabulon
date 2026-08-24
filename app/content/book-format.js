@@ -320,6 +320,16 @@ export function BookVariant(tags) {
 // orthodoxes, la ou Fairy-Stockfish dit "chess".
 const VARIANT_ALIASES = {
     'standard': 'chess',
+    // Orthographes des exportateurs de variantes : PyChess et chessvariants
+    // ecrivent le nom du jeu en toutes lettres, Fairy-Stockfish le colle.
+    'kyoto shogi': 'kyotoshogi',
+    'mini shogi': 'minishogi',
+    'tori shogi': 'torishogi',
+    'chu shogi': 'chu',
+    'los alamos': 'losalamos',
+    'grand chess': 'grand',
+    'capablanca chess': 'capablanca',
+    'shako chess': 'shako',
     'from position': 'chess',
     'classical': 'chess',
     'chess960': 'fischerandom',
@@ -829,6 +839,66 @@ export function ParseKif(text) {
         comments,
         tsume: comments.some(c => /tsume/i.test(c)),
     };
+}
+
+// Lettres de pieces du xiangqi : convention OCCIDENTALE (PyChess, WXF, la
+// plupart des sites) contre celle de jocly.
+//
+//   PyChess   rnbakabnr   n = knight (cavalier), b = bishop (elephant)
+//   jocly     rheakaehr   h = horse,             e = elephant
+//
+// Le plateau est le meme, les lettres non : un FEN de PyChess est refuse par
+// jocly (« FEN invalid board spec n ») alors que la position est parfaitement
+// valide. La correspondance est bijective et ne touche qu'a deux types.
+const XIANGQI_LETTERS = { n: 'h', N: 'H', b: 'e', B: 'E' };
+
+// Kyoto Shogi : chaque piece a DEUX faces et se retourne a chaque coup. Les
+// deux notations disent la meme chose autrement --
+//
+//   PyChess   TSKGP     une lettre par face : T = tokin, G = or
+//   jocly     +LSK+NP   la face « promue » de la lance et du cavalier
+//
+// Ce ne sont pas des pieces differentes mais deux facons de nommer le meme
+// retournement, et la correspondance est bijective. Sans elle, un FEN de
+// PyChess se charge a moitie -- « FEN invalid board spec g » -- en laissant un
+// plateau ou il ne reste qu'un pion.
+const KYOTO_LETTERS = { t: '+l', T: '+L', g: '+n', G: '+N' };
+
+/**
+ * Un FEN de variante, ramene a ce que le jeu Jocly vise attend — ou le FEN
+ * inchange quand il n'y a rien a faire.
+ *
+ * Deux conversions, l'une et l'autre constatees sur des fichiers reels :
+ *
+ *  - XIANGQI : les lettres ci-dessus. Seul le champ PLATEAU est touche ; les
+ *    autres champs ne portent pas de lettres de piece.
+ *
+ *  - KYOTO SHOGI et les autres shogi a reserve : un FEN a quatre champs
+ *    « plateau trait 0 1 » est un SFEN dont le champ de main a ete omis. On le
+ *    recompose, trait inverse — meme mecanique qu'au chu shogi, le [FEN] d'un
+ *    PGN etant dans la convention de jocly et le SFEN dans l'inverse.
+ */
+export function VariantFen(fen, game) {
+    const text = String(fen || '').trim();
+    if (!text) return fen;
+    const f = text.split(/\s+/);
+
+    if (game === 'xiangqi') {
+        return [f[0].replace(/[nbNB]/g, (c) => XIANGQI_LETTERS[c]), ...f.slice(1)].join(' ');
+    }
+    if (game === 'kyoto-shogi') {
+        // Traduire d'abord les lettres, normaliser la forme ensuite : les deux
+        // conversions sont independantes et un fichier peut n'avoir besoin que
+        // de l'une. Un « + » deja present protege la lettre qui suit.
+        f[0] = f[0].replace(/\+?[tTgG]/g, (c) => (c[0] === '+' ? c : KYOTO_LETTERS[c]));
+    }
+    // « plateau trait 0 1 » : quatre champs dont les deux derniers sont des
+    // nombres — la forme qu'ecrit PyChess pour les shogi sans piece en main.
+    if (/shogi/.test(String(game || '')) && f.length === 4
+        && (f[1] === 'b' || f[1] === 'w') && /^\d+$/.test(f[2]) && /^\d+$/.test(f[3])) {
+        return `${f[0]} ${f[1] === 'w' ? 'b' : 'w'} - ${f[3]}`;
+    }
+    return text;
 }
 
 /**
