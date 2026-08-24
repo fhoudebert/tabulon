@@ -664,6 +664,174 @@ export function PgnFenToShogiSfen(fen) {
 }
 
 /**
+ * Lecture d'un KIF de chu shogi — le format « kifu » japonais, celui que
+ * ChuShogiLite exporte et importe, et le seul des quatre a ne pas etre du
+ * texte latin.
+ *
+ * Ce qu'on en tire, et pourquoi c'est PLUS simple que le PGN de la meme
+ * partie : chaque coup y porte sa case de DEPART, entre parentheses
+ * (« 9十二角行 （←10十一） »). La piece nommee est donc redondante, et il n'y a
+ * ni desambiguisation a refaire ni abreviation a traduire — deux cases
+ * suffisent a designer le coup sans ambiguite. Le nom de piece est tout de
+ * meme relu, mais comme un CONTROLE : s'il contredit le plateau, le fichier
+ * est douteux et mieux vaut le dire.
+ *
+ * Coordonnees : colonnes en chiffres arabes comptees depuis la DROITE, rangees
+ * en kanji depuis le HAUT — le meme systeme que l'USI, et l'exact inverse de
+ * celui de jocly.
+ *
+ * Renvoie { board, turn, moves, tsume, comments } ou null si ce n'est pas un
+ * KIF. `moves` est une liste de « depart-arrivee » en coordonnees jocly, que
+ * l'appelant resout EXACTEMENT contre les coups legaux.
+ */
+const KIF_PIECES = {
+    '歩': 'P',
+    '仲': 'I',
+    '銅': 'C',
+    '銀': 'S',
+    '金': 'G',
+    '豹': 'F',
+    '虎': 'T',
+    '象': 'E',
+    '鳳': 'X',
+    '麒': 'O',
+    '香': 'L',
+    '反': 'A',
+    '横': 'M',
+    '竪': 'V',
+    '角': 'B',
+    '飛': 'R',
+    '馬': 'H',
+    '龍': 'D',
+    '奔': 'Q',
+    '獅': 'N',
+    '玉': 'K',
+    '成歩': '+P',
+    '成象': '+I',
+    '成横': '+C',
+    '成竪': '+S',
+    '成飛': '+G',
+    '成角': '+F',
+    '鹿': '+T',
+    '太': '+E',
+    '成奔': '+X',
+    '成獅': '+O',
+    '駒': '+L',
+    '鯨': '+A',
+    '猪': '+M',
+    '牛': '+V',
+    '成馬': '+B',
+    '成龍': '+R',
+    '鷹': '+H',
+    '鷲': '+D',
+};
+// Rangees : 一..十二, du haut vers le bas.
+const KIF_RANKS = ['\u4e00', '\u4e8c', '\u4e09', '\u56db', '\u4e94', '\u516d',
+                   '\u4e03', '\u516b', '\u4e5d', '\u5341', '\u5341\u4e00', '\u5341\u4e8c'];
+
+// « 9十二 » -> « d1 » : colonne depuis la droite, rangee depuis le haut.
+function KifSquare(file, rankKanji, size) {
+    const f = parseInt(file, 10);
+    const r = KIF_RANKS.indexOf(rankKanji);
+    if (!(f >= 1 && f <= size) || r < 0 || r >= size) return null;
+    return String.fromCharCode(97 + (size - f)) + (size - r);
+}
+
+/**
+ * Est-ce un KIF de chu shogi ? On exige le dessin du plateau (bordure « +---+ »)
+ * ET une ligne de coups « N 手目 » : le KIF du shogi orthodoxe, qui n'a ni l'un
+ * ni l'autre sous cette forme, n'est pas concerne et doit etre refuse plutot
+ * que lu de travers.
+ */
+export function IsChuKif(text) {
+    const t = String(text || '');
+    return /^\+-+\+$/m.test(t) && /\d+\s*\u624b\u76ee/.test(t);
+}
+
+export function ParseKif(text) {
+    const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+    const border = /^\+-+\+$/;
+    let i = lines.findIndex(l => border.test(l.trim()));
+    if (i < 0) return null;
+    i++;
+
+    // Le plateau : douze rangees de douze cellules de trois caracteres, un
+    // « v » devant les pieces du camp qui joue en second.
+    const rows = [];
+    for (let r = 0; r < 12; r++, i++) {
+        if (i >= lines.length) return null;
+        const body = lines[i].replace(/^\|/, '').replace(/\|[^|]*$/, '');
+        let row = '', empty = 0;
+        for (let f = 0; f < 12; f++) {
+            const cell = body.slice(f * 3, f * 3 + 3).trim();
+            if (!cell || cell === '\u30fb') { empty++; continue; }
+            const gote = cell.startsWith('v');
+            const letter = KIF_PIECES[gote ? cell.slice(1) : cell];
+            if (!letter) return null;
+            if (empty) { row += empty; empty = 0; }
+            // Majuscules = le camp qui ouvre, comme dans un SFEN.
+            row += gote ? letter.toLowerCase() : letter;
+        }
+        if (empty) row += empty;
+        rows.push(row || '12');
+    }
+    if (rows.length !== 12) return null;
+    if (i < lines.length && border.test(lines[i].trim())) i++;
+
+    // Les coups : « 1 手目 9十二角行 （←10十一） ». Les commentaires (« * … »)
+    // portent la marque {Tsume}, comme dans le PGN de l'applet.
+    const moves = [], comments = [];
+    let turn = 'b';
+    // « 11 手目一歩目 … » / « 11 手目二歩目 … » : les coups a DEUX PAS du Lion,
+    // du Faucon et de l'Aigle occupent deux lignes portant le meme numero. Les
+    // lire comme deux coups distincts donnait 31 coups la ou le PGN de la meme
+    // partie en compte 33 : le premier pas n'est pas un coup, c'est la moitie
+    // d'un coup. On les recolle sur le numero.
+    // La rangee est reconnue par la LISTE des kanji, les plus longs d'abord,
+    // et non par « un ou deux ideogrammes ». Sans cela « 1十二奔王 » se lit
+    // rangee 十 puis piece 二奔王 : la case tombe une rangee plus loin, le coup
+    // reste souvent legal, et la partie rejouee n'est plus celle du fichier --
+    // une faute silencieuse, la pire espece.
+    const RANK = '(?:' + KIF_RANKS.slice().sort((a, b) => b.length - a.length).join('|') + ')';
+    const MOVE = new RegExp('^\\s*(\\d+)\\s*\u624b\u76ee(\u4e00\u6b69\u76ee|\u4e8c\u6b69\u76ee)?'
+        + '\\s*(\\d{1,2})(' + RANK + ')([^\\s（(]*)\\s*[（(]\u2190(\\d{1,2})(' + RANK + ')[）)]');
+    let pending = null;   // premier pas en attente de son second
+    for (; i < lines.length; i++) {
+        const line = lines[i];
+        const comment = /^\s*\*\s?(.*)$/.exec(line);
+        if (comment) { comments.push(comment[1]); continue; }
+        if (/^\s*\u5f8c\u624b\u756a/.test(line)) { turn = 'w'; continue; }
+        const m = MOVE.exec(line);
+        if (!m) continue;
+        const to = KifSquare(m[3], m[4], 12);
+        const from = KifSquare(m[6], m[7], 12);
+        if (!to || !from) return null;
+        // Suffixe du nom de piece : « 成 » promeut, « 不成 » refuse
+        // explicitement. Au shogi la promotion est facultative et jocly
+        // produit les deux versions du meme deplacement : sans ce suffixe les
+        // deux correspondent et la lecture s'arrete sur une ambiguite.
+        const name = m[5] || '';
+        const promote = /\u4e0d\u6210$/.test(name) ? '=' : (/\u6210$/.test(name) ? '+' : '');
+        const second = m[2] === '\u4e8c\u6b69\u76ee';
+        if (second && pending && pending.num === m[1]) {
+            moves.push(pending.from + '-' + pending.to + '-' + to + promote);
+            pending = null;
+            continue;
+        }
+        if (pending) moves.push(pending.from + '-' + pending.to + pending.promote);
+        pending = { num: m[1], from, to, promote };
+    }
+    if (pending) moves.push(pending.from + '-' + pending.to + pending.promote);
+    return {
+        board: rows.join('/'),
+        turn,
+        moves,
+        comments,
+        tsume: comments.some(c => /tsume/i.test(c)),
+    };
+}
+
+/**
  * Le fichier annonce-t-il un probleme de mat (tsume) ?
  *
  * ChuShogiLite ne pose pas de tag : il ecrit le nom du probleme en COMMENTAIRE

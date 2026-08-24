@@ -27,7 +27,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
          ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution, BuildPJN, SideWithoutKing, IsTsume,
-         BuildWesternMove, SfenToPgnFen, BuildPGN, PgnFenToShogiSfen }
+         BuildWesternMove, SfenToPgnFen, BuildPGN, PgnFenToShogiSfen, IsChuKif, ParseKif }
     from '../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
@@ -590,6 +590,80 @@ console.log('Le [FEN] d\'un PGN de shogi (PyChess)');
     const legal = await match.getMoveString(await match.getPossibleMoves());
     ok(legal.length === 30, `${legal.length} coups légaux à la position de départ`);
     ok(legal.includes('a3-a4'), 'et ce sont bien ceux des Blancs — ' + legal.slice(0, 3).join(' '));
+}
+
+console.log('KIF : lecture et rejeu');
+{
+    // Résolution par les CASES : le KIF donne la case de départ de chaque
+    // coup, ce qui suffit à le désigner — c'est même plus simple que le PGN,
+    // où l'origine est omise et où il faut la déduire.
+    const bySquares = (match) => async (token) => {
+        const m = /^([a-l]\d{1,2}(?:-[a-l]\d{1,2})+)([+=]?)$/.exec(String(token || '').trim());
+        if (!m) return null;
+        const want = m[1].split('-');
+        const promote = m[2] === '+' ? true : (m[2] === '=' ? false : null);
+        const moves = await match.getPossibleMoves();
+        const naturals = await match.getMoveString(moves);
+        let found = null;
+        for (let i = 0; i < moves.length; i++) {
+            const p = ParseNaturalMove(naturals[i]);
+            if (!p) continue;
+            const sq = [p.from, ...p.steps.map(st => st.square)].filter(Boolean);
+            const target = sq.length === want.length ? want : want.slice(want.length - sq.length);
+            if (sq.length !== target.length || !sq.every((x, k) => x === target[k])) continue;
+            if (promote !== null && p.promote !== null && p.promote !== promote) continue;
+            if (found) return null;
+            found = moves[i];
+        }
+        return found;
+    };
+
+    for (const [name, count] of [['fixtures-chushogilite-d22.kif', 17],
+                                 ['fixtures-chushogilite-c22.kif', 33]]) {
+        const text = readFileSync(path.join(root, 'tests', name), 'utf-8');
+        ok(IsChuKif(text), `${name} : reconnu comme KIF de chu shogi`);
+        const kif = ParseKif(text);
+        ok(kif && kif.moves.length === count, `${count} coups lus (${kif?.moves.length})`);
+        ok(kif.tsume, 'le commentaire « * Tsume … » active le mode tsume');
+
+        const match = await Jocly.createMatch('chu-shogi');
+        await match.load({ game: 'chu-shogi', initialBoard: `${kif.board} ${kif.turn} -`,
+                           playedMoves: [], tsume: kif.tsume });
+        const r = await ReplayBookMoves(kif.moves, {
+            pick: (s) => match.pickMove(s).catch(() => null),
+            exact: bySquares(match),
+            play: (m) => match.playMove(m),
+        });
+        ok(r.unresolved === null && r.played === count,
+           `${r.played}/${count} coups rejoués` + (r.unresolved ? ` — bloqué sur « ${r.unresolved} »` : ''));
+    }
+
+    // Le plateau lu dans le KIF est celui du PGN de la MÊME partie : deux
+    // formats, deux chemins de lecture indépendants, un seul résultat.
+    const kif = ParseKif(readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.kif'), 'utf-8'));
+    const twin = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.pgn'), 'utf-8');
+    const twinTags = {};
+    for (const line of twin.split('\n')) {
+        const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
+        if (m) twinTags[m[1]] = m[2].replace(/^"|"$/g, '');
+    }
+    ok(kif.board === BookFen(twinTags).split(' ')[0],
+       'plateau identique à celui du PGN jumeau, octet pour octet');
+    ok(kif.moves.length === ExtractMoves(twin).length,
+       `et le même nombre de coups (${kif.moves.length})`);
+
+    // Les coups à deux pas du Lion occupent DEUX lignes sous un même numéro.
+    ok(kif.moves.filter(m => m.split('-').length === 3).length === 2,
+       'les deux coups à deux pas sont recollés, pas comptés double');
+    // La promotion est un suffixe « 成 » sur le nom de pièce ; sans elle, les
+    // deux versions du déplacement correspondent et la lecture s'arrête.
+    ok(kif.moves.some(m => m.endsWith('+')), 'la promotion est lue');
+
+    // Le KIF du shogi orthodoxe est un AUTRE dialecte — position standard
+    // déclarée par « 手合割 », coordonnées pleine largeur, parachutages,
+    // « même case ». Il doit être refusé plutôt que lu de travers.
+    const shogi = readFileSync(path.join(root, 'tests', 'fixtures-shogi-lishogi.kif'), 'utf-8');
+    ok(!IsChuKif(shogi), 'un KIF de shogi orthodoxe n\'est pas pris pour du chu');
 }
 
 console.log('');

@@ -10,6 +10,7 @@ import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
 import { Matches } from './text-search.js';
 import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
+         IsChuKif, ParseKif,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
@@ -394,6 +395,32 @@ async function OpenGameFile(text, fileName, hintGame) {
     //    qu'il contient, ce qui est deja la reponse a la question que se pose
     //    quelqu'un qui vient de le deposer ici.
     if (IsVariantsIni(text)) return OpenVariantsIni(text, fileName);
+
+    // 2 bis. KIF (kifu) de chu shogi. Il ne passe PAS par parse_pjn : ce n'est
+    //    pas du PGN, il n'a ni tags entre crochets ni coups en latin — un
+    //    plateau dessine en kanji, puis des lignes de coups. La lecture vit
+    //    dans book-format.js (module pur) ; ici on se contente de deposer le
+    //    resultat par le meme canal que la fenetre livre.
+    if (IsChuKif(text)) {
+        const kif = ParseKif(text);
+        if (!kif) return Notify(t('hub.loadFailed'));
+        const r = ResolveGame('chu-shogi', selected);
+        if (!r.game) return Notify(t('hub.loadUnknownGame'));
+        const id = 'kif-' + Date.now();
+        await store.set('fork:' + id, {
+            book: {
+                moves: kif.moves,
+                // Le plateau du KIF est deja celui d'un SFEN : trois champs
+                // suffisent, jocly reconnait la forme et pose le trait.
+                initialBoard: `${kif.board} ${kif.turn} -`,
+                kif: true,
+                tsume: kif.tsume,
+                label: (fileName || '').replace(/^.*[/\\]/, '') || 'KIF',
+            },
+        });
+        console.info('[hub] KIF de chu shogi :', kif.moves.length, 'coups');
+        return tRpc.call('new_match', r.game, null, id);
+    }
 
     // 3. PGN/PJN : on lit d'abord les tags pour savoir de quel jeu il s'agit
     //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers,

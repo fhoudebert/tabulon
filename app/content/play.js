@@ -14,6 +14,7 @@ import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen,
+         
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
@@ -1008,6 +1009,41 @@ async function WesternGame() {
     }
 }
 
+// Le coup que designe un jeton de KIF : « depart-arrivee », ou
+// « depart-passage-arrivee » pour les coups a deux pas du Lion, avec « + »
+// pour une promotion et « = » pour un refus explicite.
+//
+// Resolution par les CASES, et non par le nom de la piece : le KIF donne la
+// case de depart de chaque coup, ce qui suffit a le designer sans ambiguite --
+// c'est meme plus simple que le PGN, ou l'origine est omise. Le nom de piece
+// qui figure dans le fichier n'est donc pas necessaire ici.
+//
+// jocly n'ecrit pas la case de depart sur un coup a deux pas : on compare
+// alors les seules cases qu'il donne, passage puis arrivee.
+async function MoveFromSquares(token) {
+    const m = /^([a-l]\d{1,2}(?:-[a-l]\d{1,2})+)([+=]?)$/.exec(String(token || '').trim());
+    if (!m) return null;
+    const want = m[1].split('-');
+    const promote = m[2] === '+' ? true : (m[2] === '=' ? false : null);
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        const parsed = ParseNaturalMove(naturals[i]);
+        if (!parsed) continue;
+        const squares = [parsed.from, ...parsed.steps.map(st => st.square)].filter(Boolean);
+        const target = squares.length === want.length ? want : want.slice(want.length - squares.length);
+        if (squares.length !== target.length) continue;
+        if (!squares.every((sq, k) => sq === target[k])) continue;
+        // La promotion n'est comparee que si jocly a offert le choix.
+        if (promote !== null && parsed.promote !== null && parsed.promote !== promote) continue;
+        if (found) { console.warn('[play] KIF : jeton ambigu', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
 // Le coup que designe un jeton USI dans la position courante, ou null.
 //
 // On NE PASSE PAS par pickMove : celui-ci appelle GetBestMatchingMove, qui
@@ -1450,9 +1486,14 @@ async function BookReplay(book) {
         // coup, et on ne s'y engage que s'il se resout ; sinon on retombe sur
         // le chemin tolerant, qui reste le comportement de tous les fichiers
         // ouverts jusqu'ici.
-        const format = MoveFormat(book.moves);
+        // Un livre venu d'un KIF porte ses coups en CASES : le hub l'a dit
+        // (`book.kif`), et c'est necessaire — « e4-e5 » est aussi la notation
+        // naturelle d'un pion chez jocly, les deux formes ne se distinguent
+        // pas a la lecture du seul jeton.
+        const format = book.kif ? 'kif' : MoveFormat(book.moves);
         let exact = null;
-        if (format === 'usi') exact = MoveFromUSI;
+        if (format === 'kif') exact = MoveFromSquares;
+        else if (format === 'usi') exact = MoveFromUSI;
         else if (format === 'western' && await MoveFromWestern(book.moves[0]).catch(() => null))
             exact = MoveFromWestern;
         if (exact) console.info('[play] book: notation', format, '— résolution exacte');
