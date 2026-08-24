@@ -628,6 +628,36 @@ console.log('Test 21 - commentaires de ligne « ; … »');
     ok(moves[0] === 'f5', 'et le premier coup est bien le premier coup — ' + moves.slice(0, 3).join(' '));
 }
 
+console.log('Test 22 - le chancelier, « C » ailleurs et « M » chez jocly');
+{
+    // La piece qui combine tour et cavalier n'a pas de nom unique :
+    // chessvariants et PyChess l'appellent chancellor et l'ecrivent « C »,
+    // jocly la nomme marshall et ecrit « M ». Meme piece, meme case, deux
+    // lettres — et un FEN parfaitement valide refuse.
+    const jocly = 'rnabqkbmnr/pppppppppp/10/10/10/10/PPPPPPPPPP/RNABQKBMNR w KQkq - 0 1';
+    const foreign = jocly.replace(/[mM]/g, (c) => (c === 'M' ? 'C' : 'c'));
+    ok(VariantFen(foreign, 'capablanca-chess') === jocly,
+       'la position de depart de Capablanca fait l\'aller-retour');
+    ok(VariantFen(jocly, 'capablanca-chess') === jocly,
+       'et un FEN deja jocly ne bouge pas');
+
+    // La conversion est nominative, pas generale : « c » designe le canon au
+    // xiangqi et le chameau ailleurs. L'appliquer partout casserait plus
+    // qu'elle ne repare.
+    ok(VariantFen('1c5c1/9 w - - 0 1', 'xiangqi').includes('1c5c1'),
+       'le canon du xiangqi n\'est pas touche');
+    ok(VariantFen(foreign, 'classic-chess') === foreign,
+       'ni aucun jeu hors de la liste');
+
+    // Le meme desaccord dans les COUPS : « Ch2 » dans le fichier, « Mh1-h2 »
+    // chez jocly. Sans l'alias, une partie de Grand Chess s'arrete au premier
+    // coup de chancelier.
+    ok(SanMatches(ParseSanMove('Ci10'), 'Mi1-i10', null),
+       'le chancelier des fichiers correspond au marshall de jocly');
+    ok(!SanMatches(ParseSanMove('Ci10'), 'Qi1-i10', null),
+       'mais l\'alias ne rend pas les pieces interchangeables');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

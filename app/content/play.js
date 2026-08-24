@@ -1525,8 +1525,14 @@ async function BookReplay(book) {
             try {
                 await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: book.initialBoard, tsume: tsumeMatch });
             } catch (e) {
+                // La position est refusee : on ARRETE la. Rejouer les coups
+                // depuis la position standard n'a aucun sens -- ils ne s'y
+                // rapportent pas -- et les premiers passeraient parfois,
+                // laissant croire a un chargement partiel plutot qu'a un
+                // echec. Mieux vaut un plateau vierge et un message.
                 console.warn('[play] book: position de depart refusee:', e.message || e);
                 UpdateFooter(t('play.loadFailed'));
+                return;
             }
         }
         // La resolution des jetons (decorations, coups colles) vit dans

@@ -869,6 +869,17 @@ const XIANGQI_LETTERS = { n: 'h', N: 'H', b: 'e', B: 'E' };
 // plateau ou il ne reste qu'un pion.
 const KYOTO_LETTERS = { t: '+l', T: '+L', g: '+n', G: '+N' };
 
+// Capablanca et ses parents (Grand Chess, Gothic...) : la piece qui combine
+// tour et cavalier n'a pas de nom unique. chessvariants et PyChess l'appellent
+// CHANCELLOR et l'ecrivent « C » ; jocly la nomme MARSHALL et ecrit « M ».
+// Meme piece, meme case, deux lettres — et un FEN parfaitement valide refuse
+// (« FEN invalid board spec c »).
+//
+// L'archeveque (fou + cavalier) ne pose pas le probleme : les deux ecrivent
+// « A ». Seule cette lettre-ci differe, d'ou une table d'une seule entree
+// plutot qu'une correspondance complete qu'il faudrait tenir a jour.
+const CHANCELLOR_LETTERS = { c: 'm', C: 'M' };
+
 /**
  * Un FEN de variante, ramene a ce que le jeu Jocly vise attend — ou le FEN
  * inchange quand il n'y a rien a faire.
@@ -890,6 +901,14 @@ export function VariantFen(fen, game) {
 
     if (game === 'xiangqi') {
         return [f[0].replace(/[nbNB]/g, (c) => XIANGQI_LETTERS[c]), ...f.slice(1)].join(' ');
+    }
+    // Les jeux ou le chancelier s'ecrit « C » ailleurs et « M » chez jocly. La
+    // liste est explicite : « c » est une lettre courante (le cannon du
+    // xiangqi, le camel de certaines variantes), et une conversion appliquee
+    // au hasard casserait plus qu'elle ne repare.
+    if (game === 'capablanca-chess' || game === 'grand-chess' || game === 'gothic-chess') {
+        f[0] = f[0].replace(/[cC]/g, (ch) => CHANCELLOR_LETTERS[ch]);
+        return f.join(' ');
     }
     if (game === 'kyoto-shogi') {
         // Traduire d'abord les lettres, normaliser la forme ensuite : les deux
@@ -1054,6 +1073,11 @@ export function ParseSanMove(token) {
  * `letterAt` n'est plus consulte -- l'abreviation ecrite par jocly suffit et
  * vaut mieux (voir plus bas). Le parametre reste pour les appelants existants.
  */
+// Le meme desaccord de lettre que dans les FEN, applique aux COUPS : le
+// fichier ecrit « Ch2 » (chancellor), jocly « Mh1-h2 » (marshall). La table
+// est la meme, dans l'autre sens.
+const SAN_PIECE_ALIASES = { C: 'M' };
+
 export function SanMatches(parsed, natural, letterAt) {
     if (!parsed) return false;
     const text = String(natural || '').trim();
@@ -1091,7 +1115,8 @@ export function SanMatches(parsed, natural, letterAt) {
     // voit refuse. L'abreviation, elle, vient de la meme source que le reste
     // de la chaine.
     const abbrev = m[1] || '';
-    if (abbrev) return abbrev === parsed.piece;
+    if (abbrev) return abbrev === parsed.piece
+        || abbrev === SAN_PIECE_ALIASES[parsed.piece];
     if (parsed.piece) return false;
     // Ni l'un ni l'autre ne nomme la piece : c'est un pion des deux cotes, et
     // il n'y a rien de plus a verifier. Confirmer par le plateau serait une

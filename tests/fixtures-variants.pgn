@@ -3,7 +3,12 @@
 ; Sources are indicated in the Site/Source comments.
 ;
 ; IMPORTANT:
-; - Grand Chess: complete real tournament game.
+; - Grand Chess: complete real tournament game. FEN corrected: the original
+;   had 8 ranks and all pieces on rank 1, which is not the Grand Chess setup
+;   (10x10, rooks on the corners of ranks 1 and 10, pieces on ranks 2 and 9).
+; - Capablanca: FEN corrected too - the original had 9 ranks on an 8-rank
+;   board. The chancellor is written "C" here, as chessvariants and PyChess
+;   do; Jocly writes "M" and Tabulon converts (see VariantFen).
 ; - Capablanca Chess: published real "fool's mate" example.
 ; - Kyoto Shogi and Xiangqi: representative legal notation examples,
 ;   because the web sources found here expose the variant/game records
@@ -19,7 +24,7 @@
 [Result "1-0"]
 [Variant "Grand"]
 [SetUp "1"]
-[FEN "rnbqkcanrj/pppppppppp/10/10/10/10/PPPPPPPPPP/RNBQKCANRJ w - - 0 1"]
+[FEN "r8r/1nbqkmabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKMABN1/R8R w - - 0 1"]
 
 1.f5 f6 2.Nh4 Nh7 3.g4 g7 4.Nc4 Nc7 5.d4 d7 6.e5 Bd8
 7.Rje1 Kd10 8.Kf1 fxe5 9.Ncxe5 Kc9 10.Re2 Kb9 11.Kg1 Rjf10
@@ -37,7 +42,7 @@
 [Result "0-1"]
 [Variant "Capablanca"]
 [SetUp "1"]
-[FEN "rnabqkbcnr/pppppppppp/10/10/10/10/10/PPPPPPPPPP/RNABQKBCNR w KQkq - 0 1"]
+[FEN "rnabqkbcnr/pppppppppp/10/10/10/10/PPPPPPPPPP/RNABQKBCNR w KQkq - 0 1"]
 
 1.Ch2 Ae6 2.Cxh7# 0-1
 
