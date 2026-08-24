@@ -94,8 +94,10 @@ const mockTauri = {
             const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
             if (m) tags[m[1]] = m[2].replace(/^"|"$/g, '');
           }
-          out.push({ label: '', text: blocks[i] + '\n\n' + (blocks[i + 1] || ''), tags });
-          i += 2;
+          let j = i + 1;
+          while (j < blocks.length && !blocks[j].startsWith('[')) j++;
+          out.push({ label: '', text: [blocks[i], ...blocks.slice(i + 1, j)].join('\n\n'), tags });
+          i = j;
         }
         return out;
       }

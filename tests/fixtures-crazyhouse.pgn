@@ -1,0 +1,60 @@
+[Event "Monthly Crazyhouse Arena"]
+[Site "https://lichess.org/mVzJAzOL"]
+[Date "2022.04.26"]
+[Round "-"]
+[White "SewastianMoerenteich"]
+[Black "LivingSoul17"]
+[Result "0-1"]
+[GameId "mVzJAzOL"]
+[UTCDate "2022.04.26"]
+[UTCTime "21:12:38"]
+[WhiteElo "1718"]
+[BlackElo "1624"]
+[WhiteRatingDiff "-7"]
+[BlackRatingDiff "+7"]
+[WhiteBerserk "true"]
+[Variant "Crazyhouse"]
+[TimeControl "300+0"]
+[Termination "Normal"]
+[Annotator "lichess.org"]
+
+1. d4 b6 2. e4 Bb7 3. Nf3 e6 4. Bd3 d6 5. Nc3 Nd7 6. Be3 Ngf6 7. O-O Be7 8. Qe2 Ng4 9. h3 Nxe3 10. Qxe3 e5 11. N@h5 exd4 12. Qxd4 B@f6 13. Nxf6+ Bxf6 14. Qe3 P@d4 15. Nxd4 O-O 16. P@f4 N@b4 17. P@g5 Nxd3 18. cxd3 Bxd4 19. Qxd4 B@c5 20. Qc4 N@d2 21. Qa4 Nxf1 22. Rxf1 a5 23. N@h5 g6 24. B@g7 Re8 25. N@f6+ Nxf6 26. Nxf6+ Kxg7 27. Nxe8+ Qxe8 28. B@f6+ Kf8 29. R@h8+ N@g8 30. Qxe8+ Kxe8 31. Rxg8+ Kd7 32. Q@e7+ Kc6 33. N@d5 B@d8 34. N@e5+ dxe5 35. Rxd8 Bxe7 36. Nxe7+ Kc5 37. B@d6+ cxd6 38. B@a3+ B@b4 39. Bxb4+ axb4 40. fxe5 bxc3 41. B@a3+ B@b4 42. Bxb4+ Kxb4 43. B@a3+ Kb5 44. P@c4+ Ka6 45. Rxa8+ Bxa8 46. R@a4+ B@a5 47. Rxa5+ bxa5 48. B@b5+ Kb6 49. Nc8+ Kb7 50. Nxd6+ Kb6 51. P@c5+ Ka7 52. Bd8 N@e2+ 53. Kh2 N@d2 54. Bb6+ Kb8 55. Bxa5 Nxf1+ 56. Kh1 R@g1# { Black wins by checkmate. } 0-1
+5+0 • Classé • CRAZYHOUSE
+il y a 4 ans
+SewastianMoerenteich (1718) −7
+LivingSoul17 (1624) +7
+Échec et mat • Victoire des Noirs
+Arène Crazyhouse Mensuelle
+
+1
+
+
+
+support de fichier .csa
+https://gist.github.com/Marken-Foo/b1047990ee0c65537582ebe591e2b6d7
+contenu : 
+
+csaV2.2
+N+Sente_Joueur
+N-Gote_Joueur
+P1-KY-KE-GI-KI-OU-KI-GI-KE-KY
+P2 * -HI * * * * * -KA *
+P3-FU-FU-FU-FU-FU-FU-FU-FU-FU
+P4 * * * * * * * * *
+P5 * * * * * * * * *
+P6 * * * * * * * * *
+P7+FU+FU+FU+FU+FU+FU+FU+FU+FU
+P8 * +KA * * * * * +HI *
+P9+KY+KE+GI+KI+OU+KI+GI+KE+KY
++
++7776FU
+T12
+-3334FU
+T6
++2726FU
+T5
+-8232HI
+T8
+%CHUDAN
+
+Éléments clés du formatV2.2 : Indique la version du format CSA.N+ / N- : Nom des joueurs (Sente = + / Gote = -).P1 à P9 : Description de la position initiale de la 1ère à la 9e rangée (les minuscules désignent les pièces blanches -, les majuscules précédées de + désignent les pièces noires).+ ou - seul : Indique à quel joueur de jouer (ici, les noirs +).Mouvements (+7776FU) : Case de départ (77), case d'arrivée (76) et type de pièce (FU = pion).T... : Temps pris en secondes pour le coup.%CHUDAN : Fin de partie (interruption / match suspendu ; %TORYO indique un abandon).

@@ -1219,3 +1219,18 @@ strong { font-weight: 600; }
 /* La vignette ouvre la position à chercher : le signaler. */
 .loadgame-sample img.clickable { cursor: pointer; }
 .loadgame-sample img.clickable:hover { outline: 2px solid #b8b8b8; }
+
+/* Avertissement de la boîte « État du plateau » : une position sans roi se
+   pose sans erreur et reste figée. Ton d'alerte plutôt que d'erreur — la
+   saisie n'est pas bloquée, elle est seulement expliquée. */
+.position-notice:empty { display: none; }
+.position-notice {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #8a6d3b;
+  background: #fcf8e3;
+  border: 1px solid #faebcc;
+  border-radius: 3px;
+  padding: 6px 8px;
+  margin: 6px 0 0 0;
+}

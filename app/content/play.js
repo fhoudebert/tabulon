@@ -13,7 +13,9 @@ import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
-import { ReplayBookMoves } from './book-format.js';
+import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen,
+         
+         ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -34,6 +36,29 @@ const clockConfig = (() => {
         return raw ? JSON.parse(decodeURIComponent(raw)) : null;
     } catch { return null; }
 })();
+// La sauvegarde de la partie, telle que Tabulon la transmet ou l'ecrit.
+//
+// joclyMatch.save() rend ce que jocly sait de la partie : les coups et la
+// position de depart. Il ne sait rien du mode tsume, qui est une OPTION passee
+// a load() et non un fait du plateau -- une position sans roi ne dit pas si
+// elle est un probleme ou une erreur. Le drapeau est donc ajoute ici, a cote
+// des coups, pour que la partie rechargee retrouve le mode dans lequel elle a
+// ete jouee ; sans lui, rouvrir un tsume enregistre donne un plateau fige.
+//
+// Absent quand il est faux, plutot qu'ecrit `false` : une sauvegarde ordinaire
+// garde exactement la forme qu'elle avait, et un fichier deja enregistre se
+// relit sans rien de nouveau a interpreter.
+async function SaveMatch() {
+    const saved = await joclyMatch.save().catch(() => null);
+    if (saved && tsumeMatch) saved.tsume = true;
+    return saved;
+}
+
+// Position de tsume : retenu pour toute la partie, parce que CHAQUE
+// rechargement doit reposer l'option -- la navigation dans l'historique
+// recharge la position de depart avant de rejouer jusqu'au coup voulu.
+let tsumeMatch = false;
+
 // ID de la partie dont on fork la position (store key "fork:{forkId}")
 const forkId = new URLSearchParams(window.location.search).get('fork') || null;
 // ID de l'invitation à rejoindre (store key "invite:{inviteId}"), déposée par
@@ -400,7 +425,7 @@ async function gameLoop() {
             // pour une resynchronisation complete si besoin plus tard.
             if (playedLocally && remoteChannel) {
                 const moves = await joclyMatch.getPlayedMoves().catch(() => []);
-                const state = await joclyMatch.save().catch(() => null);
+                const state = await SaveMatch();
                 remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null, state })
                     .catch(e => console.warn('[play] envoi du coup au relai distant échoué :', e.message || e));
             }
@@ -678,6 +703,7 @@ function initSatelliteListeners() {
     // n'avait rien a mettre dans [White]/[Black] et les fichiers relus
     // s'affichaient "? vs ?".
     const HistoryMeta = () => ({
+        tsume:  tsumeMatch,
         white:  PlayerLabel(Jocly.PLAYER_A),
         black:  PlayerLabel(Jocly.PLAYER_B),
         result: gameResult,
@@ -699,7 +725,7 @@ function initSatelliteListeners() {
         // position standard). La fenetre Historique en a besoin pour ecrire
         // un tag [FEN] a la sauvegarde, sans quoi une partie partie d'un
         // probleme se rechargerait depuis la position initiale du jeu.
-        const saved = await joclyMatch.save().catch(() => null);
+        const saved = await SaveMatch();
         await emit(`play-rep:${matchId}:get-played-moves`, {
             moves: Array.isArray(strings) ? strings : moves.map(() => '?'),
             initialBoard: saved?.initialBoard || null,
@@ -709,6 +735,17 @@ function initSatelliteListeners() {
             gameName,
             ...HistoryMeta(),
         });
+    });
+
+    // get-western-moves : la partie en notation occidentale, pour l'export PGN
+    // de la fenetre Historique. Calcule A LA DEMANDE — il faut rejouer la
+    // partie — et non joint a chaque reponse get-played-moves.
+    listen(prefix + 'get-western-moves', async () => {
+        if (!joclyMatch) return;
+        let data = null;
+        try { data = await WesternGame(); }
+        catch (e) { console.warn('[play] export occidental:', e.message || e); }
+        await emit(`play-rep:${matchId}:get-western-moves`, data || { moves: null, sfen: null });
     });
 
     // rollback-to : annuler jusqu'a l'index demande
@@ -729,7 +766,7 @@ function initSatelliteListeners() {
     // (save-template.html les transmet ensuite à la commande Rust save_template)
     listen(prefix + 'get-template-data', async () => {
         if (!joclyMatch) return;
-        const gameData = await joclyMatch.save().catch(() => null);
+        const gameData = await SaveMatch();
         await emit(`play-rep:${matchId}:get-template-data`, {
             gameName,
             gameData,
@@ -824,6 +861,214 @@ function initSatelliteListeners() {
 }
 
 // -- DOMContentLoaded ---------------------------------------------------------
+// ── Notations d'export (USI, occidentale) ────────────────────────────────────
+//
+// Au niveau MODULE, et non dans le callback DOMContentLoaded ou elles se
+// trouvaient : les ecouteurs d'evenements sont installes par
+// initSatelliteListeners(), une autre fonction, d'ou ces helpers etaient
+// invisibles. Le symptome ne designait pas la cause -- « Can't find variable:
+// WesternGame » a l'appel, alors que la declaration est bien la, quelques
+// centaines de lignes plus bas et en colonne 0.
+
+// La lettre que porte le plateau sur chaque case, lue dans le FEN courant.
+//
+// C'est l'abreviation FEN de la piece — precisement ce qu'ecrit la notation de
+// ChuShogiLite ("+H"), la ou jocly ecrit son abreviation naturelle ("+DH").
+// Plutot que de transporter une table de correspondance entre les deux, on lit
+// la lettre a la source : le plateau la donne, et il est deja a notre portee.
+function BoardLetters(fen) {
+    const rows = String(fen || '').split(' ')[0].split('/');
+    const map = {};
+    rows.forEach((row, index) => {
+        const rank = rows.length - index;
+        let file = 0;
+        for (let k = 0; k < row.length; ) {
+            const c = row[k];
+            if (c >= '0' && c <= '9') {
+                let n = c;
+                while (row[k + 1] >= '0' && row[k + 1] <= '9') n += row[++k];
+                file += parseInt(n, 10); k++; continue;
+            }
+            let piece = c; k++;
+            if (c === '+') { piece += row[k]; k++; }   // piece promue : deux caracteres
+            map[String.fromCharCode(97 + file) + rank] = piece;
+            file++;
+        }
+    });
+    return (square) => map[square] || null;
+}
+
+// Le coup que designe un jeton en notation « occidentale » (ChuShogiLite),
+// ou null. Meme exigence que pour l'USI : exact, ou rien.
+async function MoveFromWestern(token) {
+    const parsed = ParseWesternMove(token);
+    if (!parsed) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const natural = await joclyMatch.getMoveString(moves);
+    const letterAt = BoardLetters(await joclyMatch.getBoardState());
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        if (!WesternMatches(parsed, natural[i], letterAt)) continue;
+        if (found) { console.warn('[play] notation ambiguë:', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
+// Un index de plateau USI ramene aux coordonnees de jocly.
+//
+// Le numero de colonne se compte depuis la DROITE et la lettre de rangee
+// depuis le HAUT — l'exact inverse de jocly. `files` est la largeur du
+// plateau, que l'appelant tient de la position : la formule de ChuShogiLite
+// vaut pour ses 12 colonnes, elle ne s'y limite pas.
+function UsiToJocly(square, files) {
+    const m = /^(\d+)([a-z])$/.exec(square || '');
+    if (!m) return null;
+    const file = files - parseInt(m[1], 10);
+    const rank = files - (m[2].charCodeAt(0) - 97);
+    if (file < 0 || rank < 1) return null;
+    return String.fromCharCode(97 + file) + rank;
+}
+
+// La partie reecrite en notation occidentale, pour un export que
+// ChuShogiLite relit.
+//
+// Il faut REJOUER la partie : la lettre de la piece se lit sur le plateau
+// AVANT le coup, et la desambiguisation depend des autres coups legaux a cet
+// instant. On revient donc au depart, on avance coup par coup, puis on
+// restaure la position ou l'utilisateur se trouvait — l'Historique fait
+// exactement ce va-et-vient a chaque clic, ce n'est pas un detour exotique.
+//
+// Renvoie null si le jeu ne sait pas ecrire l'USI (pas de sfen-model.js) :
+// l'appelant retombe alors sur le PJN, plutot que d'ecrire un fichier
+// bancal dans un format qu'il annonce.
+async function WesternGame() {
+    const played = await joclyMatch.getPlayedMoves().catch(() => []);
+    if (!played || !played.length) return { moves: [], sfen: null };
+    // La position de depart est FACULTATIVE : ChuShogiLite n'ecrit [FEN] que
+    // pour une position non standard, et une partie jouee depuis le debut n'en
+    // a pas besoin. La refuser faute de SFEN privait d'export toutes les
+    // parties ordinaires -- le cas le plus courant, et celui qui a ete
+    // signale.
+    const raw = await joclyMatch.getBoardState('sfen').catch(() => null);
+    const sfenOk = !!raw && raw.trim().split(/\s+/).length <= 4;
+    if (!sfenOk) console.info('[play] pas de SFEN pour ce jeu — PGN sans [FEN] :', raw);
+    const board = (raw || '').split(' ')[0];
+    const files = (board.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
+        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0) || 12;
+
+    const here = played.length;
+    const out = [];
+    try {
+        await joclyMatch.rollback(0);
+        const first = await joclyMatch.getBoardState('sfen').catch(() => null);
+        const start = (sfenOk && first && first.trim().split(/\s+/).length <= 4) ? first : null;
+        for (let ply = 0; ply < here; ply++) {
+            const legal = await joclyMatch.getPossibleMoves();
+            const naturals = await joclyMatch.getMoveString(legal);
+            const letterAt = BoardLetters(await joclyMatch.getBoardState());
+            const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
+                && (m.via || null) === (played[ply].via || null)
+                && (m.pr || null) === (played[ply].pr || null));
+            if (index < 0) {
+                console.warn('[play] export : coup', ply + 1, 'introuvable dans la liste legale');
+                out.push('?'); await joclyMatch.rollback(ply + 1); continue;
+            }
+
+            const mine = ParseNaturalMove(naturals[index]) || { steps: [] };
+            if (!mine.from) {
+                const usi = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
+                const first = /^(\d+[a-z])/.exec(usi || '');
+                mine.from = first ? UsiToJocly(first[1], files) : null;
+            }
+            const letter = mine.from ? letterAt(mine.from) : null;
+
+            // Les rivales : les autres coups legaux de la MEME piece menant
+            // aux memes cases. La piece n'est pas sa propre rivale — elle
+            // offre deux coups pour un seul deplacement, promouvoir ou non.
+            const rivals = [];
+            for (let i = 0; i < legal.length; i++) {
+                if (i === index) continue;
+                const other = ParseNaturalMove(naturals[i]);
+                if (!other || other.steps.length !== mine.steps.length) continue;
+                if (!other.steps.every((st, k) => st.square === mine.steps[k].square)) continue;
+                if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
+                    rivals.push(other.from);
+            }
+            const token = BuildWesternMove(mine, letter, rivals);
+            if (!token) console.warn('[play] export : coup', ply + 1,
+                '(' + naturals[index] + ') non traduisible en notation occidentale');
+            out.push(token || '?');
+            await joclyMatch.rollback(ply + 1);
+        }
+        return { moves: out, sfen: start };
+    } finally {
+        // Quoi qu'il arrive, l'utilisateur retrouve la position qu'il avait.
+        await joclyMatch.rollback(here).catch(() => {});
+    }
+}
+
+// Le coup que designe un jeton de KIF : « depart-arrivee », ou
+// « depart-passage-arrivee » pour les coups a deux pas du Lion, avec « + »
+// pour une promotion et « = » pour un refus explicite.
+//
+// Resolution par les CASES, et non par le nom de la piece : le KIF donne la
+// case de depart de chaque coup, ce qui suffit a le designer sans ambiguite --
+// c'est meme plus simple que le PGN, ou l'origine est omise. Le nom de piece
+// qui figure dans le fichier n'est donc pas necessaire ici.
+//
+// jocly n'ecrit pas la case de depart sur un coup a deux pas : on compare
+// alors les seules cases qu'il donne, passage puis arrivee.
+async function MoveFromSquares(token) {
+    const m = /^([a-l]\d{1,2}(?:-[a-l]\d{1,2})+)([+=]?)$/.exec(String(token || '').trim());
+    if (!m) return null;
+    const want = m[1].split('-');
+    const promote = m[2] === '+' ? true : (m[2] === '=' ? false : null);
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        const parsed = ParseNaturalMove(naturals[i]);
+        if (!parsed) continue;
+        const squares = [parsed.from, ...parsed.steps.map(st => st.square)].filter(Boolean);
+        const target = squares.length === want.length ? want : want.slice(want.length - squares.length);
+        if (squares.length !== target.length) continue;
+        if (!squares.every((sq, k) => sq === target[k])) continue;
+        // La promotion n'est comparee que si jocly a offert le choix.
+        if (promote !== null && parsed.promote !== null && parsed.promote !== promote) continue;
+        if (found) { console.warn('[play] KIF : jeton ambigu', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
+// Le coup que designe un jeton USI dans la position courante, ou null.
+//
+// On NE PASSE PAS par pickMove : celui-ci appelle GetBestMatchingMove, qui
+// choisit par distance d'edition sur la notation naturelle et ne peut pas
+// echouer -- « 12i12h » y trouverait toujours un plus proche, joue en silence.
+// On demande donc au moteur d'ecrire chaque coup legal en USI (format ajoute
+// par shogi/sfen-model.js) et on compare litteralement.
+//
+// Deux refus explicites, comme MoveFromUSI cote jocly : aucun coup ne
+// correspond, ou plusieurs -- auquel cas on ne choisit pas.
+async function MoveFromUSI(token) {
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    let strings;
+    try { strings = await joclyMatch.getMoveString(moves, 'usi'); }
+    catch (e) { console.warn('[play] USI indisponible pour ce jeu:', e.message || e); return null; }
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        if (strings[i] !== token) continue;
+        if (found) { console.warn('[play] USI ambigu:', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     console.info('[play] DOMContentLoaded, game:', gameName, 'id:', matchId);
@@ -1196,14 +1441,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     // l'API Jocly pickMove (qui matche la notation contre les coups légaux)
     // puis appliqués par playMove. On tolère les décorations (+ # ! ?) en
     // retentant sans elles si pickMove ne trouve pas.
-    async function BookReplay(book) {
+
+async function BookReplay(book) {
         // Tag [FEN] du PGN/PJN : la partie ne commence PAS a la position
         // standard (probleme, finale, position d'etude). Sans ce chargement
         // prealable, pickMove chercherait les coups dans la position initiale
         // du jeu et echouerait des le premier.
+        // Un [FEN] de PGN ChuShogiLite porte CINQ champs (plateau, trait, case
+        // de la derniere prise de Lion, puis « 0 1 ») : ni un FEN jocly, qui
+        // en a six, ni un SFEN, qui en a trois ou quatre et que jocly
+        // reconnait seul. On le recompose ; tout le reste passe inchange.
+        // Deux dialectes de [FEN] a ramener a ce que jocly lit : celui du chu
+        // shogi (cinq champs) et celui du shogi de PyChess (reserve entre
+        // crochets, a la maniere du crazyhouse). L'ordre importe peu, les deux
+        // formes s'excluent.
+        if (book.initialBoard) {
+            book.initialBoard = PgnFenToJocly(book.initialBoard)
+                || PgnFenToShogiSfen(book.initialBoard)
+                || book.initialBoard;
+        }
+        // `tsume` accompagne la position partout ou elle est rechargee : la
+        // fenetre Historique fait revenir play.js a la position de depart pour
+        // rejouer jusqu'au coup demande, et sans l'option ce rechargement
+        // rendrait la partie injouable au milieu de la navigation.
+        if (book.tsume) { tsumeMatch = true; console.info('[play] book: position de tsume'); }
         if (book.initialBoard) {
             try {
-                await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: book.initialBoard });
+                await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: book.initialBoard, tsume: tsumeMatch });
             } catch (e) {
                 console.warn('[play] book: position de depart refusee:', e.message || e);
                 UpdateFooter(t('play.loadFailed'));
@@ -1211,11 +1475,59 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         // La resolution des jetons (decorations, coups colles) vit dans
         // book-format.js -- module pur, donc testable sans Jocly ; ici on ne
-        // fournit que les deux operations qui touchent au moteur.
-        const { played, unresolved } = await ReplayBookMoves(book.moves, {
+        // fournit que les operations qui touchent au moteur.
+        // Choix de la notation. USI et « occidentale » exigent une resolution
+        // EXACTE : ce sont des systemes de coordonnees etrangers a celui de
+        // jocly, et pickMove -- qui choisit par distance d'edition et ne peut
+        // pas echouer -- y jouerait le coup le plus ressemblant sans le dire.
+        //
+        // « occidentale » n'est qu'une candidature : la notation SAN des
+        // echecs se lit de la meme facon. On l'ESSAIE donc sur le premier
+        // coup, et on ne s'y engage que s'il se resout ; sinon on retombe sur
+        // le chemin tolerant, qui reste le comportement de tous les fichiers
+        // ouverts jusqu'ici.
+        // Un livre venu d'un KIF porte ses coups en CASES : le hub l'a dit
+        // (`book.kif`), et c'est necessaire — « e4-e5 » est aussi la notation
+        // naturelle d'un pion chez jocly, les deux formes ne se distinguent
+        // pas a la lecture du seul jeton.
+        const format = book.kif ? 'kif' : MoveFormat(book.moves);
+        let exact = null;
+        if (format === 'kif') exact = MoveFromSquares;
+        else if (format === 'usi') exact = MoveFromUSI;
+        else if (format === 'western' && await MoveFromWestern(book.moves[0]).catch(() => null))
+            exact = MoveFromWestern;
+        if (exact) console.info('[play] book: notation', format, '— résolution exacte');
+
+        const replay = () => ReplayBookMoves(book.moves, {
             pick: (s) => joclyMatch.pickMove(s).catch(() => null),
+            exact,
             play: (m) => joclyMatch.playMove(m),
         });
+        let { played, unresolved } = await replay();
+
+        // Le trait d'un SFEN arrive a l'envers quand il vient du tag [FEN]
+        // d'un PGN ChuShogiLite (voir FlipSfenTurn). Plutot que de deviner le
+        // producteur du fichier, on le VERIFIE : si le tout premier coup ne se
+        // resout pas, on relit la meme position avec le trait inverse. Rien
+        // n'est perdu -- aucun coup n'a ete joue -- et un fichier valide dans
+        // l'autre convention se charge sans que l'utilisateur ait a le savoir.
+        const flipped = played === 0 && unresolved && book.initialBoard
+            ? FlipSfenTurn(book.initialBoard) : null;
+        if (flipped) {
+            try {
+                await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: flipped, tsume: tsumeMatch });
+                const retry = await replay();
+                if (retry.played > 0) {
+                    console.info('[play] book: trait inversé — position lue comme un [FEN] de PGN');
+                    ({ played, unresolved } = retry);
+                } else {
+                    // Le trait n'etait pas le probleme : on remet la position
+                    // telle que le fichier la donne, pour que le message
+                    // d'erreur porte sur ce qu'il contient vraiment.
+                    await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: book.initialBoard, tsume: tsumeMatch });
+                }
+            } catch (e) { console.warn('[play] book: relecture trait inversé:', e.message || e); }
+        }
         if (unresolved) console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
         // Humain contre humain, en pause : sans ca l'IA du camp B rejouerait
         // par-dessus la partie chargee, et surtout des qu'on reculerait d'un
@@ -1252,7 +1564,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             // qu'on vient d'ouvrir -- et on previent la fenetre Historique,
             // qui n'a aucun autre moyen de savoir que des coups existent.
             try {
-                await joclyMatch.load(saveData.solution);
+                // Le mode est relu dans la sauvegarde et retenu pour la suite :
+                // la navigation dans l'Historique rechargera la position, et
+                // chaque rechargement doit reposer l'option.
+                if (saveData.solution.tsume) {
+                    tsumeMatch = true;
+                    console.info('[play] solution: position de tsume');
+                }
+                await joclyMatch.load({ ...saveData.solution, tsume: tsumeMatch });
                 // Meme regle que pour un livre : une sauvegarde sans coup est
                 // une POSITION, pas une partie a relire. On la laisse jouable.
                 if ((saveData.solution.playedMoves || []).length > 0) {
@@ -1267,7 +1586,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             store?.delete('fork:' + forkId).catch(() => {});
         } else if (saveData) {
-            await joclyMatch.load(saveData).catch(e => console.warn('[play] fork load failed:', e));
+            if (saveData.tsume) tsumeMatch = true;
+            await joclyMatch.load({ ...saveData, tsume: tsumeMatch })
+                .catch(e => console.warn('[play] fork load failed:', e));
             store?.delete('fork:' + forkId).catch(() => {});
         }
     }

@@ -1,0 +1,28 @@
+[Event "ChuShogiLite PGN Record"]
+[Site "ChuShogiLite Applet"]
+[Date "2026.08.20"]
+[Round "-"]
+[White "?"]
+[Black "?"]
+[Result "*"]
+[Variant "chu"]
+[SetUp "1"]
+[FEN "l2t1Q6/ak2f7/1vc3s5/pp1pp7/1g5+H4/1+F+f1+V7/2+O9/12/12/12/12/12 w - 0 1"]
+
+{--------------
+l . . t . Q . . . . . .
+a k . . f . . . . . . .
+. v c . . . s . . . . .
+p p . p p . . . . . . .
+. g . . . . . + . . . .
+. + + . + . . . . . . .
+. . + . . . . . . . . .
+. . . . . . . . . . . .
+. . . . . . . . . . . .
+. . . . . . . . . . . .
+. . . . . . . . . . . .
+. . . . . . . . . . . .
+white to play
+--------------}
+
+{Tsume A4} 1. +Hxe11 Tc11 2. +Hxc11 Cxc11 3. +Fxd9 Ka10 4. +Oxc7,b8 Pxb8 5. +Ve6 Vb9 6. Qf10 Cb10 7. +Vxb9 Kxb9 8. Qc10 Ka10 9. +Fc8 *

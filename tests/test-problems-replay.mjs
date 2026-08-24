@@ -45,8 +45,10 @@ function SplitGames(text) {
     const out = [];
     for (let i = 0; i < blocks.length; ) {
         if (!blocks[i].startsWith('[')) { i++; continue; }
-        out.push({ tags: ParseTags(blocks[i]), text: blocks[i] + '\n\n' + (blocks[i + 1] || '') });
-        i += 2;
+        let j = i + 1;
+        while (j < blocks.length && !blocks[j].startsWith('[')) j++;
+        out.push({ tags: ParseTags(blocks[i]), text: [blocks[i], ...blocks.slice(i + 1, j)].join('\n\n') });
+        i = j;
     }
     return out;
 }

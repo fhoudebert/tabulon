@@ -8,7 +8,9 @@ import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
-import { ParseSolution, BookGame, BookVariant, FairyGameIndex, FairyVariantAlias,
+import { Matches } from './text-search.js';
+import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
+         IsChuKif, ParseKif,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
@@ -58,12 +60,20 @@ function Filter() {
 }
 function DoFilter(q) {
     const str = document.getElementById('gamefilter').value;
-    q = q || { title: str, summary: str, module: str };
+    // `gameName` est cherche au meme titre que le libelle : c'est le nom sous
+    // lequel un jeu apparait dans les fichiers, les dossiers d'exemples et les
+    // messages de la console, et il ne coincide pas toujours avec son titre --
+    // taper « kotaishi » ne trouvait rien, le jeu s'appelant « Sho Shogi ».
+    q = q || { gameName: str, title: str, summary: str, module: str };
     document.querySelectorAll('#game-list li.list-group-item').forEach(li => {
         const game = gamesMap[li.dataset.game];
         if (!game) return;
+        // Matches() replie accents et ponctuation des DEUX cotes : « echecs »
+        // trouve « Echecs », « kotaishi » trouve « Kotaishi », et « men's »
+        // trouve « 9 Men's Morris », dont le catalogue ecrit l'apostrophe avec
+        // un accent aigu.
         const show = Object.entries(q).some(([k, v]) =>
-            v === '' || (game[k] || '').toLowerCase().includes(v.toLowerCase()));
+            Matches(k === 'gameName' ? li.dataset.game : game[k], v));
         li.style.display = show ? '' : 'none';
     });
 }
@@ -386,6 +396,32 @@ async function OpenGameFile(text, fileName, hintGame) {
     //    quelqu'un qui vient de le deposer ici.
     if (IsVariantsIni(text)) return OpenVariantsIni(text, fileName);
 
+    // 2 bis. KIF (kifu) de chu shogi. Il ne passe PAS par parse_pjn : ce n'est
+    //    pas du PGN, il n'a ni tags entre crochets ni coups en latin — un
+    //    plateau dessine en kanji, puis des lignes de coups. La lecture vit
+    //    dans book-format.js (module pur) ; ici on se contente de deposer le
+    //    resultat par le meme canal que la fenetre livre.
+    if (IsChuKif(text)) {
+        const kif = ParseKif(text);
+        if (!kif) return Notify(t('hub.loadFailed'));
+        const r = ResolveGame('chu-shogi', selected);
+        if (!r.game) return Notify(t('hub.loadUnknownGame'));
+        const id = 'kif-' + Date.now();
+        await store.set('fork:' + id, {
+            book: {
+                moves: kif.moves,
+                // Le plateau du KIF est deja celui d'un SFEN : trois champs
+                // suffisent, jocly reconnait la forme et pose le trait.
+                initialBoard: `${kif.board} ${kif.turn} -`,
+                kif: true,
+                tsume: kif.tsume,
+                label: (fileName || '').replace(/^.*[/\\]/, '') || 'KIF',
+            },
+        });
+        console.info('[hub] KIF de chu shogi :', kif.moves.length, 'coups');
+        return tRpc.call('new_match', r.game, null, id);
+    }
+
     // 3. PGN/PJN : on lit d'abord les tags pour savoir de quel jeu il s'agit
     //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers,
     //    [Variant] par Fairy-Stockfish et les serveurs d'echecs).
@@ -400,10 +436,16 @@ async function OpenGameFile(text, fileName, hintGame) {
             // qu'on ecrive [JoclyGame "knightmate"] en croyant nommer un jeu
             // Jocly, alors que "knightmate" est le nom Fairy-Stockfish et que
             // le jeu s'appelle "knightmate-chess". Le catalogue tranche.
-            const variant = FairyVariantAlias(BookVariant(tags) || declared);
-            const mapped = variant ? (await FairyMap())[variant] : null;
+            const raw = BookVariant(tags) || declared;
+            // Un [Variant] peut aussi nommer directement un jeu Jocly sans
+            // passer par Fairy-Stockfish : ChuShogiLite ecrit [Variant "chu"],
+            // et le chu shogi n'est joue par aucune variante du moteur.
+            const direct = VariantGame(raw);
+            const variant = FairyVariantAlias(raw);
+            const mapped = (direct && gamesMap[direct]) ? direct
+                         : variant ? (await FairyMap())[variant] : null;
             if (mapped) {
-                console.info('[hub]', variant, 'est une variante Fairy-Stockfish — jeu Jocly :', mapped);
+                console.info('[hub]', raw, '→ jeu Jocly :', mapped);
                 declared = mapped;
             }
         }

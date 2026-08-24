@@ -9,7 +9,8 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { emit, Store } from './tauri-bridge.js';
-import { initI18n } from './tabulon-i18n.js';
+import { initI18n, t } from './tabulon-i18n.js';
+import { SideWithoutKing } from './book-format.js';
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);
@@ -26,6 +27,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     await twu.init(config.model['title-en']);
 
     document.getElementById('button-cancel').addEventListener('click', () => tRpc.close());
+    // Avertissement pendant la saisie. Une position dont un camp n'a pas de
+    // piece royale se pose sans erreur et reste FIGEE : jocly tient ce camp
+    // pour perdu, il n'y a aucun coup legal et rien ne le dit. C'est le cas
+    // normal d'un probleme de mat -- que Tabulon ouvre par un fichier, ou le
+    // commentaire {Tsume} declenche le mode -- et une faute de frappe le reste
+    // du temps. On ne bloque donc pas la saisie : on previent.
+    const input = document.querySelector('input');
+    const notice = document.getElementById('position-notice');
+    const CheckState = () => {
+        if (!notice) return;
+        const side = SideWithoutKing(input.value.trim());
+        notice.textContent = side ? t('position.noKing') : '';
+    };
+    input.addEventListener('input', CheckState);
+    CheckState();
+
     document.getElementById('button-save').addEventListener('click', async () => {
         const state = document.querySelector('input').value.trim();
         if (!state) return;

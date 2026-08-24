@@ -64,10 +64,32 @@ pub fn parse_pjn(data: String) -> Result<Vec<serde_json::Value>, String> {
         .collect();
     let mut i = 0;
     while i < blocks.len() {
-        let tag_block  = blocks[i].trim();
-        let move_block = if i + 1 < blocks.len() { blocks[i + 1].trim() } else { "" };
+        let tag_block = blocks[i].trim();
 
         if tag_block.starts_with('[') {
+            // Tout ce qui suit les tags JUSQU'AU PROCHAIN BLOC DE TAGS, et non
+            // le seul bloc suivant.
+            //
+            // La spécification PGN autorise des commentaires entre l'en-tête
+            // et les coups, et ChuShogiLite en met un : un diagramme du
+            // plateau, entouré d'accolades et séparé par des lignes vides.
+            // Apparier les tags avec le seul bloc suivant donnait donc, pour
+            // ces fichiers, une partie faite des tags et du diagramme — sans
+            // un seul coup — et le bloc de coups, qui ne commence pas par '[',
+            // était ignoré comme n'appartenant à aucune partie. La fenêtre
+            // Historique restait vide sans que rien ne le signale.
+            //
+            // Les commentaires ne sont pas retirés ici : ExtractMoves
+            // (book-format.js) sait déjà le faire, et c'est là que la marque
+            // {Tsume} est relue.
+            let mut j = i + 1;
+            while j < blocks.len() && !blocks[j].trim_start().starts_with('[') { j += 1; }
+            let move_block = blocks[i + 1..j]
+                .iter()
+                .map(|b| b.trim())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let move_block = move_block.as_str();
             // Parser les tags
             let mut tags = serde_json::Map::new();
             for line in tag_block.lines() {
@@ -99,7 +121,7 @@ pub fn parse_pjn(data: String) -> Result<Vec<serde_json::Value>, String> {
                 "tags":    serde_json::Value::Object(tags),
             }));
             offset += block_len + 2;
-            i += 2; // sauter le bloc coups
+            i = j; // reprendre au prochain bloc de tags
         } else {
             offset += tag_block.len() + 2;
             i += 1;
@@ -164,5 +186,68 @@ pub fn get_dist_info() -> serde_json::Value {
             })
         }
         None => serde_json::json!({ "external": false, "path": null, "writable": false }),
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn moves_of(m: &serde_json::Value) -> String {
+        m["text"].as_str().unwrap().splitn(2, "\n\n").nth(1).unwrap_or("").to_string()
+    }
+
+    /// Le cas qui a motivé la correction : ChuShogiLite intercale un diagramme
+    /// du plateau entre l'en-tête et les coups. Apparier les tags avec le seul
+    /// bloc suivant donnait une partie sans aucun coup, et l'Historique restait
+    /// vide sans qu'aucune erreur ne le signale.
+    #[test]
+    fn commentaire_entre_les_tags_et_les_coups() {
+        let pgn = "[Event \"x\"]\n[Variant \"chu\"]\n\n\
+                   {--------------\n. . . k\n--------------}\n\n\
+                   {Tsume C22} 1. Ql1 +Mxl1 *\n";
+        let matches = parse_pjn(pgn.to_string()).unwrap();
+        assert_eq!(matches.len(), 1, "une seule partie");
+        let body = moves_of(&matches[0]);
+        assert!(body.contains("1. Ql1"), "les coups sont rattaches a la partie : {body:?}");
+        assert!(body.contains("{Tsume C22}"),
+            "le commentaire est conserve : c'est lui qui porte la marque tsume");
+        assert!(body.contains("--------------"), "le diagramme aussi, ExtractMoves le retirera");
+    }
+
+    /// Le cas ordinaire ne doit pas changer : coups collés aux tags.
+    #[test]
+    fn coups_directement_apres_les_tags() {
+        let pgn = "[Event \"x\"]\n[Result \"0-1\"]\n\n1. d4 b6 2. e4 Bb7 0-1\n";
+        let matches = parse_pjn(pgn.to_string()).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert!(moves_of(&matches[0]).contains("2. e4"));
+    }
+
+    /// Plusieurs parties : chacune reprend a son propre bloc de tags, et le
+    /// texte libre qui suit la derniere ne fabrique pas de partie fantome.
+    #[test]
+    fn plusieurs_parties_et_texte_libre() {
+        let pgn = "[Event \"a\"]\n\n1. e4 *\n\n\
+                   [Event \"b\"]\n\n{note}\n\n1. d4 *\n\n\
+                   du texte libre apres la derniere partie\n";
+        let matches = parse_pjn(pgn.to_string()).unwrap();
+        assert_eq!(matches.len(), 2, "deux parties, pas trois");
+        assert!(moves_of(&matches[0]).contains("1. e4"));
+        assert!(moves_of(&matches[0]).find("[Event \"b\"]").is_none(),
+            "la premiere partie ne deborde pas sur la seconde");
+        let second = moves_of(&matches[1]);
+        assert!(second.contains("{note}") && second.contains("1. d4"));
+        assert!(second.contains("texte libre"),
+            "le texte final reste rattache a la derniere partie plutot que de disparaitre");
+    }
+
+    /// Un fichier qui ne commence pas par des tags ne produit rien plutot que
+    /// de prendre sa premiere ligne pour un en-tete.
+    #[test]
+    fn sans_tags_aucune_partie() {
+        assert!(parse_pjn("1. e4 e5\n".to_string()).unwrap().is_empty());
+        assert!(parse_pjn(String::new()).unwrap().is_empty());
     }
 }

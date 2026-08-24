@@ -13,7 +13,7 @@ import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
-import { ExtractMoves, BookFen, BookLabel, BookGame } from './book-format.js';
+import { ExtractMoves, BookFen, BookLabel, BookGame, IsTsume } from './book-format.js';
 
 // Re-export : tests/test-book.mjs importe ExtractMoves depuis ce module.
 export { ExtractMoves };
@@ -98,6 +98,10 @@ async function OpenBookMatch(match, index, count) {
             // (probleme, finale, position d'etude). play.js charge cette
             // position AVANT de rejouer les coups.
             initialBoard: BookFen(match.tags),
+            // Probleme de mat : le camp attaquant n'a pas de roi, et sans
+            // cette option jocly tient sa position pour perdue d'avance --
+            // aucun coup legal, rien a rejouer ni a parcourir.
+            tsume: IsTsume(match.text, match.tags),
         },
     });
     tRpc.call('new_match', game, null, id);

@@ -74,8 +74,13 @@ btn('save').click();
 await waitFor(() => invokeCalls.some(c => c.cmd === 'save_text_file'), 'save_text_file invoqué');
 const sv = invokeCalls.find(c => c.cmd === 'save_text_file');
 
-assert(saveDialogArgs[0]?.defaultPath === 'chu-shogi.pjn',
-  'nom de fichier propose = le jeu du match — trouve : ' + saveDialogArgs[0]?.defaultPath);
+// Nom proposé SANS extension : c'est le dialogue natif qui ajoute celle du
+// filtre choisi, et qui la remplace quand on passe de PJN à PGN. La figer ici
+// obligeait à la corriger à la main après avoir changé de format.
+assert(saveDialogArgs[0]?.defaultPath === 'chu-shogi',
+  'nom de fichier proposé = le jeu du match, sans extension — trouvé : ' + saveDialogArgs[0]?.defaultPath);
+assert(saveDialogArgs[0]?.filters?.length === 2,
+  'deux filtres distincts, PJN et PGN — c\'est là que le format se choisit');
 assert(sv.payload.contents.includes('[JoclyGame "chu-shogi"]'),
   'tag [JoclyGame] = le jeu du match, pas le defaut classic-chess');
 assert(!sv.payload.contents.includes('classic-chess'),
