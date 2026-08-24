@@ -988,6 +988,113 @@ export function WxfMatches(parsed, from, to, letter, red, files) {
         && Math.sign(rankOf(to) - rankOf(from)) === step;
 }
 
+// ── SAN : la notation algebrique des echecs ──────────────────────────────────
+//
+// Celle de tous les PGN d'echecs et de leurs variantes — « Nbd2 », « exf5 »,
+// « O-O », « e8=Q », « Qxd8+ ». Elle ressemble a la notation « occidentale »
+// du chu shogi sans en partager les regles, et les confondre coute cher :
+//
+//   - le « + » final est un ECHEC, pas une promotion. ParseWesternMove le lit
+//     comme une promotion, ce qui pour « Qxd8+ » exige un coup promouvant et
+//     n'en trouve aucun ;
+//   - la desambiguisation s'ecrit COLLEE a la piece (« Nbd2 », « R1a3 »),
+//     alors que le chu shogi ne la note pas du tout ;
+//   - une prise de pion commence par la COLONNE de depart (« exf5 »), qui
+//     ressemble a une lettre de piece minuscule ;
+//   - le roque et la promotion ont leurs formes propres.
+//
+// D'ou un lecteur separe. jocly, lui, ecrit « Nb1-d2 », « e4xf5 », « O-O »,
+// « b7-b8=Q+ » : la case de depart y est toujours presente, et c'est ce qui
+// permet de resoudre exactement au lieu de deviner.
+
+/**
+ * Un jeton SAN, ramene a ses elements — ou null si ce n'en est pas un.
+ *
+ * { piece, fromFile, fromRank, capture, square, promotion, castle }
+ * `piece` vaut '' pour un pion. `castle` vaut 'K' (petit) ou 'Q' (grand).
+ */
+export function ParseSanMove(token) {
+    const t = String(token || '').trim().replace(/[!?]+$/, '');
+    const castle = /^(?:O-O-O|0-0-0)[+#]?$/.test(t) ? 'Q'
+                 : (/^(?:O-O|0-0)[+#]?$/.test(t) ? 'K' : null);
+    if (castle) return { castle, piece: 'K', capture: false, square: null, promotion: null, drop: false };
+    // Parachutage : « N@h5 » au crazyhouse, « P*5e » au shogi. jocly l'ecrit
+    // « N@h5 » aussi, mais on le compare quand meme piece par piece : la
+    // lettre du plateau n'existe pas encore a la case de depart, et il n'y a
+    // donc rien a lire dessus.
+    const drop = /^([A-Z])[@*]([a-o][0-9]{1,2})[+#]?$/.exec(t);
+    if (drop) return { castle: null, drop: true, piece: drop[1], fromFile: null, fromRank: null,
+                       capture: false, square: drop[2], promotion: null };
+    const m = /^([KQRBNACMEHJ])?([a-o])?([0-9]{1,2})?(x)?([a-o][0-9]{1,2})(?:=([A-Z]))?[+#]?$/.exec(t);
+    if (!m) return null;
+    // Un pion qui prend s'ecrit « exf5 » : la lettre de tete est sa COLONNE de
+    // depart, pas une piece. Le groupe 1 n'a capture que des majuscules, donc
+    // la distinction est deja faite -- mais « e4 » sans prise laisse le groupe
+    // 2 vide et le groupe 5 porte la case, ce qui est correct.
+    return {
+        castle: null,
+        drop: false,
+        piece: m[1] || '',
+        fromFile: m[2] || null,
+        fromRank: m[3] || null,
+        capture: !!m[4],
+        square: m[5],
+        promotion: m[6] || null,
+    };
+}
+
+/**
+ * Le jeton SAN designe-t-il le coup que jocly nomme `natural` ?
+ *
+ * `letterAt` n'est plus consulte -- l'abreviation ecrite par jocly suffit et
+ * vaut mieux (voir plus bas). Le parametre reste pour les appelants existants.
+ */
+export function SanMatches(parsed, natural, letterAt) {
+    if (!parsed) return false;
+    const text = String(natural || '').trim();
+    if (parsed.castle) return text === (parsed.castle === 'K' ? 'O-O' : 'O-O-O');
+    if (/^O-O/.test(text)) return false;
+    // Parachutage : une piece et une case, pas de depart a comparer.
+    const dropped = /^([A-Z])[@*]([a-o][0-9]{1,2})[+#]?$/.exec(text);
+    if (parsed.drop || dropped) {
+        return !!(parsed.drop && dropped
+            && dropped[1] === parsed.piece && dropped[2] === parsed.square);
+    }
+
+    // jocly prefixe la case de depart de l'abreviation de la piece
+    // (« Nb1-d2 ») et l'omet pour le pion (« e4xf5 »).
+    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x])([a-o][0-9]{1,2})(?:=([A-Z+]+))?[+#]?$/.exec(text);
+    if (!m) return false;
+    if (m[4] !== parsed.square) return false;
+    if ((m[3] === 'x') !== parsed.capture) return false;
+    if (parsed.fromFile && m[2][0] !== parsed.fromFile) return false;
+    if (parsed.fromRank && m[2].slice(1) !== parsed.fromRank) return false;
+    // La promotion : jocly ecrit « =Q », le SAN aussi. Absente des deux cotes,
+    // il n'y a rien a comparer ; presente d'un seul, les coups different.
+    const got = m[5] ? m[5].replace(/\+/g, '') : null;
+    if (parsed.promotion && got !== parsed.promotion) return false;
+    if (!parsed.promotion && got) return false;
+
+    // La piece : jocly ecrit son abreviation devant la case de depart, et
+    // l'omet pour le pion — exactement comme le SAN. On compare donc les deux
+    // notations entre elles, sans passer par le plateau.
+    //
+    // C'est important au-dela de la simplicite : le FEN de certaines variantes
+    // compte des colonnes de RESERVE (le crazyhouse de jocly en a deux de
+    // chaque cote) qui ne portent pas de nom de case. Lire la lettre sur le
+    // plateau y decale toute la rangee, et un coup parfaitement identifie se
+    // voit refuse. L'abreviation, elle, vient de la meme source que le reste
+    // de la chaine.
+    const abbrev = m[1] || '';
+    if (abbrev) return abbrev === parsed.piece;
+    if (parsed.piece) return false;
+    // Ni l'un ni l'autre ne nomme la piece : c'est un pion des deux cotes, et
+    // il n'y a rien de plus a verifier. Confirmer par le plateau serait une
+    // securite illusoire -- elle ne pourrait que se tromper sur les geometries
+    // a colonnes de reserve, sans jamais rien apprendre de neuf.
+    return true;
+}
+
 /**
  * Le fichier annonce-t-il un probleme de mat (tsume) ?
  *
@@ -1051,6 +1158,14 @@ export function MoveFormat(tokens) {
     // deux -- cinq caracteres, une grammaire fermee -- donc le plus sur a
     // reconnaitre en premier.
     if (list.every(tok => ParseWxfMove(tok))) return 'wxf';
+    // Le SAN avant l'occidentale : les deux se ressemblent, mais le SAN a des
+    // formes que l'autre n'a pas (roque, desambiguisation, promotion « =Q »)
+    // et surtout une lecture opposee du « + » final -- echec ici, promotion
+    // la-bas. Une partie d'echecs lue comme du chu shogi cherche des coups
+    // promouvants et n'en trouve aucun.
+    if (list.some(tok => /^(?:O-O|0-0)/.test(tok) || /=[A-Z]/.test(tok) || /^[A-Z][@*]/.test(tok)
+                      || /^[KQRBNACMEHJ][a-o]?[0-9]{0,2}x?[a-o][0-9]{1,2}[+#]?$/.test(tok))
+        && list.every(tok => ParseSanMove(tok))) return 'san';
     if (list.every(tok => ParseWesternMove(tok))) return 'western';
     return 'natural';
 }

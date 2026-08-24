@@ -6,7 +6,7 @@
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
 import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel,
-         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves, VariantFen, FairyVariantAlias, ParseWxfMove, WxfMatches, MoveFormat } from '../app/content/book-format.js';
+         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves, VariantFen, FairyVariantAlias, ParseWxfMove, WxfMatches, MoveFormat, ParseSanMove, SanMatches } from '../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -544,7 +544,9 @@ console.log('Test 19 - notation WXF du xiangqi');
     ok(MoveFormat(['H2+3', 'C2=5', 'P7+1']) === 'wxf', 'reconnue en demi-largeur');
     ok(MoveFormat(['\uff23\uff12\uff1d\uff15', '\uff28\uff18\uff0b\uff17']) === 'wxf',
        'et en pleine largeur, la forme des archives chinoises');
-    ok(MoveFormat(['Ch2', 'Ae6']) === 'western', 'un SAN de variante n\'est pas pris pour du WXF');
+    // « Ch2 » et « Ae6 » sont du SAN de variante (Capablanca) : reconnus comme
+    // tels depuis que le lecteur SAN existe, et surtout PAS comme du WXF.
+    ok(MoveFormat(['Ch2', 'Ae6']) === 'san', 'un SAN de variante n\'est pas pris pour du WXF');
 
     const p = ParseWxfMove('\uff23\uff12\uff1d\uff15');
     ok(p && p.piece === 'C' && p.file === 2 && p.dir === '=' && p.num === 5,
@@ -566,6 +568,42 @@ console.log('Test 19 - notation WXF du xiangqi');
        'cheval : « +3 » est la colonne d\'arrivee');
     ok(!WxfMatches(ParseWxfMove('H2+3'), 'h0', 'g2', 'H', false, 9),
        'et « + » avance dans le sens du camp, pas du plateau');
+}
+
+console.log('Test 20 - SAN, la notation des PGN d\'echecs');
+{
+    // Elle ressemble a la notation « occidentale » du chu shogi sans partager
+    // ses regles, et les confondre coute cher : le « + » final est un ECHEC
+    // ici, une promotion la-bas. « Qxd8+ » lu comme du chu shogi exige un coup
+    // promouvant et n'en trouve aucun.
+    ok(MoveFormat(['e4', 'e5', 'Nf3', 'O-O']) === 'san', 'une partie d\'echecs est reconnue');
+    ok(MoveFormat(['+Hxe11', 'Tc11', '+Oxc7,b8']) === 'western',
+       'et le chu shogi reste occidental');
+    ok(ParseSanMove('Qxd8+').promotion === null, 'le « + » final n\'est pas une promotion');
+
+    // Les formes que le lecteur occidental ne connaissait pas.
+    ok(ParseSanMove('Nbd2').fromFile === 'b', 'desambiguisation par colonne');
+    ok(ParseSanMove('R1a3').fromRank === '1', 'et par rangee');
+    ok(ParseSanMove('exf5').piece === '' && ParseSanMove('exf5').fromFile === 'e',
+       'une prise de pion commence par sa colonne de depart, pas par une piece');
+    ok(ParseSanMove('O-O').castle === 'K' && ParseSanMove('0-0-0').castle === 'Q',
+       'les deux roques, dans leurs deux graphies');
+    ok(ParseSanMove('e8=Q').promotion === 'Q', 'la promotion nomme la piece obtenue');
+    ok(ParseSanMove('N@h5').drop === true, 'et le parachutage du crazyhouse');
+    ok(ParseSanMove('Rje1').fromFile === 'j',
+       'les colonnes au-dela de « h » : les variantes ont des plateaux plus larges');
+
+    // La resolution compare le SAN a la notation de jocly. La PIECE se lit
+    // dans l'abreviation que jocly ecrit, PAS sur le plateau : le FEN du
+    // crazyhouse compte deux colonnes de reserve de chaque cote, qui ne
+    // portent pas de nom de case et decalent toute lecture du plateau.
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null);
+    ok(M('Nbd2', 'Nb1-d2') && !M('Nbd2', 'Ng1-d2'), 'la desambiguisation tranche');
+    ok(M('exf5', 'e4xf5') && !M('exf5', 'e4-f5'), 'la prise doit correspondre');
+    ok(M('e4', 'e2-e4') && !M('e4', 'Ne2-e4'), 'un pion n\'est pas un cavalier');
+    ok(M('e8=Q', 'e7-e8=Q+') && !M('e8=Q', 'e7-e8=N'), 'la piece de promotion aussi');
+    ok(M('O-O', 'O-O') && !M('O-O', 'O-O-O'), 'les deux roques ne se confondent pas');
+    ok(M('N@h5', 'N@h5') && !M('N@h5', 'P@h5'), 'le parachutage nomme sa piece');
 }
 
 console.log('');

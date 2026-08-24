@@ -16,7 +16,7 @@ import { installNativeEngine } from './engine-native.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove,
-         ParseWxfMove, WxfMatches } from './book-format.js';
+         ParseWxfMove, WxfMatches, ParseSanMove, SanMatches } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -878,7 +878,11 @@ function initSatelliteListeners() {
 // Plutot que de transporter une table de correspondance entre les deux, on lit
 // la lettre a la source : le plateau la donne, et il est deja a notre portee.
 function BoardLetters(fen) {
-    const rows = String(fen || '').split(' ')[0].split('/');
+    // La reserve du crazyhouse est collee au plateau, entre crochets
+    // (« …/RNBQKBNR[Nn] »). Sans la retirer, les crochets comptent comme des
+    // cases et decalent toute la derniere rangee : la lettre lue n'est plus
+    // celle de la piece, et un coup parfaitement identifie se voit refuse.
+    const rows = String(fen || '').split(' ')[0].replace(/\[[^\]]*\]/g, '').split('/');
     const map = {};
     rows.forEach((row, index) => {
         const rank = rows.length - index;
@@ -1067,6 +1071,30 @@ async function MoveFromWxf(token) {
         if (!m) continue;
         if (!WxfMatches(parsed, m[1], m[2], letterAt(m[1]), red, width)) continue;
         if (found) { console.warn('[play] WXF : jeton ambigu', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
+// Le coup que designe un jeton SAN (echecs et variantes), ou null.
+//
+// Resolution EXACTE, comme pour les autres notations etrangeres : pickMove
+// choisirait par distance d'edition et jouerait « Nbd2 » comme « Nf3 » sans le
+// dire. Ici la case d'arrivee, la prise, la desambiguisation et la promotion
+// doivent toutes correspondre, et la piece est identifiee par la lettre que
+// porte le PLATEAU a la case de depart -- pas par une table d'abreviations,
+// qui differe d'une variante a l'autre.
+async function MoveFromSan(token) {
+    const parsed = ParseSanMove(token);
+    if (!parsed) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    const letterAt = BoardLetters(await joclyMatch.getBoardState());
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        if (!SanMatches(parsed, naturals[i], letterAt)) continue;
+        if (found) { console.warn('[play] SAN : jeton ambigu', token); return null; }
         found = moves[i];
     }
     return found;
@@ -1522,6 +1550,7 @@ async function BookReplay(book) {
         let exact = null;
         if (format === 'kif') exact = MoveFromSquares;
         else if (format === 'wxf') exact = MoveFromWxf;
+        else if (format === 'san') exact = MoveFromSan;
         else if (format === 'usi') exact = MoveFromUSI;
         else if (format === 'western' && await MoveFromWestern(book.moves[0]).catch(() => null))
             exact = MoveFromWestern;
