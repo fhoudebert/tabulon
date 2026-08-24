@@ -111,7 +111,12 @@ export function BookCommentary(text) {
 export function ExtractMoves(text) {
     const parts = String(text).replace(/\r\n?/g, '\n').split(/\n\n+/);
     const movesPart = (parts.length > 1 ? parts.slice(1) : parts).join('\n');
-    let s = movesPart.replace(/\{[^}]*\}/g, ' ');
+    // Commentaire de LIGNE « ; … » : il court jusqu'au bout de la ligne, et
+    // c'est la seconde forme que la specification PGN autorise. Sans le
+    // retirer, chaque mot du commentaire devient un faux coup — le fichier
+    // d'exemples de variantes en porte plusieurs, et sa premiere ligne
+    // « ; variants-examples.pgn » suffisait a produire trois coups fantomes.
+    let s = movesPart.replace(/(^|\s);[^\n]*/g, '$1').replace(/\{[^}]*\}/g, ' ');
     while (/\([^()]*\)/.test(s)) s = s.replace(/\([^()]*\)/g, ' ');
     // Numerotation ecrite a la main : "4 ." au lieu de "4.". Sans cette
     // normalisation le "4" devient un faux coup ET le vrai coup garde un

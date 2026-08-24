@@ -606,6 +606,28 @@ console.log('Test 20 - SAN, la notation des PGN d\'echecs');
     ok(M('N@h5', 'N@h5') && !M('N@h5', 'P@h5'), 'le parachutage nomme sa piece');
 }
 
+console.log('Test 21 - commentaires de ligne « ; … »');
+{
+    // La seconde forme de commentaire autorisee par la specification PGN, et
+    // celle que chessops traite explicitement (« if (token === ';') return »).
+    // Sans elle, chaque mot du commentaire devient un faux coup, donne a
+    // pickMove, et joue comme le coup le plus ressemblant.
+    const pgn = '[Event "x"]\n\n; un commentaire de ligne\n1. e4 e5 ; jusqu\'au bout\n2. Nf3 *';
+    ok(ExtractMoves(pgn).join(' ') === 'e4 e5 Nf3', 'les deux formes sont ecartees');
+    ok(!ExtractMoves(pgn).includes(';'), 'et le point-virgule lui-meme ne reste pas');
+
+    // Le fichier d'exemples de variantes s'ouvre sur « ; variants-examples.pgn ».
+    const file = fixture('fixtures-variants.pgn');
+    const blocks = file.replace(/\r\n?/g, '\n').split('\n\n').map(b => b.trim()).filter(Boolean);
+    const first = blocks.findIndex(b => b.startsWith('['));
+    let j = first + 1;
+    while (j < blocks.length && !blocks[j].startsWith('[')) j++;
+    const moves = ExtractMoves([blocks[first], ...blocks.slice(first + 1, j)].join('\n\n'));
+    ok(!moves.some(m => /^;|examples|Sources|IMPORTANT/.test(m)),
+       'aucun mot des commentaires du fichier reel ne passe pour un coup');
+    ok(moves[0] === 'f5', 'et le premier coup est bien le premier coup — ' + moves.slice(0, 3).join(' '));
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);
