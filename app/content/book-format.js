@@ -875,7 +875,12 @@ export function ParseShogiKif(text, size) {
         // regarder la FIN de ce prefixe : le « 成 » de « 成銀 » -- un argent
         // deja promu qui joue -- le PRECEDE, et ne promeut rien.
         const named = body.replace(/[（(].*$/, '');
-        const promote = /\u4e0d\u6210$/.test(named) ? '=' : (/\u6210$/.test(named) ? '+' : '');
+        // L'ABSENCE de « 成 » vaut refus explicite, pas indifference : le KIF
+        // note toujours la promotion quand elle est prise. Sans cela, un coup
+        // qui entre dans la zone de promotion correspond aux DEUX versions
+        // que jocly propose, et la resolution refuse pour ambiguite -- ce qui
+        // arretait une partie de lishogi au 3e coup.
+        const promote = /\u6210$/.test(named) && !/\u4e0d\u6210$/.test(named) ? '+' : '=';
 
         // Parachutage : « 打 », et aucune case de depart.
         if (/\u6253/.test(body)) {

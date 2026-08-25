@@ -170,7 +170,11 @@ for (const [name, expected] of GAMES) {
 // principe que le reste, avec le resolveur « par cases » : le KIF donne la
 // case de depart de chaque coup, ce qui suffit a le designer sans ambiguite.
 for (const [name, expected] of [['fixtures-shogi-japonais.kif', 187],
-                                ['fixtures-shogi-japonais-2.kif', 119]]) {
+                                ['fixtures-shogi-japonais-2.kif', 119],
+                                // lishogi ecrit le meme format, avec des
+                                // coups indentes, sans temps consomme, et des
+                                // commentaires « * … » entre les coups.
+                                ['fixtures-shogi-lishogi-study.kif', 41]]) {
     const text = readFileSync(path.join(root, 'tests', name), 'utf-8');
     ok(IsShogiKif(text), name + ' : reconnu comme KIF de shogi');
     const kif = ParseShogiKif(text);
@@ -178,10 +182,13 @@ for (const [name, expected] of [['fixtures-shogi-japonais.kif', 187],
     ok(kif.moves.length === expected, expected + ' coups lus (' + kif.moves.length + ')');
 
     const drops = kif.moves.filter(function(mv) { return mv.indexOf('@') >= 0; });
-    ok(drops.length > 0 && drops.every(function(mv) { return DROP_TOKEN.test(mv); }),
-       drops.length + ' parachutages, tous nommes (' + drops.slice(0, 3).join(' ') + ')');
-    ok(kif.moves.some(function(mv) { return mv.slice(-1) === '+'; }),
-       'et des promotions');
+    // Toutes les parties n'ont pas de parachutage ; celles qui en ont doivent
+    // NOMMER la piece posee, sans quoi « @c6 » vaut aussi bien pour un pion
+    // que pour un fou en main.
+    ok(drops.every(function(mv) { return DROP_TOKEN.test(mv); }),
+       drops.length + ' parachutage(s), tous nommes' + (drops.length ? ' (' + drops.slice(0, 3).join(' ') + ')' : ''));
+    ok(kif.moves.every(function(mv) { return /[+=]$|@/.test(mv); }),
+       'chaque coup dit s\'il promeut ou non — l\'absence de « 成 » est un refus');
 }
 
 console.log('');
