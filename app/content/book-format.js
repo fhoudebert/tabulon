@@ -1118,6 +1118,10 @@ const SAN_PIECE_ALIASES = { C: 'M' };
 
 export function SanMatches(parsed, natural, letterAt, options) {
     const rankOffset = (options && options.rankOffset) || 0;
+    // `promoted` : le coup candidat promeut-il ? L'appelant le sait par l'USI
+    // de jocly, dont le « + » final est sans ambiguite. Voir plus bas pourquoi
+    // la lettre du SAN ne suffit pas.
+    const promoted = options && typeof options.promoted === 'boolean' ? options.promoted : null;
     if (!parsed) return false;
     const text = String(natural || '').trim();
     if (parsed.castle) return text === (parsed.castle === 'K' ? 'O-O' : 'O-O-O');
@@ -1150,9 +1154,25 @@ export function SanMatches(parsed, natural, letterAt, options) {
     if (parsed.fromRank && String(parseInt(m[2].slice(1), 10) + rankOffset) !== parsed.fromRank) return false;
     // La promotion : jocly ecrit « =Q », le SAN aussi. Absente des deux cotes,
     // il n'y a rien a comparer ; presente d'un seul, les coups different.
-    const got = m[5] ? m[5].replace(/\+/g, '') : null;
-    if (parsed.promotion && got !== parsed.promotion) return false;
-    if (!parsed.promotion && got) return false;
+    // LA PROMOTION.
+    //
+    // Quand l'appelant sait si le coup promeut, c'est cette reponse-la qui
+    // compte, et la lettre du fichier est ignoree. Il le faut pour le shogi :
+    // PyChess y ecrit « =G » pour un pion, une lance, un cavalier OU un argent
+    // promus -- tous se deplacent comme un or, et son propre convertisseur le
+    // dit (« PyChess PGN forgets the unpromoted version of the piece »). La
+    // lettre nomme donc un MOUVEMENT, pas un type : la comparer au « =+S » de
+    // jocly refuserait un coup parfaitement identifie.
+    //
+    // Aux echecs, ou « =Q » designe bien une dame, la comparaison de lettre
+    // reste faite -- c'est elle qui distingue une sous-promotion.
+    if (promoted !== null) {
+        if (!!parsed.promotion !== promoted) return false;
+    } else {
+        const got = m[5] ? m[5].replace(/\+/g, '') : null;
+        if (parsed.promotion && got !== parsed.promotion) return false;
+        if (!parsed.promotion && got) return false;
+    }
 
     // La piece : jocly ecrit son abreviation devant la case de depart, et
     // l'omet pour le pion — exactement comme le SAN. On compare donc les deux

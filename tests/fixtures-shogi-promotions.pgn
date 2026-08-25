@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/fNBhykDr"]
+[Date "2026.01.19"]
+[Round "-"]
+[White "agt_the_walker"]
+[Black "chezz"]
+[Result "0-1"]
+[TimeControl "180+10"]
+[WhiteElo "1500?"]
+[BlackElo "1662?"]
+[Variant "Shogi"]
+[FEN "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL[-] w 0 1"]
+[SetUp "1"]
+
+1. Ph4 Pg6 2. Ph5 Bg7 3. Pc4 Pf6 4. Sf2 Rf8 5. Kd2 Kd8 6. Kc2 Kc8 7. Gfe2 Kb8 8. Pg4 Sc8 9. Pa4 Sg8 10. Sd2 Sf7 11. Pe4 Pa6 12. Sde3 Gfe8 13. Pg5 Pxg5 14. Sf4 Pg4 15. Rh4 Rg8 16. Rxg4 Bi5 17. Rxg8=D Sxg8 18. Bxf6 R@g2 19. S4g3 P@g4 20. Sh4 Bg7 21. Bxg7=H Sxg7 22. R@g9 B@f6 23. Rxh9=D Bxh4 24. Dxi9 Bxf2=H 25. Gxf2 Rxf2=D+ 26. L@d2 S@e2 27. B@d4 S@e3 28. Bxg7=H Sxd1+ 29. Kc3 Dxd2+ 30. Kb4 G@b5+ 31. Ka3 Gxa4+ 32. Kxa4 G@a5+ 33. Ka3 L@a4# 0-1

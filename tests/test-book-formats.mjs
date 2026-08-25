@@ -737,6 +737,38 @@ console.log('Test 25 - PGN de PyChess : toutes les variantes se LISENT');
     ok(VariantFen(thai, 'classic-chess') === thai, 'et rien pour un autre jeu');
 }
 
+console.log('Test 26 - la promotion du shogi : « =G » nomme un MOUVEMENT');
+{
+    // PyChess ecrit « =G » pour un pion, une lance, un cavalier OU un argent
+    // promus : tous se deplacent comme un or. Son propre convertisseur le dit
+    // -- « PyChess PGN forgets the unpromoted version of the piece ». La
+    // lettre ne designe donc aucun type, et la comparer au « =+S » de jocly
+    // refuserait un coup parfaitement identifie.
+    //
+    // Ce qui compte est le seul fait de promouvoir, que l'appelant lit dans
+    // l'USI de jocly, dont le « + » final est sans ambiguite.
+    const M = (san, nat, promoted) =>
+        SanMatches(ParseSanMove(san), nat, null,
+                   promoted === undefined ? {} : { promoted });
+
+    ok(M('Rxg8=D', 'Rh8xg8', true), '« =D » accepte un coup qui promeut');
+    ok(!M('Rxg8=D', 'Rh8xg8', false), 'et refuse le meme coup sans promotion');
+    ok(M('Rxg8', 'Rh8xg8', false) && !M('Rxg8', 'Rh8xg8', true),
+       'reciproquement, sans suffixe le coup ne doit pas promouvoir');
+
+    // Aux echecs la lettre designe bien un type, et la sous-promotion doit se
+    // distinguer : la comparaison de lettre reste faite quand l'appelant ne
+    // repond pas.
+    ok(M('e8=Q', 'e7-e8=Q+') && !M('e8=Q', 'e7-e8=N'),
+       'une sous-promotion d\'echecs reste distinguee');
+
+    const moves = ExtractMoves(fixture('fixtures-shogi-promotions.pgn'));
+    ok(moves.length === 66, `${moves.length} coups lus`);
+    ok(moves.filter(mv => /=/.test(mv)).length === 6, 'dont six promotions');
+    ok(moves.filter(mv => /@/.test(mv)).length > 5, 'et des parachutages');
+    ok(MoveFormat(moves) === 'san', 'la partie est reconnue comme du SAN');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

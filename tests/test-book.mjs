@@ -119,8 +119,13 @@ const mockTauri = {
       const next = this.natural[this.playedMoves.length];
       return next ? [{ san: next }] : [];
     },
-    async getMoveString(moves) {
-      return Array.isArray(moves) ? moves.map(m => m.san) : moves.san;
+    async getMoveString(moves, format) {
+      // jocly rend « ?? » pour un format qu'il ne sait pas ecrire (voir
+      // Model.Move.ToString) : le faux match doit faire pareil, sans quoi la
+      // resolution SAN prend la notation naturelle pour de l'USI et lit le
+      // « + » d'un echec comme une promotion.
+      const of = (m) => (format && format !== 'natural' ? '??' : m.san);
+      return Array.isArray(moves) ? moves.map(of) : of(moves);
     },
     async pickMove(tok) {
       // 'Bb5+' n'est résolu qu'une fois la décoration retirée (teste le retry)

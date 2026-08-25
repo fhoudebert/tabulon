@@ -1138,10 +1138,19 @@ async function MoveFromSan(token) {
     const naturals = await joclyMatch.getMoveString(moves);
     const letterAt = BoardLetters(await joclyMatch.getBoardState(), { zeroBased: true });
 
+    // La promotion se lit dans l'USI, dont le « + » final est sans ambiguite.
+    // La notation naturelle, elle, ne la montre pas de facon fiable : pour le
+    // shogi jocly n'ecrit rien du tout, et le « + » qu'on y voit parfois est
+    // un echec. Les jeux qui ne savent pas ecrire l'USI n'ont pas de
+    // promotion a departager, et l'absence de reponse convient.
+    const usi = await joclyMatch.getMoveString(moves, 'usi').catch(() => null);
+
     const tryOffset = (offset) => {
         let found = null, ambiguous = false;
         for (let i = 0; i < moves.length; i++) {
-            if (!SanMatches(parsed, naturals[i], letterAt, { rankOffset: offset })) continue;
+            const options = { rankOffset: offset };
+            if (usi && typeof usi[i] === 'string') options.promoted = usi[i].endsWith('+');
+            if (!SanMatches(parsed, naturals[i], letterAt, options)) continue;
             if (found) { ambiguous = true; continue; }
             found = moves[i];
         }
