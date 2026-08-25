@@ -811,6 +811,27 @@ console.log('Test 28 - une lettre de fichier, plusieurs pieces de jocly');
        'la partie fait jouer l\'elephant et l\'or');
 }
 
+console.log('Test 29 - l\'hoplite du Spartan, que jocly cesse de nommer');
+{
+    // jocly abrege l'hoplite « H » tant qu'il est sur sa case de depart, et
+    // plus rien ensuite : les deux etats sont deux types de pieces, et seul le
+    // premier porte une abreviation. PyChess, lui, ecrit « H » du debut a la
+    // fin.
+    //
+    // L'abreviation VIDE est donc une reponse comme une autre, et non le seul
+    // signe d'un pion.
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, {});
+    ok(M('Hxd4', 'Hd5xd4'), 'un hoplite qui n\'a pas bouge');
+    ok(M('Hxd4', 'd5xd4'), 'et le meme une fois qu\'il a bouge');
+    ok(M('e4', 'e2-e4'), 'le pion, que jocly ne nomme jamais');
+    ok(!M('Nf3', 'e2-e4'), 'sans que l\'abreviation vide accepte n\'importe quoi');
+
+    const moves = ExtractMoves(fixture('fixtures-spartan.pgn'));
+    ok(moves.length > 30, `${moves.length} demi-coups lus`);
+    ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
+    ok(moves.some(mv => /^H/.test(mv)), 'la partie fait jouer les hoplites');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

@@ -1126,12 +1126,17 @@ export function ParseSanMove(token) {
 //
 // Les collisions sont sans effet : le general du Spartan s'ecrit « G » lui
 // aussi, mais ce jeu n'a aucune piece promue, donc aucun « +P » a confondre.
+//   P   le pion, que jocly ne nomme JAMAIS -- son abreviation est vide.
+//   H   le cheval-dragon... et l'hoplite du Spartan une fois qu'il a bouge :
+//       jocly le nomme « H » tant qu'il est sur sa case de depart et plus
+//       rien ensuite, alors que PyChess l'appelle « H » du debut a la fin.
 const SAN_PIECE_ALIASES = {
     C: ['M'],
     E: ['DE'],
-    H: ['+B'],
+    H: ['+B', ''],
     D: ['+R'],
     G: ['G', '+P', '+L', '+N', '+S'],
+    P: [''],
 };
 
 export function SanMatches(parsed, natural, letterAt, options) {
@@ -1203,25 +1208,22 @@ export function SanMatches(parsed, natural, letterAt, options) {
     // voit refuse. L'abreviation, elle, vient de la meme source que le reste
     // de la chaine.
     const abbrev = m[1] || '';
-    if (abbrev) return abbrev === parsed.piece
-        || (SAN_PIECE_ALIASES[parsed.piece] || []).indexOf(abbrev) >= 0;
-    // Sans abreviation, deux cas OPPOSES, et c'est le separateur qui les
-    // distingue :
-    //
-    //   « b7-b6 »  jocly ecrit un tiret et omet l'abreviation : c'est un pion,
-    //              par construction — il n'omet l'abreviation que pour lui.
-    //   « c0e2 »   pas de separateur du tout : au xiangqi jocly n'ecrit JAMAIS
-    //              d'abreviation, et l'absence ne dit rien. La lettre du
-    //              plateau tranche alors, si l'appelant en fournit une.
-    //
-    // Se fier au plateau dans le premier cas serait un piege : les geometries
-    // a colonnes de reserve (shogi, crazyhouse) decalent les noms de case, et
-    // la lettre lue n'est pas celle qu'on croit.
-    if (parsed.piece) {
-        if (m[3]) return parsed.piece === 'P';
+    // Le xiangqi est le cas a part : jocly n'y ecrit JAMAIS d'abreviation, et
+    // son absence ne dit rien. On le reconnait a l'absence de separateur --
+    // « c0e2 » contre « b7-b6 » -- et c'est la lettre du plateau qui tranche.
+    if (!abbrev && !m[3] && parsed.piece) {
         const onBoard = letterAt && letterAt(m[2]);
         return !!onBoard && onBoard.toUpperCase() === parsed.piece;
     }
+    // Partout ailleurs, l'abreviation ecrite par jocly repond -- y compris
+    // quand elle est VIDE : c'est ainsi qu'il note le pion, et l'hoplite du
+    // Spartan une fois qu'il a bouge.
+    //
+    // Se fier au plateau plutot qu'a l'abreviation serait un piege : les
+    // geometries a colonnes de reserve (shogi, crazyhouse) decalent les noms
+    // de case, et la lettre lue n'est pas celle qu'on croit.
+    if (abbrev === parsed.piece) return true;
+    return (SAN_PIECE_ALIASES[parsed.piece] || []).indexOf(abbrev) >= 0;
     // Ni l'un ni l'autre ne nomme la piece : c'est un pion des deux cotes, et
     // il n'y a rien de plus a verifier. Confirmer par le plateau serait une
     // securite illusoire -- elle ne pourrait que se tromper sur les geometries
