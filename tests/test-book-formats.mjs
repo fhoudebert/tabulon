@@ -597,7 +597,7 @@ console.log('Test 20 - SAN, la notation des PGN d\'echecs');
     // dans l'abreviation que jocly ecrit, PAS sur le plateau : le FEN du
     // crazyhouse compte deux colonnes de reserve de chaque cote, qui ne
     // portent pas de nom de case et decalent toute lecture du plateau.
-    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null);
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, { game: 'classic-chess' });
     ok(M('Nbd2', 'Nb1-d2') && !M('Nbd2', 'Ng1-d2'), 'la desambiguisation tranche');
     ok(M('exf5', 'e4xf5') && !M('exf5', 'e4-f5'), 'la prise doit correspondre');
     ok(M('e4', 'e2-e4') && !M('e4', 'Ne2-e4'), 'un pion n\'est pas un cavalier');
@@ -652,9 +652,9 @@ console.log('Test 22 - le chancelier, « C » ailleurs et « M » chez jocly');
     // Le meme desaccord dans les COUPS : « Ch2 » dans le fichier, « Mh1-h2 »
     // chez jocly. Sans l'alias, une partie de Grand Chess s'arrete au premier
     // coup de chancelier.
-    ok(SanMatches(ParseSanMove('Ci10'), 'Mi1-i10', null),
+    ok(SanMatches(ParseSanMove('Ci10'), 'Mi1-i10', null, { game: 'grand-chess' }),
        'le chancelier des fichiers correspond au marshall de jocly');
-    ok(!SanMatches(ParseSanMove('Ci10'), 'Qi1-i10', null),
+    ok(!SanMatches(ParseSanMove('Ci10'), 'Qi1-i10', null, { game: 'grand-chess' }),
        'mais l\'alias ne rend pas les pieces interchangeables');
 }
 
@@ -747,9 +747,10 @@ console.log('Test 26 - la promotion du shogi : « =G » nomme un MOUVEMENT');
     //
     // Ce qui compte est le seul fait de promouvoir, que l'appelant lit dans
     // l'USI de jocly, dont le « + » final est sans ambiguite.
+    // Le jeu est desormais indispensable : la table d'alias est par jeu.
     const M = (san, nat, promoted) =>
         SanMatches(ParseSanMove(san), nat, null,
-                   promoted === undefined ? {} : { promoted });
+                   promoted === undefined ? { game: 'shogi' } : { promoted, game: 'shogi' });
 
     ok(M('Rxg8=D', 'Rh8xg8', true), '« =D » accepte un coup qui promeut');
     ok(!M('Rxg8=D', 'Rh8xg8', false), 'et refuse le meme coup sans promotion');
@@ -778,7 +779,8 @@ console.log('Test 27 - Capablanca, une vraie partie de PyChess');
     ok(moves.length === 91, `${moves.length} demi-coups lus`);
     ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
     ok(moves.some(mv => /^C/.test(mv)), 'la partie fait jouer le chancelier');
-    ok(SanMatches(ParseSanMove('Cg3'), 'Mh1-g3', null), 'qui correspond au marshall de jocly');
+    ok(SanMatches(ParseSanMove('Cg3'), 'Mh1-g3', null, { game: 'capablanca-chess' }),
+       'qui correspond au marshall de jocly');
     ok(moves.some(mv => /^O-O/.test(mv)), 'et elle contient un roque');
 }
 
@@ -795,14 +797,15 @@ console.log('Test 28 - une lettre de fichier, plusieurs pieces de jocly');
     // Cette derniere est la plus surprenante, et c'est le convertisseur de
     // PyChess lui-meme qui la documente : « PyChess PGN forgets the
     // unpromoted version of the piece ».
-    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, {});
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, { game: 'kotaishi-shogi' });
     ok(M('Ed2', 'DEe1-d2'), 'E designe l\'elephant ivre');
     ok(M('Ha8', '+Bb7-a8'), 'H le fou promu');
     ok(M('Dc3', '+Rc1-c3'), 'D la tour promue');
     ok(M('Gd8', 'Gd7-d8') && M('Gd8', '+Pd7-d8') && M('Gd8', '+Sd7-d8'),
        'G l\'or, mais aussi le pion et l\'argent promus');
     ok(!M('Gd8', 'Sd7-d8'), 'sans pour autant accepter un argent NON promu');
-    ok(M('Cg3', 'Mh1-g3'), 'et le chancelier reste le marshall');
+    ok(SanMatches(ParseSanMove('Cg3'), 'Mh1-g3', null, { game: 'capablanca-chess' }),
+       'et le chancelier reste le marshall');
 
     const moves = ExtractMoves(fixture('fixtures-shoshogi.pgn'));
     ok(moves.length === 108, `${moves.length} demi-coups lus`);
@@ -820,7 +823,7 @@ console.log('Test 29 - l\'hoplite du Spartan, que jocly cesse de nommer');
     //
     // L'abreviation VIDE est donc une reponse comme une autre, et non le seul
     // signe d'un pion.
-    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, {});
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, { game: 'spartan-chess' });
     ok(M('Hxd4', 'Hd5xd4'), 'un hoplite qui n\'a pas bouge');
     ok(M('Hxd4', 'd5xd4'), 'et le meme une fois qu\'il a bouge');
     ok(M('e4', 'e2-e4'), 'le pion, que jocly ne nomme jamais');
@@ -847,6 +850,38 @@ console.log('Test 30 - le janggi partage les lettres du xiangqi');
     const moves = ExtractMoves(fixture('fixtures-janggi.pgn'));
     ok(moves.length === 40, `${moves.length} demi-coups lus`);
     ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
+}
+
+console.log('Test 31 - la table d\'alias est ORGANISEE PAR JEU');
+{
+    // La meme lettre designe des pieces differentes selon la variante, et une
+    // entree valable pour l'une est fausse pour l'autre. « H » vaut le
+    // cheval-dragon au shogi et l'hoplite au Spartan, que jocly cesse de
+    // nommer une fois qu'il a bouge. Une table commune faisait correspondre
+    // « Hf6 » a la fois au fou promu et a un pion : deux candidats, donc un
+    // refus, et une partie de Sho Shogi bloquee au 65e coup.
+    const M = (san, nat, game) => SanMatches(ParseSanMove(san), nat, null, { game });
+
+    ok(M('Hf6', '+Bg5-f6', 'shogi'), 'shogi : H est le cheval-dragon');
+    ok(!M('Hf6', 'f7-f6', 'shogi'), 'et surtout PAS un pion');
+    ok(M('Hxd4', 'Hd5xd4', 'spartan-chess') && M('Hxd4', 'd5xd4', 'spartan-chess'),
+       'Spartan : H est l\'hoplite, nomme ou non');
+    ok(!M('Hxd4', 'd5xd4', 'shogi'), 'la meme lettre ne franchit pas les jeux');
+
+    ok(M('Sd7', 'Bc8-d7', 'makruk'), 'makruk : S est le khon, le fou de jocly');
+    ok(M('Sxe5', 'd6xe5', 'tori-shogi'), 'tori : S est l\'hirondelle, que jocly ne nomme pas');
+    ok(!M('Sd7', 'Bc8-d7', 'shogi'), 'et l\'argent du shogi n\'est ni l\'un ni l\'autre');
+
+    // Les alias valent aussi pour la piece OBTENUE et pour les parachutages.
+    ok(M('dxe3=M', 'd4xe3=Q', 'makruk'), 'le met du makruk devient la dame de jocly');
+    ok(M('e8=Q', 'e7-e8=Q', 'classic-chess') && !M('e8=Q', 'e7-e8=N', 'classic-chess'),
+       'sans confondre les sous-promotions aux echecs');
+    ok(M('S@c4', '@c4', 'tori-shogi'), 'un parachutage dont jocly ne nomme pas la piece');
+    ok(!M('S@c4', 'P@c4', 'tori-shogi'), 'mais pas celui d\'une autre piece');
+
+    const moves = ExtractMoves(fixture('fixtures-makruk.pgn'));
+    ok(moves.length === 76 && MoveFormat(moves) === 'san',
+       `${moves.length} demi-coups de makruk, reconnus comme du SAN`);
 }
 
 console.log('');

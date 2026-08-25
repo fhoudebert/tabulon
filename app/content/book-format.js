@@ -1133,14 +1133,54 @@ export function ParseSanMove(token) {
 //   H   le cheval-dragon... et l'hoplite du Spartan une fois qu'il a bouge :
 //       jocly le nomme « H » tant qu'il est sur sa case de depart et plus
 //       rien ensuite, alors que PyChess l'appelle « H » du debut a la fin.
+// La table est ORGANISEE PAR JEU, et il le faut : la meme lettre y designe
+// des pieces differentes, et une entree valable pour l'un est fausse pour
+// l'autre. « H » vaut le cheval-dragon au shogi (« +B ») et l'hoplite au
+// Spartan, que jocly cesse de nommer une fois qu'il a bouge (abreviation
+// VIDE). Melanger les deux faisait correspondre « Hf6 » a la fois au fou promu
+// et a un pion : deux candidats, donc un refus, et une partie de Sho Shogi
+// bloquee au 65e coup.
+//
+// `'*'` porte ce qui vaut partout : le pion, que jocly ne nomme jamais.
 const SAN_PIECE_ALIASES = {
-    C: ['M'],
-    E: ['DE'],
-    H: ['+B', ''],
-    D: ['+R'],
-    G: ['G', '+P', '+L', '+N', '+S'],
-    P: [''],
+    '*': { P: [''] },
+
+    // Echecs a grand plateau : le chancelier de chessvariants est le marshall
+    // de jocly.
+    'capablanca-chess': { C: ['M'] },
+    'grand-chess':      { C: ['M'] },
+    'gothic-chess':     { C: ['M'] },
+
+    // Shogi et ses variantes. PyChess nomme les pieces par leur MOUVEMENT :
+    // « G » vaut l'or, mais aussi tout ce qui se deplace comme lui -- son
+    // propre convertisseur le dit, « PyChess PGN forgets the unpromoted
+    // version of the piece ».
+    'shogi':          { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'] },
+    'mini-shogi':     { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'] },
+    'kotaishi-shogi': { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'],
+                        E: ['DE'] },   // l'elephant ivre du Sho Shogi
+
+    // Tori Shogi : l'hirondelle est le pion du jeu, et jocly ne la nomme pas.
+    'tori-shogi': { S: [''], G: ['+S'] },
+
+    // Makruk : PyChess nomme les pieces d'apres le thai, jocly reprend les
+    // lettres des echecs.
+    'makruk': { S: ['B'], M: ['Q'] },
+
+    // Spartan : l'hoplite, nomme « H » tant qu'il est sur sa case de depart et
+    // plus rien ensuite.
+    'spartan-chess': { H: ['H', ''] },
 };
+
+/**
+ * Les abreviations de jocly qu'une lettre de fichier peut designer, pour un
+ * jeu donne. Toujours au moins la lettre elle-meme.
+ */
+export function PieceAliases(letter, game) {
+    const common = SAN_PIECE_ALIASES['*'][letter] || [];
+    const own = (SAN_PIECE_ALIASES[game] || {})[letter] || [];
+    return [letter].concat(own, common);
+}
 
 export function SanMatches(parsed, natural, letterAt, options) {
     const rankOffset = (options && options.rankOffset) || 0;
@@ -1153,10 +1193,16 @@ export function SanMatches(parsed, natural, letterAt, options) {
     if (parsed.castle) return text === (parsed.castle === 'K' ? 'O-O' : 'O-O-O');
     if (/^O-O/.test(text)) return false;
     // Parachutage : une piece et une case, pas de depart a comparer.
-    const dropped = /^([A-Z])[@*]([a-o][0-9]{1,2})[+#]?$/.exec(text);
+    // La lettre peut MANQUER cote jocly : l'hirondelle du tori n'a pas
+    // d'abreviation, son parachutage s'ecrit « @c4 » tout court.
+    const dropped = /^([A-Z+]*)[@*]([a-o][0-9]{1,2})[+#]?$/.exec(text);
     if (parsed.drop || dropped) {
+        // Le parachutage nomme sa piece, et la meme table d'alias s'applique :
+        // l'hirondelle du tori s'ecrit « S@c4 » dans le fichier et jocly la
+        // parachute sous une autre lettre.
         return !!(parsed.drop && dropped
-            && dropped[1] === parsed.piece && dropped[2] === parsed.square);
+            && PieceAliases(parsed.piece, options && options.game).indexOf(dropped[1]) >= 0
+            && dropped[2] === parsed.square);
     }
 
     // jocly prefixe la case de depart de l'abreviation de la piece
@@ -1196,7 +1242,10 @@ export function SanMatches(parsed, natural, letterAt, options) {
         if (!!parsed.promotion !== promoted) return false;
     } else {
         const got = m[5] ? m[5].replace(/\+/g, '') : null;
-        if (parsed.promotion && got !== parsed.promotion) return false;
+        // La piece obtenue passe elle aussi par la table : le met du makruk
+        // s'ecrit « =M » dans le fichier et « =Q » chez jocly.
+        if (parsed.promotion
+            && PieceAliases(parsed.promotion, options && options.game).indexOf(got) < 0) return false;
         if (!parsed.promotion && got) return false;
     }
 
@@ -1225,8 +1274,7 @@ export function SanMatches(parsed, natural, letterAt, options) {
     // Se fier au plateau plutot qu'a l'abreviation serait un piege : les
     // geometries a colonnes de reserve (shogi, crazyhouse) decalent les noms
     // de case, et la lettre lue n'est pas celle qu'on croit.
-    if (abbrev === parsed.piece) return true;
-    return (SAN_PIECE_ALIASES[parsed.piece] || []).indexOf(abbrev) >= 0;
+    return PieceAliases(parsed.piece, options && options.game).indexOf(abbrev) >= 0;
     // Ni l'un ni l'autre ne nomme la piece : c'est un pion des deux cotes, et
     // il n'y a rien de plus a verifier. Confirmer par le plateau serait une
     // securite illusoire -- elle ne pourrait que se tromper sur les geometries

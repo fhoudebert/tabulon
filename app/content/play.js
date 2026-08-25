@@ -1166,7 +1166,10 @@ async function MoveFromSan(token) {
     const tryOffset = (offset) => {
         let found = null, ambiguous = false;
         for (let i = 0; i < moves.length; i++) {
-            const options = { rankOffset: offset };
+            // Le nom du jeu accompagne la comparaison : la table d'alias est
+            // organisee par jeu, la meme lettre y designant des pieces
+            // differentes selon la variante.
+            const options = { rankOffset: offset, game: gameName };
             if (usi && typeof usi[i] === 'string') options.promoted = usi[i].endsWith('+');
             if (!SanMatches(parsed, naturals[i], letterAt, options)) continue;
             if (found) { ambiguous = true; continue; }
