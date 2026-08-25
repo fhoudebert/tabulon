@@ -782,6 +782,35 @@ console.log('Test 27 - Capablanca, une vraie partie de PyChess');
     ok(moves.some(mv => /^O-O/.test(mv)), 'et elle contient un roque');
 }
 
+console.log('Test 28 - une lettre de fichier, plusieurs pieces de jocly');
+{
+    // PyChess nomme les pieces par leur MOUVEMENT, jocly par leur type. La
+    // correspondance n'est donc pas un a un :
+    //
+    //   E   l'elephant ivre du Sho Shogi, que jocly abrege « DE »
+    //   H   le cheval-dragon : un fou promu, « +B »
+    //   D   le dragon : une tour promue, « +R »
+    //   G   l'or ET toute piece promue qui se deplace comme lui
+    //
+    // Cette derniere est la plus surprenante, et c'est le convertisseur de
+    // PyChess lui-meme qui la documente : « PyChess PGN forgets the
+    // unpromoted version of the piece ».
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, {});
+    ok(M('Ed2', 'DEe1-d2'), 'E designe l\'elephant ivre');
+    ok(M('Ha8', '+Bb7-a8'), 'H le fou promu');
+    ok(M('Dc3', '+Rc1-c3'), 'D la tour promue');
+    ok(M('Gd8', 'Gd7-d8') && M('Gd8', '+Pd7-d8') && M('Gd8', '+Sd7-d8'),
+       'G l\'or, mais aussi le pion et l\'argent promus');
+    ok(!M('Gd8', 'Sd7-d8'), 'sans pour autant accepter un argent NON promu');
+    ok(M('Cg3', 'Mh1-g3'), 'et le chancelier reste le marshall');
+
+    const moves = ExtractMoves(fixture('fixtures-shoshogi.pgn'));
+    ok(moves.length === 108, `${moves.length} demi-coups lus`);
+    ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
+    ok(moves.some(mv => /^E/.test(mv)) && moves.some(mv => /^G/.test(mv)),
+       'la partie fait jouer l\'elephant et l\'or');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

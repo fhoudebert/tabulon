@@ -1114,7 +1114,25 @@ export function ParseSanMove(token) {
 // Le meme desaccord de lettre que dans les FEN, applique aux COUPS : le
 // fichier ecrit « Ch2 » (chancellor), jocly « Mh1-h2 » (marshall). La table
 // est la meme, dans l'autre sens.
-const SAN_PIECE_ALIASES = { C: 'M' };
+// Une lettre de fichier peut designer PLUSIEURS abreviations de jocly.
+//
+//   C   chancellor chez PyChess et chessvariants, marshall chez jocly
+//   E   l'elephant ivre du Sho Shogi, que jocly abrege « DE »
+//   H   le cheval-dragon du shogi : un fou promu, « +B »
+//   D   le dragon : une tour promue, « +R »
+//   G   l'or -- et AUSSI toute piece promue qui se deplace comme lui. PyChess
+//       « oublie » la piece d'origine, son propre convertisseur le dit :
+//       « PyChess PGN forgets the unpromoted version of the piece ».
+//
+// Les collisions sont sans effet : le general du Spartan s'ecrit « G » lui
+// aussi, mais ce jeu n'a aucune piece promue, donc aucun « +P » a confondre.
+const SAN_PIECE_ALIASES = {
+    C: ['M'],
+    E: ['DE'],
+    H: ['+B'],
+    D: ['+R'],
+    G: ['G', '+P', '+L', '+N', '+S'],
+};
 
 export function SanMatches(parsed, natural, letterAt, options) {
     const rankOffset = (options && options.rankOffset) || 0;
@@ -1186,7 +1204,7 @@ export function SanMatches(parsed, natural, letterAt, options) {
     // de la chaine.
     const abbrev = m[1] || '';
     if (abbrev) return abbrev === parsed.piece
-        || abbrev === SAN_PIECE_ALIASES[parsed.piece];
+        || (SAN_PIECE_ALIASES[parsed.piece] || []).indexOf(abbrev) >= 0;
     // Sans abreviation, deux cas OPPOSES, et c'est le separateur qui les
     // distingue :
     //
