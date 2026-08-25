@@ -677,6 +677,66 @@ console.log('Test 23 - le pion nomme (xiangqi de PyChess, shogi occidentalise)')
     }
 }
 
+console.log('Test 24 - SAN du xiangqi : separateur absent et rangees decalees');
+{
+    // Deux ecarts entre ce qu'ecrit PyChess et ce qu'ecrit jocly, et aucun
+    // n'est visible dans le fichier :
+    //   PyChess  Hc3     piece nommee, rangees comptees a partir de 1
+    //   jocly    b0c2    ni abreviation ni separateur, rangees a partir de 0
+    const M = (san, nat, letter, offset) =>
+        SanMatches(ParseSanMove(san), nat, letter ? () => letter : null, { rankOffset: offset });
+
+    ok(M('Hc3', 'b0c2', 'H', 1), 'le cavalier de b1 arrive en c3 — soit « b0c2 » chez jocly');
+    ok(!M('Hc3', 'h0g2', 'H', 1), 'et pas n\'importe quel autre cavalier');
+    ok(!M('Hc3', 'b0c2', 'H', 0), 'sans le decalage, la case ne correspond plus');
+    ok(M('Rxc10', 'c0c9', 'R', 1), 'la prise se resout, bien que jocly ne la marque pas');
+    ok(!M('Hc3', 'b0c2', 'C', 1), 'la lettre du plateau identifie la piece — un canon n\'est pas un cavalier');
+
+    // Le decalage n'est pas impose aux echecs, ou jocly et le SAN s'accordent.
+    ok(M('Nbd2', 'Nb1-d2', null, 0) && !M('Nbd2', 'Nb1-d2', null, 1),
+       'aux echecs le decalage est nul, et l\'appliquer casserait tout');
+
+    // Cinq vraies parties de PyChess, dont une de cent demi-coups.
+    for (const name of ['fixtures-xiangqi-pychess-1.pgn', 'fixtures-xiangqi-pychess-2.pgn',
+                        'fixtures-xiangqi-ltlswqlc.pgn', 'fixtures-xiangqi-LULQPutT.pgn',
+                        'fixtures-xiangqi-NrmGxFe1.pgn']) {
+        const moves = ExtractMoves(fixture(name));
+        ok(moves.length > 20 && moves.every(mv => ParseSanMove(mv)) && MoveFormat(moves) === 'san',
+           `${name} : ${moves.length} coups, tous lus, reconnus comme SAN`);
+    }
+}
+
+console.log('Test 25 - PGN de PyChess : toutes les variantes se LISENT');
+{
+    // Enumerer les lettres de piece revenait a tenir la liste de toutes les
+    // variantes du monde : le shogi a S et G, le tori F et C, le makruk S et
+    // M. Chaque oubli faisait retomber une partie entiere sur la resolution
+    // floue -- un seul « Sd7 » suffisait. N'importe quelle MAJUSCULE nomme
+    // donc une piece ; la casse suffit a la distinguer d'une colonne.
+    for (const name of ['fixtures-shako.pgn', 'fixtures-makruk.pgn',
+                        'fixtures-shogi.pgn', 'fixtures-mini.pgn']) {
+        const moves = ExtractMoves(fixture(name));
+        const unread = moves.filter(mv => !ParseSanMove(mv));
+        ok(unread.length === 0,
+           `${name} : ${moves.length} coups, tous lus`
+           + (unread.length ? ' -- ' + unread.slice(0, 4).join(' ') : ''));
+        ok(MoveFormat(moves) === 'san', name + ' : reconnue comme du SAN');
+    }
+    ok(ParseSanMove('Sd7')?.piece === 'S' && ParseSanMove('Fxe5')?.piece === 'F',
+       'argent du shogi et faucon du tori');
+    ok(ParseSanMove('exf5')?.piece === '' && ParseSanMove('exf5')?.fromFile === 'e',
+       'mais une minuscule reste une colonne, pas une piece');
+
+    // MAKRUK : PyChess nomme les pieces d'apres le thai, jocly reprend les
+    // lettres des echecs. Sans traduction, le plateau charge AMPUTE -- sans
+    // roi -- et jocly se plante en cherchant les attaquants d'une case qui
+    // n'existe pas.
+    const thai = 'rnsmksnr/8/pppppppp/8/8/PPPPPPPP/8/RNSKMSNR w - - 0 1';
+    ok(VariantFen(thai, 'makruk').split(' ')[0] === 'rnbqkbnr/8/pppppppp/8/8/PPPPPPPP/8/RNBKQBNR',
+       'khon et met traduits en fou et dame -- ' + VariantFen(thai, 'makruk').split('/')[0]);
+    ok(VariantFen(thai, 'classic-chess') === thai, 'et rien pour un autre jeu');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

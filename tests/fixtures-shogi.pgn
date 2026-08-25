@@ -1,0 +1,15 @@
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/xu4znYk7"]
+[Date "2020.12.02"]
+[Round "-"]
+[White "BarbaBlannk"]
+[Black "CouchTomato87"]
+[Result "0-1"]
+[TimeControl "300+3"]
+[WhiteElo "1500?"]
+[BlackElo "1587?"]
+[Variant "Shogi"]
+[FEN "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL[-] w 0 1"]
+[SetUp "1"]
+
+1. Pc4 Pg6 2. Pd4 Pb6 3. Sd2 Pb5 4. Sc3 Sd8 5. Ph4 Sf8 6. Ph5 Sg7 7. Gg2 Gde8 8. Gh3 Pa6 9. Pg4 Pa5 10. Gh4 Gg8 11. Pg5 Pxg5 12. Gxg5 P@g6 13. Ph6 Pxh6 14. Gxh6 Sxh6 15. Rxh6 P@h7 16. Rh2 Kf8 17. Gc2 Pc6 18. Kd1 Nc7 19. Bc1 Pd6 20. Bd2 Pd5 21. Rh4 Pxd4 22. Sxd4 P@d5 23. Sc3 Sd7 24. Pe4 Sd6 25. Sf2 Pe6 26. Se3 Pe5 27. Pxe5 Sxe5 28. P@e4 Sd4 29. Sexd4 Pxd4 30. S@d6 Nd5 31. S@c7 Rb9 32. Sc8=G Rg9 33. Pe5 Nxc3=G 34. Bxc3 G@d3 35. N@e6+ Kf9 36. Gxd3 Pxd3=G 37. G@f8+ Ggxf8 38. Nxf8=G+ Kxf8 0-1

@@ -328,6 +328,11 @@ const VARIANT_ALIASES = {
     // Orthographes des exportateurs de variantes : PyChess et chessvariants
     // ecrivent le nom du jeu en toutes lettres, Fairy-Stockfish le colle.
     'kyoto shogi': 'kyotoshogi',
+    'janggi': 'janggi',
+    'korean chess': 'janggi',
+    'makruk': 'makruk',
+    'thai chess': 'makruk',
+    'shako': 'shako',
     'mini shogi': 'minishogi',
     'tori shogi': 'torishogi',
     'chu shogi': 'chu',
@@ -880,6 +885,16 @@ const KYOTO_LETTERS = { t: '+l', T: '+L', g: '+n', G: '+N' };
 // plutot qu'une correspondance complete qu'il faudrait tenir a jour.
 const CHANCELLOR_LETTERS = { c: 'm', C: 'M' };
 
+// Makruk : PyChess nomme les pieces d'apres le thai — « s » pour le khon
+// (l'elephant, qui se deplace comme l'argent du shogi) et « m » pour le met
+// (le conseiller) — quand jocly reprend les lettres des echecs, « b » et « q ».
+//
+// Ce n'est pas cosmetique : un FEN dont les lettres ne sont pas reconnues
+// produit un plateau AMPUTE, sans roi, et jocly s'y plante en cherchant les
+// attaquants d'une case qui n'existe pas. Une position qu'on croit chargee
+// fait tomber la fenetre de jeu.
+const MAKRUK_LETTERS = { s: 'b', S: 'B', m: 'q', M: 'Q' };
+
 /**
  * Un FEN de variante, ramene a ce que le jeu Jocly vise attend — ou le FEN
  * inchange quand il n'y a rien a faire.
@@ -908,6 +923,10 @@ export function VariantFen(fen, game) {
     // au hasard casserait plus qu'elle ne repare.
     if (game === 'capablanca-chess' || game === 'grand-chess' || game === 'gothic-chess') {
         f[0] = f[0].replace(/[cC]/g, (ch) => CHANCELLOR_LETTERS[ch]);
+        return f.join(' ');
+    }
+    if (game === 'makruk') {
+        f[0] = f[0].replace(/[sSmM]/g, (ch) => MAKRUK_LETTERS[ch]);
         return f.join(' ');
     }
     if (game === 'kyoto-shogi') {
@@ -1054,7 +1073,15 @@ export function ParseSanMove(token) {
     // « P-4d ». Sans lui, ces coups-la ne se lisent pas du tout — et comme la
     // detection exige que TOUS les jetons se lisent, une seule poussee de pion
     // faisait retomber la partie entiere sur la resolution floue.
-    const m = /^([KQRBNACMEHJP])?([a-o])?([0-9]{1,2})?(x)?([a-o][0-9]{1,2})(?:=([A-Z]))?[+#]?$/.exec(t);
+    // N'IMPORTE QUELLE majuscule peut nommer une piece : le shogi a S et G, le
+    // tori F et C, le makruk S et M. Enumerer les lettres revenait a tenir la
+    // liste de toutes les variantes du monde, et chaque oubli faisait retomber
+    // une partie entiere sur la resolution floue -- « Sd7 » suffisait.
+    //
+    // La distinction avec une prise de pion (« exf5 », ou la lettre de tete
+    // est une COLONNE) tient a la casse, pas a la lettre : les pieces sont en
+    // majuscules, les colonnes en minuscules.
+    const m = /^([A-Z])?([a-o])?([0-9]{1,2})?(x)?([a-o][0-9]{1,2})(?:=(\+?[A-Z]))?([+#]?)$/.exec(t);
     if (!m) return null;
     // Un pion qui prend s'ecrit « exf5 » : la lettre de tete est sa COLONNE de
     // depart, pas une piece. Le groupe 1 n'a capture que des majuscules, donc
@@ -1083,7 +1110,8 @@ export function ParseSanMove(token) {
 // est la meme, dans l'autre sens.
 const SAN_PIECE_ALIASES = { C: 'M' };
 
-export function SanMatches(parsed, natural, letterAt) {
+export function SanMatches(parsed, natural, letterAt, options) {
+    const rankOffset = (options && options.rankOffset) || 0;
     if (!parsed) return false;
     const text = String(natural || '').trim();
     if (parsed.castle) return text === (parsed.castle === 'K' ? 'O-O' : 'O-O-O');
@@ -1097,12 +1125,23 @@ export function SanMatches(parsed, natural, letterAt) {
 
     // jocly prefixe la case de depart de l'abreviation de la piece
     // (« Nb1-d2 ») et l'omet pour le pion (« e4xf5 »).
-    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x])([a-o][0-9]{1,2})(?:=([A-Z+]+))?[+#]?$/.exec(text);
+    //
+    // Le separateur est FACULTATIF : le xiangqi de jocly ecrit « c0e2 », sans
+    // abreviation ni tiret. La notation d'un jeu ne se devine pas depuis son
+    // nom, on accepte donc les deux formes et on compare ce qui est present.
+    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x]?)([a-o][0-9]{1,2})(?:=([A-Z+]+))?[+#]?$/.exec(text);
     if (!m) return false;
-    if (m[4] !== parsed.square) return false;
-    if ((m[3] === 'x') !== parsed.capture) return false;
+    // Le xiangqi de jocly numerote ses rangees a partir de 0, PyChess a partir
+    // de 1 : le meme point du plateau s'ecrit « c2 » d'un cote et « c3 » de
+    // l'autre. Le decalage est donne par l'appelant, qui seul sait a quel jeu
+    // il a affaire.
+    const shift = (sq) => sq[0] + (parseInt(sq.slice(1), 10) + rankOffset);
+    if (shift(m[4]) !== parsed.square) return false;
+    // La prise n'est comparee que si la notation de jocly la marque. Sans
+    // separateur, elle ne dit rien : l'exiger refuserait toutes les prises.
+    if (m[3] && (m[3] === 'x') !== parsed.capture) return false;
     if (parsed.fromFile && m[2][0] !== parsed.fromFile) return false;
-    if (parsed.fromRank && m[2].slice(1) !== parsed.fromRank) return false;
+    if (parsed.fromRank && String(parseInt(m[2].slice(1), 10) + rankOffset) !== parsed.fromRank) return false;
     // La promotion : jocly ecrit « =Q », le SAN aussi. Absente des deux cotes,
     // il n'y a rien a comparer ; presente d'un seul, les coups different.
     const got = m[5] ? m[5].replace(/\+/g, '') : null;
@@ -1122,7 +1161,23 @@ export function SanMatches(parsed, natural, letterAt) {
     const abbrev = m[1] || '';
     if (abbrev) return abbrev === parsed.piece
         || abbrev === SAN_PIECE_ALIASES[parsed.piece];
-    if (parsed.piece) return false;
+    // Sans abreviation, deux cas OPPOSES, et c'est le separateur qui les
+    // distingue :
+    //
+    //   « b7-b6 »  jocly ecrit un tiret et omet l'abreviation : c'est un pion,
+    //              par construction — il n'omet l'abreviation que pour lui.
+    //   « c0e2 »   pas de separateur du tout : au xiangqi jocly n'ecrit JAMAIS
+    //              d'abreviation, et l'absence ne dit rien. La lettre du
+    //              plateau tranche alors, si l'appelant en fournit une.
+    //
+    // Se fier au plateau dans le premier cas serait un piege : les geometries
+    // a colonnes de reserve (shogi, crazyhouse) decalent les noms de case, et
+    // la lettre lue n'est pas celle qu'on croit.
+    if (parsed.piece) {
+        if (m[3]) return parsed.piece === 'P';
+        const onBoard = letterAt && letterAt(m[2]);
+        return !!onBoard && onBoard.toUpperCase() === parsed.piece;
+    }
     // Ni l'un ni l'autre ne nomme la piece : c'est un pion des deux cotes, et
     // il n'y a rien de plus a verifier. Confirmer par le plateau serait une
     // securite illusoire -- elle ne pourrait que se tromper sur les geometries

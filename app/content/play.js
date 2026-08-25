@@ -877,7 +877,10 @@ function initSatelliteListeners() {
 // ChuShogiLite ("+H"), la ou jocly ecrit son abreviation naturelle ("+DH").
 // Plutot que de transporter une table de correspondance entre les deux, on lit
 // la lettre a la source : le plateau la donne, et il est deja a notre portee.
-function BoardLetters(fen) {
+function BoardLetters(fen, options) {
+    // Le xiangqi de jocly nomme ses rangees a partir de 0, les autres jeux a
+    // partir de 1. L'appelant le sait, la fonction non.
+    const base = (options && options.zeroBased) ? 1 : 0;
     // La reserve du crazyhouse est collee au plateau, entre crochets
     // (« …/RNBQKBNR[Nn] »). Sans la retirer, les crochets comptent comme des
     // cases et decalent toute la derniere rangee : la lettre lue n'est plus
@@ -885,7 +888,7 @@ function BoardLetters(fen) {
     const rows = String(fen || '').split(' ')[0].replace(/\[[^\]]*\]/g, '').split('/');
     const map = {};
     rows.forEach((row, index) => {
-        const rank = rows.length - index;
+        const rank = rows.length - index - base;
         let file = 0;
         for (let k = 0; k < row.length; ) {
             const c = row[k];
@@ -1084,20 +1087,43 @@ async function MoveFromWxf(token) {
 // doivent toutes correspondre, et la piece est identifiee par la lettre que
 // porte le PLATEAU a la case de depart -- pas par une table d'abreviations,
 // qui differe d'une variante a l'autre.
+// Decalage de rangee entre le fichier et jocly, DETERMINE et non devine.
+//
+// jocly numerote les rangees du xiangqi a partir de 0 (« c0e2 ») quand PyChess
+// compte a partir de 1 (« Hc3 ») : le meme point du plateau s'ecrit
+// differemment. Le decalage ne se lit nulle part, mais il se verifie -- une
+// seule des deux lectures resout le premier coup. On l'essaie donc, et on le
+// retient pour la partie.
+let sanRankOffset = null;
+
 async function MoveFromSan(token) {
     const parsed = ParseSanMove(token);
     if (!parsed) return null;
     const moves = await joclyMatch.getPossibleMoves();
     if (!moves || !moves.length) return null;
     const naturals = await joclyMatch.getMoveString(moves);
-    const letterAt = BoardLetters(await joclyMatch.getBoardState());
-    let found = null;
-    for (let i = 0; i < moves.length; i++) {
-        if (!SanMatches(parsed, naturals[i], letterAt)) continue;
-        if (found) { console.warn('[play] SAN : jeton ambigu', token); return null; }
-        found = moves[i];
+    const letterAt = BoardLetters(await joclyMatch.getBoardState(), { zeroBased: true });
+
+    const tryOffset = (offset) => {
+        let found = null, ambiguous = false;
+        for (let i = 0; i < moves.length; i++) {
+            if (!SanMatches(parsed, naturals[i], letterAt, { rankOffset: offset })) continue;
+            if (found) { ambiguous = true; continue; }
+            found = moves[i];
+        }
+        return ambiguous ? null : found;
+    };
+
+    if (sanRankOffset !== null) return tryOffset(sanRankOffset);
+    for (const offset of [0, 1]) {
+        const move = tryOffset(offset);
+        if (move) {
+            sanRankOffset = offset;
+            if (offset) console.info('[play] SAN : rangées décalées de', offset, '— notation de PyChess');
+            return move;
+        }
     }
-    return found;
+    return null;
 }
 
 // Le coup que designe un jeton USI dans la position courante, ou null.
@@ -1552,6 +1578,7 @@ async function BookReplay(book) {
         // (`book.kif`), et c'est necessaire — « e4-e5 » est aussi la notation
         // naturelle d'un pion chez jocly, les deux formes ne se distinguent
         // pas a la lecture du seul jeton.
+        sanRankOffset = null;   // redetermine a chaque livre charge
         const format = book.kif ? 'kif' : MoveFormat(book.moves);
         let exact = null;
         if (format === 'kif') exact = MoveFromSquares;

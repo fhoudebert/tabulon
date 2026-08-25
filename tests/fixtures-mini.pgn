@@ -1,0 +1,15 @@
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/0Zihdt0l"]
+[Date "2020.03.13"]
+[Round "-"]
+[White "Karagialis"]
+[Black "CouchTomato87"]
+[Result "1-0"]
+[TimeControl "300+0"]
+[WhiteElo "1361?"]
+[BlackElo "1500?"]
+[Variant "Minishogi"]
+[FEN "rbsgk/4p/5/P4/KGSBR[-] w 0 1"]
+[SetUp "1"]
+
+1. Gb2 Sb4 2. Sc2 Bc4 3. Be2 Gd4 4. Bxc4 Gxc4 5. Rc1 Rb5 6. B@d2 Sb3 7. Sxb3 Gxb3 8. Gxb3 Rxb3 9. Rc5=D+ G@d5 10. G@c4 S@b2# 1-0

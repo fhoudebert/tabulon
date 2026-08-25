@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/8mDMLGcx"]
+[Date "2020.04.12"]
+[Round "-"]
+[White "CouchTomato87"]
+[Black "Illion"]
+[Result "0-1"]
+[TimeControl "900+10"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Makruk"]
+[FEN "rnsmksnr/8/pppppppp/8/8/PPPPPPPP/8/RNSKMSNR w - - 0 1"]
+[SetUp "1"]
+
+1. Kc2 c5 2. Kb2 d5 3. Ne2 e5 4. f4 Sd7 5. Sc2 Nc6 6. fxe5 fxe5 7. Nd2 Sd6 8. Mf2 Nf6 9. g4 Ra7 10. Sg2 Rf7 11. Sf3 Kd7 12. Rhg1 g5 13. e4 d4 14. cxd4 exd4 15. Ng3 Ne5 16. Nf5 Sg7 17. Nc4 Mc7 18. Me3 Nxf3 19. Rgf1 Nh2 20. Rf2 Nhxg4 21. hxg4 Nxg4 22. Re2 Sf6 23. Ng3 b5 24. Na5 dxe3=M 25. b4 Sfe5 26. Sc3 Md4 27. Sd2 Rhf8 28. bxc5 Sxc5 29. a4 b4 30. Kb3 Sf4 31. Nf5 Mb6 32. Nc4 Sxc4+ 33. Kxc4 Mbc5 34. Rg2 Ne5+ 35. Kd5 Rd8 36. Rh1 Rf6 37. Rxh6 Kc7+ 38. Nd6 Rdxd6# 0-1

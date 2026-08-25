@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/ltlswqlc"]
+[Date "2026.04.20"]
+[Round "-"]
+[White "dragon_warrior1"]
+[Black "CouchTomato87"]
+[Result "1-0"]
+[TimeControl "900+10"]
+[WhiteElo "2105?"]
+[BlackElo "1549?"]
+[Variant "Xiangqi"]
+[FEN "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"]
+[SetUp "1"]
+
+1. Che3 Hc8 2. Pg5 Pc6 3. Hg3 Ra9 4. Rh1 Rd9 5. Ha3 Cb6 6. Cbc3 Ca6 7. Rb1 Cxa3 8. Exa3 Cg8 9. Hf5 Rd8 10. Hxe7 Afe9 11. Hxc6 Rd3 12. Rc1 Ce8 13. Afe2 Cxe3+ 14. Axd3 1-0

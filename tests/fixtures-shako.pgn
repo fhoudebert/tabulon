@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/BbA7O6hZ"]
+[Date "2020.03.01"]
+[Round "-"]
+[White "CouchTomato87"]
+[Black "sChessNoob"]
+[Result "0-1"]
+[TimeControl "300+3"]
+[WhiteElo "1315?"]
+[BlackElo "1548?"]
+[Variant "Shako"]
+[FEN "c8c/ernbqkbnre/pppppppppp/10/10/10/10/PPPPPPPPPP/ERNBQKBNRE/C8C w KQkq - 0 1"]
+[SetUp "1"]
+
+1. f4 b7 2. Eh4 i7 3. Ng4 Eh7 4. j4 Ec7 5. Nd4 f7 6. Be4 Cxa3 7. Cxa3 Bxa3 8. Rb1 Bf8 9. b5 Ed6 10. O-O Ec5 11. Nb3 Nd7 12. d4 Ed6 13. c5 Ee7 14. Ec4 Bg7 15. f5 Ef6 16. Exf6 Nxf6 17. Nxf6 Bxf6 18. Cf1 Be7 19. d5 d7 20. d6 Bd8 21. Bc3 g7 22. f6 Kg9 23. Bxh7 gxf6 24. Ed5 Ng7 25. Bc2 Cg10 26. c6 Kh9 27. Nd4 Ni8 28. Rf2 Nh6 29. Cxf6 Nj5 30. i4 Qxj4+ 31. Kh1 Ni3+ 32. Kh2 Ng4+ 33. Kg2 Qh2+ 34. Kf1 Qh1# 0-1
