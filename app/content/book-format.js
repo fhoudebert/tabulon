@@ -920,7 +920,10 @@ export function VariantFen(fen, game) {
     if (!text) return fen;
     const f = text.split(/\s+/);
 
-    if (game === 'xiangqi') {
+    // Le janggi partage la convention du xiangqi : PyChess y ecrit le cavalier
+    // « n » et l'elephant « b », jocly « h » et « e ». Meme plateau, memes
+    // pieces, memes lettres a traduire.
+    if (game === 'xiangqi' || game === 'janggi') {
         return [f[0].replace(/[nbNB]/g, (c) => XIANGQI_LETTERS[c]), ...f.slice(1)].join(' ');
     }
     // Les jeux ou le chancelier s'ecrit « C » ailleurs et « M » chez jocly. La

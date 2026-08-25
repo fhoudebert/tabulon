@@ -832,6 +832,23 @@ console.log('Test 29 - l\'hoplite du Spartan, que jocly cesse de nommer');
     ok(moves.some(mv => /^H/.test(mv)), 'la partie fait jouer les hoplites');
 }
 
+console.log('Test 30 - le janggi partage les lettres du xiangqi');
+{
+    // Meme plateau, memes pieces, meme convention : PyChess ecrit le cavalier
+    // « n » et l'elephant « b », jocly « h » et « e ». Sans traduction, le FEN
+    // est refuse et le fichier n'ouvre rien.
+    const py = 'rbna1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RBNA1ABNR w - - 0 1';
+    // « rbna » devient « reha » : b→e et n→h, chacun a sa place.
+    ok(VariantFen(py, 'janggi').split('/')[0] === 'reha1aehr',
+       'cavaliers et elephants traduits — ' + VariantFen(py, 'janggi').split('/')[0]);
+    ok(VariantFen(py, 'janggi').endsWith(' w - - 0 1'), 'et les autres champs sont intacts');
+    ok(VariantFen(py, 'classic-chess') === py, 'rien pour un jeu qui n\'est pas concerne');
+
+    const moves = ExtractMoves(fixture('fixtures-janggi.pgn'));
+    ok(moves.length === 40, `${moves.length} demi-coups lus`);
+    ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);
