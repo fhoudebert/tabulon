@@ -1196,11 +1196,15 @@ const SAN_PIECE_ALIASES = {
 // qui identifie la piece qui joue.
 const SAN_FACE_NOT_PROMOTION = { 'kyoto-shogi': true };
 
+// Un suffixe « + » dans une entree designe la face PROMUE : au Kyoto, chaque
+// piece se parachute sur l'une de ses deux faces, et jocly marque ce choix
+// d'un « + » final -- « S@c2 » pose l'argent, « S@c2+ » le fou. Le fichier,
+// lui, nomme directement la face posee.
 const SAN_DROP_ALIASES = {
-    'tori-shogi': { S: ['P'] },
-    // Au Kyoto, une piece en main se parachute sur sa face NON promue : le
-    // fou du fichier (« B@c2 ») est l'argent de jocly (« S@c2 »).
-    'kyoto-shogi': { B: ['S'], R: ['P', ''], G: ['N', 'L'] },
+    // « L » du fichier est la lance, que jocly pose sur la face NON promue
+    // (« L@a1 ») ; « G » est l'or, sa face promue (« L@a1+ » ou « N@e3+ »).
+    'kyoto-shogi': { B: ['S+'], R: ['P+', '+'], G: ['N+', 'L+'],
+                     L: ['L'], S: ['S'], N: ['N'], P: ['P'] },
 };
 
 /**
@@ -1231,12 +1235,19 @@ export function SanMatches(parsed, natural, letterAt, options) {
     // d'abreviation, son parachutage s'ecrit « @c4 » tout court.
     const dropped = /^([A-Z+]*)[@*]([a-o][0-9]{1,2})[+#]?$/.exec(text);
     if (parsed.drop || dropped) {
-        // Le parachutage nomme sa piece, et la meme table d'alias s'applique :
-        // l'hirondelle du tori s'ecrit « S@c4 » dans le fichier et jocly la
-        // parachute sous une autre lettre.
-        return !!(parsed.drop && dropped
-            && PieceAliases(parsed.piece, options && options.game, 'drop').indexOf(dropped[1]) >= 0
-            && dropped[2] === parsed.square);
+        if (!parsed.drop || !dropped || dropped[2] !== parsed.square) return false;
+        // La FACE posee fait partie de l'identite du coup : « S@c2 » et
+        // « S@c2+ » sont deux parachutages differents au Kyoto. On compare
+        // donc la lettre ET le « + » final.
+        const face = dropped[1] + (/\+$/.test(text.replace(/[#]$/, '')) ? '+' : '');
+        const game = (options && options.game) || '';
+        const allowed = PieceAliases(parsed.piece, game, 'drop');
+        // Quand le jeu declare une face pour cette lettre, elle FAIT PARTIE de
+        // l'identite du coup et doit correspondre : accepter la lettre seule
+        // en repli ferait de nouveau correspondre « L@a1 » aux deux faces, et
+        // l'ambiguite reviendrait par la porte de derriere.
+        if ((SAN_DROP_ALIASES[game] || {})[parsed.piece]) return allowed.indexOf(face) >= 0;
+        return allowed.indexOf(face) >= 0 || allowed.indexOf(dropped[1]) >= 0;
     }
 
     // jocly prefixe la case de depart de l'abreviation de la piece

@@ -882,7 +882,11 @@ console.log('Test 31 - la table d\'alias est ORGANISEE PAR JEU');
     // etendre l'alias de deplacement ferait aussi correspondre « Sxe5 » aux
     // coups du faisan, dont l'abreviation est justement « P ».
     ok(M('S@c4', '@c4', 'tori-shogi'), 'un parachutage dont jocly ne nomme pas la piece');
-    ok(M('S@e6', 'P@e6', 'tori-shogi'), 'et celui qu\'il nomme « P »');
+    // jocly nomme desormais l'hirondelle par sa lettre FEN au parachutage
+    // (« S@e6 »), au lieu d'un « P » de repli qui la confondait avec le
+    // faisan — deux coups legaux portaient le meme nom.
+    ok(M('S@e6', 'S@e6', 'tori-shogi'), 'et celui qu\'il nomme par sa lettre FEN');
+    ok(!M('S@e6', 'P@e6', 'tori-shogi'), 'le faisan restant distinct');
     ok(!M('Sxe5', 'Pd6xe5', 'tori-shogi'), 'sans confondre les DEPLACEMENTS du faisan');
     ok(!M('N@h5', 'P@h5', 'crazyhouse'), 'ni les parachutages d\'un autre jeu');
 
@@ -909,7 +913,11 @@ console.log('Test 32 - Kyoto Shogi : deux faces, et « =X » n\'est pas une prom
     ok(M('Gd4=L', '+Le5-d4'), 'et aussi de la lance — deux pieces, un meme deplacement');
     ok(M('Rxa3=P', '+Pa4xa3'), 'la tour, face promue du pion');
     ok(M('Sc4=B', 'Sd5-c4+'), 'et l\'argent, que jocly laisse sans « + »');
-    ok(M('B@c2+', 'S@c2'), 'au parachutage, la piece revient sur sa face non promue');
+    // Au parachutage, la FACE posee fait partie de l'identite du coup :
+    // jocly la marque d'un « + » final depuis qu'elle figure dans sa
+    // notation, sans quoi les deux faces s'ecrivaient pareil.
+    ok(M('B@c2+', 'S@c2+'), 'le fou est l\'argent pose sur sa face promue');
+    ok(!M('B@c2+', 'S@c2'), 'et non sur l\'autre');
 
     // Le suffixe ne se compare a rien : jocly ne marque le « + » que vers la
     // face promue, donc la moitie des coups serait refusee.
