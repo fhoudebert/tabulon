@@ -25,10 +25,10 @@ import path from 'path';
 import { VariantFen, VariantGame, BookFen, BookVariant, ExtractMoves, MoveFormat,
          FairyVariantAlias, FairyGameIndex, PgnFenToShogiSfen,
          ParseSanMove, SanMatches, ReplayBookMoves,
-         IsShogiKif, ParseShogiKif, ParseNaturalMove } from '../app/content/book-format.js';
+         IsShogiKif, ParseShogiKif, ParseNaturalMove } from '../../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const Jocly = require(path.join(root, 'dist/node/jocly.core.js'));
 
 const DROP_TOKEN = new RegExp('^([A-Z]*)@([a-i][0-9])$');
@@ -41,20 +41,20 @@ const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAI
 
 // Chaque ligne : le fichier, et le nombre de demi-coups qu'il doit rejouer.
 const GAMES = [
-    ['fixtures-shatranj.pgn',        119],
-    ['fixtures-grand.pgn',            49],
-    ['fixtures-khans.pgn',            25],
-    ['fixtures-capablanca.pgn',       91],
-    ['fixtures-shako.pgn',            68],
-    ['fixtures-spartan.pgn',          36],
-    ['fixtures-makruk.pgn',           76],
-    ['fixtures-janggi.pgn',           40],
-    ['fixtures-kyoto.pgn',            28],
-    ['fixtures-shoshogi.pgn',        108],
-    ['fixtures-shogi-promotions.pgn',  66],
-    ['fixtures-mini.pgn',             20],
-    ['fixtures-xiangqi-pychess-1.pgn', 40],
-    ['fixtures-xiangqi-NrmGxFe1.pgn', 100],
+    ['fixtures/pychess/shatranj.pgn',        119],
+    ['fixtures/pychess/grand.pgn',            49],
+    ['fixtures/pychess/khans.pgn',            25],
+    ['fixtures/pychess/capablanca.pgn',       91],
+    ['fixtures/pychess/shako.pgn',            68],
+    ['fixtures/pychess/spartan.pgn',          36],
+    ['fixtures/pychess/makruk.pgn',           76],
+    ['fixtures/pychess/janggi.pgn',           40],
+    ['fixtures/pychess/kyoto.pgn',            28],
+    ['fixtures/pychess/shoshogi.pgn',        108],
+    ['fixtures/pychess/shogi-promotions.pgn',  66],
+    ['fixtures/pychess/mini.pgn',             20],
+    ['fixtures/pychess/xiangqi-pychess-1.pgn', 40],
+    ['fixtures/pychess/xiangqi-NrmGxFe1.pgn', 100],
 ];
 
 const names = Object.keys(await Jocly.listGames());
@@ -169,12 +169,12 @@ for (const [name, expected] of GAMES) {
 // Le format des logiciels japonais (shogidb2, lishogi). Rejoue par le meme
 // principe que le reste, avec le resolveur « par cases » : le KIF donne la
 // case de depart de chaque coup, ce qui suffit a le designer sans ambiguite.
-for (const [name, expected] of [['fixtures-shogi-japonais.kif', 187],
-                                ['fixtures-shogi-japonais-2.kif', 119],
+for (const [name, expected] of [['fixtures/kif/shogi-japonais.kif', 187],
+                                ['fixtures/kif/shogi-japonais-2.kif', 119],
                                 // lishogi ecrit le meme format, avec des
                                 // coups indentes, sans temps consomme, et des
                                 // commentaires « * … » entre les coups.
-                                ['fixtures-shogi-lishogi-study.kif', 41]]) {
+                                ['fixtures/kif/shogi-lishogi-study.kif', 41]]) {
     const text = readFileSync(path.join(root, 'tests', name), 'utf-8');
     ok(IsShogiKif(text), name + ' : reconnu comme KIF de shogi');
     const kif = ParseShogiKif(text);

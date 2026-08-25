@@ -27,10 +27,10 @@ function assert(cond, msg) {
 }
 
 // Réimplémentation JS de src-tauri/src/commands/problem_cmds.rs, appliquée au
-// VRAI dossier d'exemples (tests/fixtures-problems, contenu de problems.zip).
+// VRAI dossier d'exemples (tests/fixtures/problems, contenu de problems.zip).
 // Les deux implémentations doivent rester d'accord : les assertions ci-dessous
 // portent sur des noms de fichiers réels, pas sur des données inventées.
-const PROBLEMS = './tests/fixtures-problems';
+const PROBLEMS = './tests/fixtures/problems';
 const GAME_EXT  = ['pjn', 'pgn', 'pdn', 'json'];
 const THUMB_EXT = ['png', 'jpg', 'jpeg', 'webp'];
 const extOf  = (f) => (f.split('.').pop() || '').toLowerCase();
@@ -205,7 +205,7 @@ console.log('Exemples du dossier problems/');
 
   // Un onglet par sous-dossier, dans l'ordre du dossier.
   const tabs = [...document.querySelectorAll('.loadgame-tab')];
-  assert(tabs.length === 4, `4 onglets (${tabs.length}) — un par sous-dossier de tests/fixtures-problems`);
+  assert(tabs.length === 4, `4 onglets (${tabs.length}) — un par sous-dossier de tests/fixtures/problems`);
   const labels = tabs.map(t => t.textContent);
   assert(labels[0] === 'Chu Shogi (1)' && labels[1] === 'Chess (2)',
     'le titre vient du catalogue, avec le nombre de fichiers — ' + labels.join(' | '));

@@ -6,12 +6,12 @@
 // verifier qu'on lit ce que Tabulon ecrit et ce que le monde reel produit.
 
 import { ExtractMoves, BookFen, BookGame, BuildPJN, ParseSolution, ReplayBookMoves, BookLabel,
-         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves, VariantFen, FairyVariantAlias, ParseWxfMove, WxfMatches, MoveFormat, ParseSanMove, SanMatches } from '../app/content/book-format.js';
+         BookVariant, FairyGameIndex, BookCommentary, StripBookMoves, VariantFen, FairyVariantAlias, ParseWxfMove, WxfMatches, MoveFormat, ParseSanMove, SanMatches } from '../../app/content/book-format.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-const here    = path.dirname(fileURLToPath(import.meta.url));
+const here    = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixture = (name) => readFileSync(path.join(here, name), 'utf-8');
 
 let PASS = 0, FAIL = 0;
@@ -138,7 +138,7 @@ console.log('Test 7 - jeu declare par le fichier');
 
 console.log('Test 8 - fichier reel rocaille.pjn (partie standard)');
 {
-    const txt  = fixture('fixtures-rocaille.pjn');
+    const txt  = fixture('fixtures/jocly/rocaille.pjn');
     const tags = ParseTags(txt);
     ok(BookGame(tags) === 'rocaille', 'le jeu est declare par le fichier');
     ok(BookFen(tags) === null, 'pas de tag FEN -> position standard');
@@ -150,7 +150,7 @@ console.log('Test 8 - fichier reel rocaille.pjn (partie standard)');
 
 console.log('Test 9 - fichier reel es3.pjn (probleme de chu-shogi)');
 {
-    const txt  = fixture('fixtures-es3.pjn');
+    const txt  = fixture('fixtures/jocly/es3.pjn');
     const tags = ParseTags(txt);
     ok(BookGame(tags) === 'chu-shogi', 'jeu declare');
     ok(BookFen(tags).startsWith('8+lc1l/') && BookFen(tags).endsWith(' 0 1'),
@@ -215,16 +215,16 @@ console.log('Test 10 - resolution des jetons');
 
 console.log('Test 11 - solution reelle es3-solution.json');
 {
-    const sol = ParseSolution(fixture('fixtures-es3-solution.json'));
+    const sol = ParseSolution(fixture('fixtures/jocly/es3-solution.json'));
     ok(sol !== null, 'reconnue comme sauvegarde Jocly');
     ok(sol.game === 'chu-shogi', 'le jeu vient du fichier, pas de la fiche affichee');
     ok(sol.playedMoves.length === 9, '9 coups, transmis tels quels a joclyMatch.load()');
     ok(typeof sol.initialBoard === 'string' && sol.initialBoard.includes('+lc1l'),
        'la position de depart accompagne les coups');
     // Meme probleme que es3.pjn : les deux fichiers doivent decrire la meme partie.
-    ok(sol.initialBoard === BookFen(ParseTags(fixture('fixtures-es3.pjn'))),
+    ok(sol.initialBoard === BookFen(ParseTags(fixture('fixtures/jocly/es3.pjn'))),
        'la position est identique a celle du PJN correspondant');
-    ok(sol.playedMoves.length === Number(ParseTags(fixture('fixtures-es3.pjn')).PlyCount),
+    ok(sol.playedMoves.length === Number(ParseTags(fixture('fixtures/jocly/es3.pjn')).PlyCount),
        'et le nombre de coups aussi');
 }
 
@@ -266,9 +266,9 @@ console.log('Test 12 - libelle d\'une partie');
     ok(L({ Event: 'x' }, { index: 2, count: 5 }) === 'x #3', 'fichier a plusieurs parties : numerote');
 
     // 6. Fichiers reels.
-    ok(L(ParseTags(fixture('fixtures-es3.pjn')), { fileName: 'es3.pjn' }) === 'es3 — 9 coups',
+    ok(L(ParseTags(fixture('fixtures/jocly/es3.pjn')), { fileName: 'es3.pjn' }) === 'es3 — 9 coups',
        'es3.pjn : "es3 — 9 coups" au lieu de "? vs ? #1"');
-    ok(L(ParseTags(fixture('fixtures-rocaille.pjn')), { fileName: 'rocaille.pjn' }) === 'rocaille — 13 coups',
+    ok(L(ParseTags(fixture('fixtures/jocly/rocaille.pjn')), { fileName: 'rocaille.pjn' }) === 'rocaille — 13 coups',
        'rocaille.pjn : idem');
 }
 
@@ -298,7 +298,7 @@ console.log('Test 13 - tags d\'identification a la sauvegarde');
 
 console.log('Test 14 - livre reel multi-jeux (all-tests.pgn)');
 {
-    const txt = fixture('fixtures-all-tests.pgn');
+    const txt = fixture('fixtures/jocly/all-tests.pgn');
     // Reproduit le decoupage de parse_pjn : bloc de tags + bloc de coups.
     const blocks = txt.replace(/\r\n?/g, '\n').split('\n\n').map(b => b.trim()).filter(Boolean);
     const matches = [];
@@ -395,7 +395,7 @@ console.log('Test 15 - deux nomenclatures, jamais confondues');
 console.log('Test 16 - commentaires d\'une partie');
 {
     // Fichier reel : l'etude lichess du Mat de l'Opera.
-    const c = BookCommentary(fixture('fixtures-problems/classic-chess/matOpera.pgn'));
+    const c = BookCommentary(fixture('fixtures/problems/classic-chess/matOpera.pgn'));
     ok(c.length === 4, `1 enonce + 3 coups (${c.length})`);
     ok(c[0].move === null && /Paul Morphy/.test(c[0].comment),
        'le commentaire ecrit avant le premier coup sort en tete, sans coup attache');
@@ -412,16 +412,16 @@ console.log('Test 16 - commentaires d\'une partie');
 
     // Fichier d'UltraBullet : une commande [%clk] par demi-coup, et RIEN
     // d'autre. Sans filtrage la fenetre afficherait 7 horodatages.
-    const d = BookCommentary(fixture('fixtures-problems/classic-chess/matduberger.pgn'));
+    const d = BookCommentary(fixture('fixtures/problems/classic-chess/matduberger.pgn'));
     ok(d.length === 7, `7 demi-coups (${d.length})`);
     ok(d.slice(0, 6).every(x => x.comment === null),
        'les commentaires reduits a un [%clk] ne laissent rien derriere eux');
     ok(d[6].move === 'Qxf7#', 'le mat est bien le dernier coup');
 
     // Coherence avec ExtractMoves : meme partie, meme nombre de coups.
-    for (const f of ['fixtures-problems/classic-chess/matOpera.pgn',
-                     'fixtures-problems/classic-chess/matduberger.pgn',
-                     'fixtures-problems/ultima/matc.pjn']) {
+    for (const f of ['fixtures/problems/classic-chess/matOpera.pgn',
+                     'fixtures/problems/classic-chess/matduberger.pgn',
+                     'fixtures/problems/ultima/matc.pjn']) {
         const txt = fixture(f);
         ok(BookCommentary(txt).filter(x => x.move).length === ExtractMoves(txt).length,
            'meme nombre de coups que ExtractMoves — ' + f.split('/').pop());
@@ -464,7 +464,7 @@ console.log('Test 17 - retrait des coups (bouton « Essayer »)');
 
     // Fichier a UNE partie.
     {
-        const orig = fixture('fixtures-problems/classic-chess/matOpera.pgn');
+        const orig = fixture('fixtures/problems/classic-chess/matOpera.pgn');
         const bare = StripBookMoves(orig);
         ok(ExtractMoves(bare).length === 0, 'plus aucun coup — c\'est tout l\'objet du bouton');
         ok(ExtractMoves(orig).length === 3, 'alors que l\'original en portait 3');
@@ -478,7 +478,7 @@ console.log('Test 17 - retrait des coups (bouton « Essayer »)');
 
     // Fichier a PLUSIEURS parties : les trois problemes doivent survivre.
     {
-        const orig = fixture('fixtures-problems/chu-shogi/tsumeshogi.pjn');
+        const orig = fixture('fixtures/problems/chu-shogi/tsumeshogi.pjn');
         const bare = StripBookMoves(orig);
         const a = split(orig), b = split(bare);
         ok(a.length === 3, '3 problemes dans le fichier d\'origine');
@@ -617,7 +617,7 @@ console.log('Test 21 - commentaires de ligne « ; … »');
     ok(!ExtractMoves(pgn).includes(';'), 'et le point-virgule lui-meme ne reste pas');
 
     // Le fichier d'exemples de variantes s'ouvre sur « ; variants-examples.pgn ».
-    const file = fixture('fixtures-variants.pgn');
+    const file = fixture('fixtures/pychess/variants.pgn');
     const blocks = file.replace(/\r\n?/g, '\n').split('\n\n').map(b => b.trim()).filter(Boolean);
     const first = blocks.findIndex(b => b.startsWith('['));
     let j = first + 1;
@@ -669,7 +669,7 @@ console.log('Test 23 - le pion nomme (xiangqi de PyChess, shogi occidentalise)')
     ok(ParseSanMove('e4')?.piece === '', 'et « e4 » n\'en nomme toujours pas');
 
     // Deux vraies parties de PyChess, l'une avec des poussees de pion.
-    for (const name of ['fixtures-xiangqi-pychess-1.pgn', 'fixtures-xiangqi-pychess-2.pgn']) {
+    for (const name of ['fixtures/pychess/xiangqi-pychess-1.pgn', 'fixtures/pychess/xiangqi-pychess-2.pgn']) {
         const moves = ExtractMoves(fixture(name));
         ok(moves.length > 30, `${name} : ${moves.length} coups extraits`);
         ok(moves.every(mv => ParseSanMove(mv)), 'tous se lisent');
@@ -697,9 +697,9 @@ console.log('Test 24 - SAN du xiangqi : separateur absent et rangees decalees');
        'aux echecs le decalage est nul, et l\'appliquer casserait tout');
 
     // Cinq vraies parties de PyChess, dont une de cent demi-coups.
-    for (const name of ['fixtures-xiangqi-pychess-1.pgn', 'fixtures-xiangqi-pychess-2.pgn',
-                        'fixtures-xiangqi-ltlswqlc.pgn', 'fixtures-xiangqi-LULQPutT.pgn',
-                        'fixtures-xiangqi-NrmGxFe1.pgn']) {
+    for (const name of ['fixtures/pychess/xiangqi-pychess-1.pgn', 'fixtures/pychess/xiangqi-pychess-2.pgn',
+                        'fixtures/pychess/xiangqi-ltlswqlc.pgn', 'fixtures/pychess/xiangqi-LULQPutT.pgn',
+                        'fixtures/pychess/xiangqi-NrmGxFe1.pgn']) {
         const moves = ExtractMoves(fixture(name));
         ok(moves.length > 20 && moves.every(mv => ParseSanMove(mv)) && MoveFormat(moves) === 'san',
            `${name} : ${moves.length} coups, tous lus, reconnus comme SAN`);
@@ -713,8 +713,8 @@ console.log('Test 25 - PGN de PyChess : toutes les variantes se LISENT');
     // M. Chaque oubli faisait retomber une partie entiere sur la resolution
     // floue -- un seul « Sd7 » suffisait. N'importe quelle MAJUSCULE nomme
     // donc une piece ; la casse suffit a la distinguer d'une colonne.
-    for (const name of ['fixtures-shako.pgn', 'fixtures-makruk.pgn',
-                        'fixtures-shogi.pgn', 'fixtures-mini.pgn']) {
+    for (const name of ['fixtures/pychess/shako.pgn', 'fixtures/pychess/makruk.pgn',
+                        'fixtures/pychess/shogi.pgn', 'fixtures/pychess/mini.pgn']) {
         const moves = ExtractMoves(fixture(name));
         const unread = moves.filter(mv => !ParseSanMove(mv));
         ok(unread.length === 0,
@@ -763,7 +763,7 @@ console.log('Test 26 - la promotion du shogi : « =G » nomme un MOUVEMENT');
     ok(M('e8=Q', 'e7-e8=Q+') && !M('e8=Q', 'e7-e8=N'),
        'une sous-promotion d\'echecs reste distinguee');
 
-    const moves = ExtractMoves(fixture('fixtures-shogi-promotions.pgn'));
+    const moves = ExtractMoves(fixture('fixtures/pychess/shogi-promotions.pgn'));
     ok(moves.length === 66, `${moves.length} coups lus`);
     ok(moves.filter(mv => /=/.test(mv)).length === 6, 'dont six promotions');
     ok(moves.filter(mv => /@/.test(mv)).length > 5, 'et des parachutages');
@@ -775,7 +775,7 @@ console.log('Test 27 - Capablanca, une vraie partie de PyChess');
     // Le prelude de jocly -- les dix dispositions 10x8 -- compte pour un coup,
     // et il est desormais saute quand la position est fournie. Restait la
     // lettre : le fichier ecrit « C » (chancellor), jocly « M » (marshall).
-    const moves = ExtractMoves(fixture('fixtures-capablanca.pgn'));
+    const moves = ExtractMoves(fixture('fixtures/pychess/capablanca.pgn'));
     ok(moves.length === 91, `${moves.length} demi-coups lus`);
     ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
     ok(moves.some(mv => /^C/.test(mv)), 'la partie fait jouer le chancelier');
@@ -807,7 +807,7 @@ console.log('Test 28 - une lettre de fichier, plusieurs pieces de jocly');
     ok(SanMatches(ParseSanMove('Cg3'), 'Mh1-g3', null, { game: 'capablanca-chess' }),
        'et le chancelier reste le marshall');
 
-    const moves = ExtractMoves(fixture('fixtures-shoshogi.pgn'));
+    const moves = ExtractMoves(fixture('fixtures/pychess/shoshogi.pgn'));
     ok(moves.length === 108, `${moves.length} demi-coups lus`);
     ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
     ok(moves.some(mv => /^E/.test(mv)) && moves.some(mv => /^G/.test(mv)),
@@ -829,7 +829,7 @@ console.log('Test 29 - l\'hoplite du Spartan, que jocly cesse de nommer');
     ok(M('e4', 'e2-e4'), 'le pion, que jocly ne nomme jamais');
     ok(!M('Nf3', 'e2-e4'), 'sans que l\'abreviation vide accepte n\'importe quoi');
 
-    const moves = ExtractMoves(fixture('fixtures-spartan.pgn'));
+    const moves = ExtractMoves(fixture('fixtures/pychess/spartan.pgn'));
     ok(moves.length > 30, `${moves.length} demi-coups lus`);
     ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
     ok(moves.some(mv => /^H/.test(mv)), 'la partie fait jouer les hoplites');
@@ -847,7 +847,7 @@ console.log('Test 30 - le janggi partage les lettres du xiangqi');
     ok(VariantFen(py, 'janggi').endsWith(' w - - 0 1'), 'et les autres champs sont intacts');
     ok(VariantFen(py, 'classic-chess') === py, 'rien pour un jeu qui n\'est pas concerne');
 
-    const moves = ExtractMoves(fixture('fixtures-janggi.pgn'));
+    const moves = ExtractMoves(fixture('fixtures/pychess/janggi.pgn'));
     ok(moves.length === 40, `${moves.length} demi-coups lus`);
     ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
 }
@@ -890,7 +890,7 @@ console.log('Test 31 - la table d\'alias est ORGANISEE PAR JEU');
     ok(!M('Sxe5', 'Pd6xe5', 'tori-shogi'), 'sans confondre les DEPLACEMENTS du faisan');
     ok(!M('N@h5', 'P@h5', 'crazyhouse'), 'ni les parachutages d\'un autre jeu');
 
-    const moves = ExtractMoves(fixture('fixtures-makruk.pgn'));
+    const moves = ExtractMoves(fixture('fixtures/pychess/makruk.pgn'));
     ok(moves.length === 76 && MoveFormat(moves) === 'san',
        `${moves.length} demi-coups de makruk, reconnus comme du SAN`);
 }
@@ -901,8 +901,8 @@ console.log('Test 32 - Kyoto Shogi : deux faces, et « =X » n\'est pas une prom
     // face obtenue -- ce n'est pas un choix mais une consequence -- tandis que
     // jocly nomme le TYPE qui joue, sa face « promue » portant un « + ».
     //
-    // La meme partie dans les deux notations (fixtures-kyoto.pgn et
-    // fixtures-kyoto-jocly.pjn) donne la correspondance :
+    // La meme partie dans les deux notations (fixtures/pychess/kyoto.pgn et
+    // fixtures/chushogilite/kyoto-jocly.pjn) donne la correspondance :
     //
     //   Ge2=N   +Nd1-e2      l'or est la face promue du cavalier...
     //   Gd4=L   +Le5-d4      ...et aussi celle de la lance
@@ -925,8 +925,8 @@ console.log('Test 32 - Kyoto Shogi : deux faces, et « =X » n\'est pas une prom
        'le suffixe de face n\'est pas confronte au « + » de jocly');
 
     // Les deux fichiers decrivent bien la meme partie.
-    const py = ExtractMoves(fixture('fixtures-kyoto.pgn'));
-    const jo = ExtractMoves(fixture('fixtures-kyoto-jocly.pjn'));
+    const py = ExtractMoves(fixture('fixtures/pychess/kyoto.pgn'));
+    const jo = ExtractMoves(fixture('fixtures/chushogilite/kyoto-jocly.pjn'));
     ok(py.length === jo.length && py.length === 28,
        `${py.length} demi-coups de part et d'autre`);
     ok(MoveFormat(py) === 'san' && MoveFormat(jo) === 'natural',
@@ -951,7 +951,7 @@ console.log('Test 33 - Shatranj : deux pieces qui n\'ont des echecs que la lettr
     ok(!SanMatches(ParseSanMove('Be3'), 'Ec1-e3', null, { game: 'classic-chess' }),
        'la traduction ne franchit pas les jeux');
 
-    const moves = ExtractMoves(fixture('fixtures-shatranj.pgn'));
+    const moves = ExtractMoves(fixture('fixtures/pychess/shatranj.pgn'));
     ok(moves.length === 119 && MoveFormat(moves) === 'san',
        `${moves.length} demi-coups, reconnus comme du SAN`);
 }

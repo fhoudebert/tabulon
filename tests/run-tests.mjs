@@ -1,4 +1,14 @@
 // tests/run-tests.mjs — lance toutes les suites d'intégration et résume.
+//
+// Rangement :
+//   tests/                suites generales — fenetres, i18n, extensions, relai…
+//   tests/import/         lecture des fichiers de parties : PGN, KIF, PJN, JSON
+//   tests/fixtures/       les fichiers eux-memes, par provenance
+//     pychess/            exports de pychess.org, quatorze variantes
+//     kif/                kifu japonais : shogidb2, lishogi, ChuShogiLite
+//     chushogilite/       PGN et PJN de l'applet de chu shogi
+//     jocly/              parties ecrites par Tabulon lui-meme
+//     problems/           problemes d'exemple, par jeu (voir l'ecran « Charger »)
 // Usage : npm test   (ou : node tests/run-tests.mjs)
 //
 // Prérequis : dist/ de jocly2 copié à la racine (voir README) et jsdom
@@ -16,7 +26,26 @@ for (const [p, msg] of [
     [path.join(root, 'app/node_modules/jsdom'),  'jsdom manquant — lancer : npm --prefix app install'],
 ]) if (!existsSync(p)) { console.error('✗ ' + msg); process.exit(1); }
 
-const suites = readdirSync(testsDir).filter(f => /^test-.*\.mjs$/.test(f)).sort();
+// Les suites sont regroupees par theme : « import/ » pour la lecture des
+// fichiers de parties, la racine pour le reste. La recherche est donc
+// RECURSIVE -- ajouter un dossier ne demande rien d'autre que d'y deposer un
+// fichier « test-*.mjs ».
+//
+// `fixtures/` est ecarte : il ne contient que des donnees, et une partie
+// enregistree ne s'execute pas.
+function findSuites(dir, prefix) {
+    const found = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {
+        if (entry.isDirectory()) {
+            if (entry.name === 'fixtures' || entry.name === 'node_modules') continue;
+            found.push(...findSuites(path.join(dir, entry.name), prefix + entry.name + '/'));
+        } else if (/^test-.*\.mjs$/.test(entry.name)) {
+            found.push(prefix + entry.name);
+        }
+    }
+    return found;
+}
+const suites = findSuites(testsDir, '');
 let failed = 0;
 console.log(`Lancement de ${suites.length} suites…\n`);
 for (const suite of suites) {
