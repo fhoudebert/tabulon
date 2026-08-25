@@ -1101,33 +1101,51 @@ let sanRankOffset = null;
 // Renvoie true si un choix a ete joue. Le critere est le premier coup du
 // fichier : sans lui (partie sans coups), on prend le premier choix, faute de
 // mieux, et on le dit.
-async function AnswerPrelude(firstToken) {
-    const moves = await joclyMatch.getPossibleMoves().catch(() => []);
-    if (!moves || !moves.length) return false;
-    const names = await joclyMatch.getMoveString(moves).catch(() => []);
-    // jocly nomme les choix de prelude « #0 », « #1 »... et rien d'autre ne
-    // porte ce nom : si le premier en est un, ils le sont tous.
-    if (!/^#\d+$/.test(names[0] || '')) return false;
+// Un coup de prelude, reconnaissable a son nom : « #0 », « #1 »... pour un
+// choix, « -- » pour une etape qui ne demande rien mais qu'il faut franchir.
+const PRELUDE_MOVE = /^(#\d+|--)$/;
 
-    for (let i = 0; i < moves.length; i++) {
-        await joclyMatch.playMove(moves[i]);
-        if (!firstToken) {
-            console.info('[play] prelude :', names[i], '(aucun coup pour departager)');
-            return true;
+async function AnswerPrelude(firstToken) {
+    // PLUSIEURS ETAPES. Sho Shogi en a deux : le choix de la regle, puis un
+    // passage. N'en franchir qu'une laissait la partie sur un coup « -- »
+    // unique, et le premier coup du fichier restait introuvable -- exactement
+    // le symptome qu'on croyait venir de la notation.
+    const stages = [];
+    for (let depth = 0; depth < 4; depth++) {
+        const moves = await joclyMatch.getPossibleMoves().catch(() => []);
+        if (!moves || !moves.length) break;
+        const names = await joclyMatch.getMoveString(moves).catch(() => []);
+        if (!PRELUDE_MOVE.test(names[0] || '')) break;
+
+        // Une etape sans choix se franchit sans se poser de question.
+        if (moves.length === 1) {
+            await joclyMatch.playMove(moves[0]);
+            stages.push(names[0]);
+            continue;
         }
-        const resolved = await MoveFromSan(firstToken).catch(() => null)
-            || await joclyMatch.pickMove(firstToken).catch(() => null);
-        if (resolved) {
-            console.info('[play] prelude :', names[i], '— le premier coup du fichier s\'y résout');
-            return true;
+        // Une etape a plusieurs choix : le bon est celui sous lequel le
+        // premier coup du fichier se resout. Sans coup pour departager, on
+        // prend le premier et on le dit.
+        let chosen = null;
+        for (let i = 0; i < moves.length && firstToken; i++) {
+            await joclyMatch.playMove(moves[i]);
+            const rest = await AnswerPrelude(null);      // franchir les suivantes
+            const resolved = await MoveFromSan(firstToken).catch(() => null)
+                || await joclyMatch.pickMove(firstToken).catch(() => null);
+            if (resolved) { chosen = names[i]; break; }
+            await joclyMatch.rollback(stages.length).catch(() => {});
+            void rest;
         }
-        await joclyMatch.rollback(0).catch(() => {});
+        if (chosen === null) {
+            await joclyMatch.playMove(moves[0]).catch(() => {});
+            chosen = names[0];
+            if (firstToken) console.warn('[play] prelude : aucun choix ne resout le premier coup, « '
+                + chosen + ' » retenu');
+        }
+        stages.push(chosen);
     }
-    // Aucun choix ne convient : on joue le premier pour que la partie soit au
-    // moins jouable, et le rejeu signalera lui-meme le coup qui bloque.
-    await joclyMatch.playMove(moves[0]).catch(() => {});
-    console.warn('[play] prelude : aucun choix ne resout le premier coup, « ' + names[0] + ' » retenu');
-    return true;
+    if (stages.length) console.info('[play] prelude :', stages.join(' '));
+    return stages.length > 0;
 }
 
 async function MoveFromSan(token) {

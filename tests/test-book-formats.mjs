@@ -769,6 +769,19 @@ console.log('Test 26 - la promotion du shogi : « =G » nomme un MOUVEMENT');
     ok(MoveFormat(moves) === 'san', 'la partie est reconnue comme du SAN');
 }
 
+console.log('Test 27 - Capablanca, une vraie partie de PyChess');
+{
+    // Le prelude de jocly -- les dix dispositions 10x8 -- compte pour un coup,
+    // et il est desormais saute quand la position est fournie. Restait la
+    // lettre : le fichier ecrit « C » (chancellor), jocly « M » (marshall).
+    const moves = ExtractMoves(fixture('fixtures-capablanca.pgn'));
+    ok(moves.length === 91, `${moves.length} demi-coups lus`);
+    ok(MoveFormat(moves) === 'san', 'reconnus comme du SAN');
+    ok(moves.some(mv => /^C/.test(mv)), 'la partie fait jouer le chancelier');
+    ok(SanMatches(ParseSanMove('Cg3'), 'Mh1-g3', null), 'qui correspond au marshall de jocly');
+    ok(moves.some(mv => /^O-O/.test(mv)), 'et elle contient un roque');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);
