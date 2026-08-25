@@ -933,6 +933,29 @@ console.log('Test 32 - Kyoto Shogi : deux faces, et « =X » n\'est pas une prom
        'l\'un est du SAN, l\'autre la notation de jocly');
 }
 
+console.log('Test 33 - Shatranj : deux pieces qui n\'ont des echecs que la lettre');
+{
+    // PyChess garde « b » et « q », mais l'alfil n'est pas un fou -- il saute
+    // de deux cases en diagonale -- et le firz n'est pas une dame : il ne va
+    // que d'une case. jocly les nomme d'apres ce qu'elles SONT, elephant et
+    // general, d'ou une traduction dans les deux sens.
+    const py = 'rnbkqbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBKQBNR w - - 0 1';
+    ok(VariantFen(py, 'shatranj-chess').split(' ')[0] === 'rnekgenr/pppppppp/8/8/8/8/PPPPPPPP/RNEKGENR',
+       'le FEN traduit — ' + VariantFen(py, 'shatranj-chess').split('/')[0]);
+    ok(VariantFen(py, 'classic-chess') === py, 'et rien pour les echecs, ou b et q sont bien fou et dame');
+
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, { game: 'shatranj-chess' });
+    ok(M('Be3', 'Ec1-e3'), 'le fou du fichier est l\'elephant de jocly');
+    ok(M('Qd7', 'Ge8-d7'), 'et la dame son general');
+    ok(M('Nf3', 'Ng1-f3') && M('e4', 'e2-e4'), 'les autres pieces ne bougent pas');
+    ok(!SanMatches(ParseSanMove('Be3'), 'Ec1-e3', null, { game: 'classic-chess' }),
+       'la traduction ne franchit pas les jeux');
+
+    const moves = ExtractMoves(fixture('fixtures-shatranj.pgn'));
+    ok(moves.length === 119 && MoveFormat(moves) === 'san',
+       `${moves.length} demi-coups, reconnus comme du SAN`);
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

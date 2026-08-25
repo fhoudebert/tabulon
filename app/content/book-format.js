@@ -901,6 +901,12 @@ const CHANCELLOR_LETTERS = { c: 'm', C: 'M' };
 // fait tomber la fenetre de jeu.
 const MAKRUK_LETTERS = { s: 'b', S: 'B', m: 'q', M: 'Q' };
 
+// Shatranj : PyChess garde les lettres des echecs pour deux pieces qui n'en
+// sont pourtant pas -- l'alfil (« b ») n'est pas un fou, il saute de deux
+// cases en diagonale, et le firz (« q ») n'est pas une dame, il ne va que
+// d'une case. jocly les nomme d'apres ce qu'elles sont : elephant et general.
+const SHATRANJ_LETTERS = { b: 'e', B: 'E', q: 'g', Q: 'G' };
+
 /**
  * Un FEN de variante, ramene a ce que le jeu Jocly vise attend — ou le FEN
  * inchange quand il n'y a rien a faire.
@@ -932,6 +938,10 @@ export function VariantFen(fen, game) {
     // au hasard casserait plus qu'elle ne repare.
     if (game === 'capablanca-chess' || game === 'grand-chess' || game === 'gothic-chess') {
         f[0] = f[0].replace(/[cC]/g, (ch) => CHANCELLOR_LETTERS[ch]);
+        return f.join(' ');
+    }
+    if (game === 'shatranj-chess') {
+        f[0] = f[0].replace(/[bBqQ]/g, (ch) => SHATRANJ_LETTERS[ch]);
         return f.join(' ');
     }
     if (game === 'makruk') {
@@ -1166,6 +1176,10 @@ const SAN_PIECE_ALIASES = {
     // Makruk : PyChess nomme les pieces d'apres le thai, jocly reprend les
     // lettres des echecs.
     'makruk': { S: ['B'], M: ['Q'] },
+
+    // Shatranj : le fou du fichier est l'elephant de jocly, la dame son
+    // general -- deux pieces qui n'ont des echecs que la lettre.
+    'shatranj-chess': { B: ['E'], Q: ['G'] },
 
     // Spartan : l'hoplite, nomme « H » tant qu'il est sur sa case de depart et
     // plus rien ensuite.
