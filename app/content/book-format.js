@@ -1170,6 +1170,13 @@ const SAN_PIECE_ALIASES = {
     // Spartan : l'hoplite, nomme « H » tant qu'il est sur sa case de depart et
     // plus rien ensuite.
     'spartan-chess': { H: ['H', ''] },
+
+    // Kyoto Shogi : chaque piece a DEUX FACES et se retourne a chaque coup.
+    // PyChess nomme la face qui joue, jocly le TYPE, dont la face « promue »
+    // porte un « + ». L'or est ainsi la face promue du cavalier ET de la
+    // lance -- deux pieces distinctes qui se deplacent pareil, exactement le
+    // cas du « G » au shogi.
+    'kyoto-shogi': { G: ['+N', '+L'], B: ['+S'], R: ['+P'] },
 };
 
 // Les PARACHUTAGES peuvent nommer autrement que les deplacements. Au tori,
@@ -1178,8 +1185,22 @@ const SAN_PIECE_ALIASES = {
 // « S@e6 ». La table est donc distincte : etendre l'alias de deplacement
 // ferait aussi correspondre « Sxe5 » aux coups du faisan, dont l'abreviation
 // est justement « P ».
+// Jeux dont le suffixe « =X » ne designe PAS une promotion.
+//
+// Au Kyoto Shogi chaque piece a deux faces et se retourne a CHAQUE coup :
+// PyChess note la face obtenue, ce qui n'est pas un choix mais une
+// consequence. jocly, lui, marque d'un « + » le passage vers la face promue
+// seulement -- « +Nd1-e2 » retourne l'or en cavalier sans rien marquer, alors
+// que « e1-e2+ » retourne le pion en tour. Comparer les deux refuserait la
+// moitie des coups. La face obtenue est deja verifiee par la table d'alias,
+// qui identifie la piece qui joue.
+const SAN_FACE_NOT_PROMOTION = { 'kyoto-shogi': true };
+
 const SAN_DROP_ALIASES = {
     'tori-shogi': { S: ['P'] },
+    // Au Kyoto, une piece en main se parachute sur sa face NON promue : le
+    // fou du fichier (« B@c2 ») est l'argent de jocly (« S@c2 »).
+    'kyoto-shogi': { B: ['S'], R: ['P', ''], G: ['N', 'L'] },
 };
 
 /**
@@ -1251,7 +1272,9 @@ export function SanMatches(parsed, natural, letterAt, options) {
     //
     // Aux echecs, ou « =Q » designe bien une dame, la comparaison de lettre
     // reste faite -- c'est elle qui distingue une sous-promotion.
-    if (promoted !== null) {
+    if (SAN_FACE_NOT_PROMOTION[(options && options.game) || '']) {
+        // Rien a comparer : voir SAN_FACE_NOT_PROMOTION.
+    } else if (promoted !== null) {
         if (!!parsed.promotion !== promoted) return false;
     } else {
         const got = m[5] ? m[5].replace(/\+/g, '') : null;

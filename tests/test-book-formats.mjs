@@ -891,6 +891,40 @@ console.log('Test 31 - la table d\'alias est ORGANISEE PAR JEU');
        `${moves.length} demi-coups de makruk, reconnus comme du SAN`);
 }
 
+console.log('Test 32 - Kyoto Shogi : deux faces, et « =X » n\'est pas une promotion');
+{
+    // Chaque piece a deux faces et se retourne a CHAQUE coup. PyChess note la
+    // face obtenue -- ce n'est pas un choix mais une consequence -- tandis que
+    // jocly nomme le TYPE qui joue, sa face « promue » portant un « + ».
+    //
+    // La meme partie dans les deux notations (fixtures-kyoto.pgn et
+    // fixtures-kyoto-jocly.pjn) donne la correspondance :
+    //
+    //   Ge2=N   +Nd1-e2      l'or est la face promue du cavalier...
+    //   Gd4=L   +Le5-d4      ...et aussi celle de la lance
+    //   Rxa3=P  +Pa4xa3      la tour, celle du pion
+    //   Sc4=B   Sd5-c4+      l'argent devient fou, que jocly ne nomme pas
+    const M = (san, nat) => SanMatches(ParseSanMove(san), nat, null, { game: 'kyoto-shogi' });
+    ok(M('Ge2=N', '+Nd1-e2'), 'l\'or, face promue du cavalier');
+    ok(M('Gd4=L', '+Le5-d4'), 'et aussi de la lance — deux pieces, un meme deplacement');
+    ok(M('Rxa3=P', '+Pa4xa3'), 'la tour, face promue du pion');
+    ok(M('Sc4=B', 'Sd5-c4+'), 'et l\'argent, que jocly laisse sans « + »');
+    ok(M('B@c2+', 'S@c2'), 'au parachutage, la piece revient sur sa face non promue');
+
+    // Le suffixe ne se compare a rien : jocly ne marque le « + » que vers la
+    // face promue, donc la moitie des coups serait refusee.
+    ok(M('Pa4=R', 'a5-a4+') && M('Ld2=G', 'Ld4-d2+'),
+       'le suffixe de face n\'est pas confronte au « + » de jocly');
+
+    // Les deux fichiers decrivent bien la meme partie.
+    const py = ExtractMoves(fixture('fixtures-kyoto.pgn'));
+    const jo = ExtractMoves(fixture('fixtures-kyoto-jocly.pjn'));
+    ok(py.length === jo.length && py.length === 28,
+       `${py.length} demi-coups de part et d'autre`);
+    ok(MoveFormat(py) === 'san' && MoveFormat(jo) === 'natural',
+       'l\'un est du SAN, l\'autre la notation de jocly');
+}
+
 console.log('');
 console.log(`RESULTAT book-formats: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);
