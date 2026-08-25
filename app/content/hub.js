@@ -10,7 +10,7 @@ import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
 import { Matches } from './text-search.js';
 import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
-         IsChuKif, ParseKif,
+         IsChuKif, ParseKif, IsShogiKif, ParseShogiKif,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
@@ -401,6 +401,31 @@ async function OpenGameFile(text, fileName, hintGame) {
     //    plateau dessine en kanji, puis des lignes de coups. La lecture vit
     //    dans book-format.js (module pur) ; ici on se contente de deposer le
     //    resultat par le meme canal que la fenetre livre.
+    // 2 ter. KIF de shogi orthodoxe : meme famille, autre dialecte. Pas de
+    //    plateau dessine, un en-tete « cle：valeur », et des coups nommes en
+    //    kanji. La position est celle du jeu, sauf handicap -- qu'on refuse
+    //    plutot que de charger une partie qui ne commence pas ou il faut.
+    if (IsShogiKif(text)) {
+        const kif = ParseShogiKif(text);
+        if (!kif) return Notify(t('hub.loadFailed'));
+        if (kif.handicap && kif.handicap !== '\u5e73\u624b') {
+            console.warn('[hub] KIF : handicap non gere —', kif.handicap);
+            return Notify(t('hub.loadFailed'));
+        }
+        const r = ResolveGame('shogi', selected);
+        if (!r.game) return Notify(t('hub.loadUnknownGame'));
+        const id = 'kif-' + Date.now();
+        await store.set('fork:' + id, {
+            book: {
+                moves: kif.moves,
+                kif: true,
+                label: (fileName || '').replace(/^.*[/\\]/, '') || 'KIF',
+            },
+        });
+        console.info('[hub] KIF de shogi :', kif.moves.length, 'coups');
+        return tRpc.call('new_match', r.game, null, id);
+    }
+
     if (IsChuKif(text)) {
         const kif = ParseKif(text);
         if (!kif) return Notify(t('hub.loadFailed'));

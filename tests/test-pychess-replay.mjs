@@ -24,11 +24,17 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { VariantFen, VariantGame, BookFen, BookVariant, ExtractMoves, MoveFormat,
          FairyVariantAlias, FairyGameIndex, PgnFenToShogiSfen,
-         ParseSanMove, SanMatches, ReplayBookMoves } from '../app/content/book-format.js';
+         ParseSanMove, SanMatches, ReplayBookMoves,
+         IsShogiKif, ParseShogiKif, ParseNaturalMove } from '../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const Jocly = require(path.join(root, 'dist/node/jocly.core.js'));
+
+const DROP_TOKEN = new RegExp('^([A-Z]*)@([a-i][0-9])$');
+const DROP_NATURAL = new RegExp('^([A-Z+]*)@([a-i][0-9])$');
+const SUFFIX = new RegExp('[+=]$');
+const PROMOTED = new RegExp('[+]$');
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
@@ -156,6 +162,26 @@ for (const [name, expected] of GAMES) {
     ok(replay.unresolved === null && replay.played === expected,
        `${name.replace('fixtures-', '').padEnd(30)} ${replay.played}/${tokens.length}`
        + (replay.unresolved ? ` — bloque sur « ${replay.unresolved} »` : ''));
+}
+
+// ── KIF japonais ────────────────────────────────────────────────────────────
+//
+// Le format des logiciels japonais (shogidb2, lishogi). Rejoue par le meme
+// principe que le reste, avec le resolveur « par cases » : le KIF donne la
+// case de depart de chaque coup, ce qui suffit a le designer sans ambiguite.
+for (const [name, expected] of [['fixtures-shogi-japonais.kif', 187],
+                                ['fixtures-shogi-japonais-2.kif', 119]]) {
+    const text = readFileSync(path.join(root, 'tests', name), 'utf-8');
+    ok(IsShogiKif(text), name + ' : reconnu comme KIF de shogi');
+    const kif = ParseShogiKif(text);
+    ok(kif && kif.handicap === '\u5e73\u624b', 'partie a egalite, position standard');
+    ok(kif.moves.length === expected, expected + ' coups lus (' + kif.moves.length + ')');
+
+    const drops = kif.moves.filter(function(mv) { return mv.indexOf('@') >= 0; });
+    ok(drops.length > 0 && drops.every(function(mv) { return DROP_TOKEN.test(mv); }),
+       drops.length + ' parachutages, tous nommes (' + drops.slice(0, 3).join(' ') + ')');
+    ok(kif.moves.some(function(mv) { return mv.slice(-1) === '+'; }),
+       'et des promotions');
 }
 
 console.log('');

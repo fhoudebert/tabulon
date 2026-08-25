@@ -1029,6 +1029,21 @@ async function WesternGame() {
 // jocly n'ecrit pas la case de depart sur un coup a deux pas : on compare
 // alors les seules cases qu'il donne, passage puis arrivee.
 async function MoveFromSquares(token) {
+    // Parachutage : « P@c6 », la piece nommee et la case, sans depart.
+    const drop = /^([A-Z+]*)@([a-l]\d{1,2})$/.exec(String(token || '').trim());
+    if (drop) {
+        const moves = await joclyMatch.getPossibleMoves();
+        if (!moves || !moves.length) return null;
+        const naturals = await joclyMatch.getMoveString(moves);
+        let found = null;
+        for (let i = 0; i < moves.length; i++) {
+            const d = /^([A-Z+]*)@([a-l]\d{1,2})[+#]?$/.exec(naturals[i]);
+            if (!d || d[2] !== drop[2] || d[1] !== drop[1]) continue;
+            if (found) { console.warn('[play] KIF : parachutage ambigu', token); return null; }
+            found = moves[i];
+        }
+        return found;
+    }
     const m = /^([a-l]\d{1,2}(?:-[a-l]\d{1,2})+)([+=]?)$/.exec(String(token || '').trim());
     if (!m) return null;
     const want = m[1].split('-');
