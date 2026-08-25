@@ -1172,14 +1172,27 @@ const SAN_PIECE_ALIASES = {
     'spartan-chess': { H: ['H', ''] },
 };
 
+// Les PARACHUTAGES peuvent nommer autrement que les deplacements. Au tori,
+// jocly ne nomme pas l'hirondelle quand elle se deplace -- son abreviation est
+// vide -- mais ecrit « P@e6 » quand on la parachute, la ou PyChess ecrit
+// « S@e6 ». La table est donc distincte : etendre l'alias de deplacement
+// ferait aussi correspondre « Sxe5 » aux coups du faisan, dont l'abreviation
+// est justement « P ».
+const SAN_DROP_ALIASES = {
+    'tori-shogi': { S: ['P'] },
+};
+
 /**
  * Les abreviations de jocly qu'une lettre de fichier peut designer, pour un
  * jeu donne. Toujours au moins la lettre elle-meme.
+ *
+ * `kind` vaut 'drop' pour un parachutage, dont la nomenclature peut differer.
  */
-export function PieceAliases(letter, game) {
+export function PieceAliases(letter, game, kind) {
     const common = SAN_PIECE_ALIASES['*'][letter] || [];
     const own = (SAN_PIECE_ALIASES[game] || {})[letter] || [];
-    return [letter].concat(own, common);
+    const drops = kind === 'drop' ? ((SAN_DROP_ALIASES[game] || {})[letter] || []) : [];
+    return [letter].concat(own, common, drops);
 }
 
 export function SanMatches(parsed, natural, letterAt, options) {
@@ -1201,7 +1214,7 @@ export function SanMatches(parsed, natural, letterAt, options) {
         // l'hirondelle du tori s'ecrit « S@c4 » dans le fichier et jocly la
         // parachute sous une autre lettre.
         return !!(parsed.drop && dropped
-            && PieceAliases(parsed.piece, options && options.game).indexOf(dropped[1]) >= 0
+            && PieceAliases(parsed.piece, options && options.game, 'drop').indexOf(dropped[1]) >= 0
             && dropped[2] === parsed.square);
     }
 

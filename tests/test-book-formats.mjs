@@ -876,8 +876,15 @@ console.log('Test 31 - la table d\'alias est ORGANISEE PAR JEU');
     ok(M('dxe3=M', 'd4xe3=Q', 'makruk'), 'le met du makruk devient la dame de jocly');
     ok(M('e8=Q', 'e7-e8=Q', 'classic-chess') && !M('e8=Q', 'e7-e8=N', 'classic-chess'),
        'sans confondre les sous-promotions aux echecs');
+    // Les parachutages nomment parfois AUTREMENT que les deplacements : au
+    // tori, jocly laisse l'hirondelle sans abreviation quand elle se deplace
+    // et ecrit « P@e6 » quand on la parachute. Une table distincte, donc --
+    // etendre l'alias de deplacement ferait aussi correspondre « Sxe5 » aux
+    // coups du faisan, dont l'abreviation est justement « P ».
     ok(M('S@c4', '@c4', 'tori-shogi'), 'un parachutage dont jocly ne nomme pas la piece');
-    ok(!M('S@c4', 'P@c4', 'tori-shogi'), 'mais pas celui d\'une autre piece');
+    ok(M('S@e6', 'P@e6', 'tori-shogi'), 'et celui qu\'il nomme « P »');
+    ok(!M('Sxe5', 'Pd6xe5', 'tori-shogi'), 'sans confondre les DEPLACEMENTS du faisan');
+    ok(!M('N@h5', 'P@h5', 'crazyhouse'), 'ni les parachutages d\'un autre jeu');
 
     const moves = ExtractMoves(fixture('fixtures-makruk.pgn'));
     ok(moves.length === 76 && MoveFormat(moves) === 'san',
