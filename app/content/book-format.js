@@ -333,6 +333,12 @@ const VARIANT_ALIASES = {
     'makruk': 'makruk',
     'thai chess': 'makruk',
     'shako': 'shako',
+    'spartan': 'spartan',
+    'spartan chess': 'spartan',
+    // « Shō shogi » est le nom que jocly donne a kotaishi-shogi, dont le
+    // prelude choisit justement entre les deux regles.
+    'shoshogi': 'shoshogi',
+    'sho shogi': 'shoshogi',
     'mini shogi': 'minishogi',
     'tori shogi': 'torishogi',
     'chu shogi': 'chu',
@@ -1274,6 +1280,13 @@ export function MoveFormat(tokens) {
  */
 const VARIANT_GAMES = {
     'chu': 'chu-shogi',
+    // Jeux que le catalogue ne rattache a aucune variante Fairy-Stockfish :
+    // sans entree ici, leur [Variant] ne designe rien et le fichier n'ouvre
+    // aucune partie.
+    'janggi': 'janggi',
+    'korean chess': 'janggi',
+    'shoshogi': 'kotaishi-shogi',
+    'sho shogi': 'kotaishi-shogi',
     'chushogi': 'chu-shogi',
     'chu shogi': 'chu-shogi',
 };

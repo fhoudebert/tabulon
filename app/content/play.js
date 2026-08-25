@@ -1096,6 +1096,40 @@ async function MoveFromWxf(token) {
 // retient pour la partie.
 let sanRankOffset = null;
 
+// Repond au prelude, s'il y en a un, en essayant les choix offerts.
+//
+// Renvoie true si un choix a ete joue. Le critere est le premier coup du
+// fichier : sans lui (partie sans coups), on prend le premier choix, faute de
+// mieux, et on le dit.
+async function AnswerPrelude(firstToken) {
+    const moves = await joclyMatch.getPossibleMoves().catch(() => []);
+    if (!moves || !moves.length) return false;
+    const names = await joclyMatch.getMoveString(moves).catch(() => []);
+    // jocly nomme les choix de prelude « #0 », « #1 »... et rien d'autre ne
+    // porte ce nom : si le premier en est un, ils le sont tous.
+    if (!/^#\d+$/.test(names[0] || '')) return false;
+
+    for (let i = 0; i < moves.length; i++) {
+        await joclyMatch.playMove(moves[i]);
+        if (!firstToken) {
+            console.info('[play] prelude :', names[i], '(aucun coup pour departager)');
+            return true;
+        }
+        const resolved = await MoveFromSan(firstToken).catch(() => null)
+            || await joclyMatch.pickMove(firstToken).catch(() => null);
+        if (resolved) {
+            console.info('[play] prelude :', names[i], '— le premier coup du fichier s\'y résout');
+            return true;
+        }
+        await joclyMatch.rollback(0).catch(() => {});
+    }
+    // Aucun choix ne convient : on joue le premier pour que la partie soit au
+    // moins jouable, et le rejeu signalera lui-meme le coup qui bloque.
+    await joclyMatch.playMove(moves[0]).catch(() => {});
+    console.warn('[play] prelude : aucun choix ne resout le premier coup, « ' + names[0] + ' » retenu');
+    return true;
+}
+
 async function MoveFromSan(token) {
     const parsed = ParseSanMove(token);
     if (!parsed) return null;
@@ -1579,6 +1613,18 @@ async function BookReplay(book) {
         // naturelle d'un pion chez jocly, les deux formes ne se distinguent
         // pas a la lecture du seul jeton.
         sanRankOffset = null;   // redetermine a chaque livre charge
+        // Prelude : certains jeux ouvrent par un choix qui compte pour un
+        // coup -- les dix dispositions de Capablanca, les deux regles de Sho
+        // Shogi. jocly les nomme « #0 », « #1 »... et tant qu'il n'est pas
+        // repondu, aucun coup de la partie n'est legal.
+        //
+        // Quand la position est fournie, jocly saute le prelude de lui-meme
+        // pour les jeux dont le choix se LIT sur le plateau. Reste ceux dont
+        // le choix est une REGLE : rien dans le fichier ne dit laquelle, et
+        // on ne devine pas -- on essaie. Le bon choix est celui sous lequel
+        // le premier coup du fichier se resout.
+        await AnswerPrelude(book.moves && book.moves[0]);
+
         const format = book.kif ? 'kif' : MoveFormat(book.moves);
         let exact = null;
         if (format === 'kif') exact = MoveFromSquares;
