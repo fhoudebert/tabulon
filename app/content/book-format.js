@@ -1546,18 +1546,29 @@ export function BuildSanMove(natural, rivals, game, options) {
         return letter + '@' + drop[2] + ((options && options.mate) ? '#' : '');
     }
 
-    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x])([a-o][0-9]{1,2})(?:=(\+?[A-Z]+))?[+#]?$/.exec(text);
+    // Le separateur est FACULTATIF : le xiangqi de jocly ecrit « a3a4 », sans
+    // abreviation ni tiret. La prise n'y apparait donc pas non plus, et
+    // l'appelant la fournit -- il l'a dans l'objet coup.
+    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x]?)([a-o][0-9]{1,2})(?:=(\+?[A-Z]+))?[+#]?$/.exec(text);
     if (!m) return null;
-    const abbrev = m[1] || '', from = m[2], capture = m[3] === 'x', to = m[4];
+    const abbrev = m[1] || '';
+    const capture = m[3] ? m[3] === 'x' : !!(options && options.capture);
+
+    // Les rangees peuvent etre decalees : jocly les compte a partir de 0 au
+    // xiangqi et au janggi, le fichier a partir de 1.
+    const shift = (options && options.rankOffset) || 0;
+    const moved = (sq) => sq[0] + (parseInt(sq.slice(1), 10) + shift);
+    const from = m[2], to = moved(m[4]);
 
     // La desambiguisation, dans l'ordre que suit le SAN : la colonne si elle
     // suffit, sinon la rangee, sinon la case entiere.
     let disambig = '';
     const others = (rivals || []).filter(Boolean);
     if (others.length) {
-        if (!others.some(r => r[0] === from[0])) disambig = from[0];
-        else if (!others.some(r => r.slice(1) === from.slice(1))) disambig = from.slice(1);
-        else disambig = from;
+        const own = moved(from);
+        if (!others.some(r => r[0] === own[0])) disambig = own[0];
+        else if (!others.some(r => moved(r).slice(1) === own.slice(1))) disambig = own.slice(1);
+        else disambig = own;
     }
 
     // L'abreviation VIDE ne veut pas dire la meme chose partout. jocly ne
@@ -1597,7 +1608,7 @@ export function BuildSanMove(natural, rivals, game, options) {
                 .some((k) => SAN_PIECE_ALIASES[game][k].indexOf(flipped) >= 0);
         if (known) promo = '=' + SanLetterOf(flipped, game);
     }
-    if (!letter) return (capture ? from[0] + 'x' : '') + to + promo + check;
+    if (!letter) return (capture ? moved(from)[0] + 'x' : '') + to + promo + check;
     return letter + disambig + (capture ? 'x' : '') + to + promo + check;
 }
 
