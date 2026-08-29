@@ -1305,7 +1305,9 @@ const SAN_PIECE_ALIASES = {
     'shogi':          { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'] },
     'mini-shogi':     { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'] },
     'kotaishi-shogi': { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'],
-                        E: ['DE'] },   // l'elephant ivre du Sho Shogi
+                        E: ['DE'],      // l'elephant ivre du Sho Shogi
+                        K: ['K', '+DE'] },  // ...promu en prince heritier, que
+                                            // PyChess nomme comme le roi
 
     // Tori Shogi : l'hirondelle est le pion du jeu, et jocly ne la nomme pas.
     'tori-shogi': { S: [''], G: ['+S'] },
@@ -1498,6 +1500,14 @@ export function SanMatches(parsed, natural, letterAt, options) {
 // Jeux ou le fichier NOMME le pion. Aux echecs il ne l'est jamais (« e4 »),
 // mais PyChess ecrit « Pg6 » au xiangqi et au janggi, « Pb6 » au shogi : le
 // pion y est une piece comme une autre.
+// Jeux ou le « + » final de jocly marque une PROMOTION et non un echec. C'est
+// la famille shogi : la promotion y est facultative, jocly produit les deux
+// versions du deplacement et distingue la promue par ce suffixe.
+const SAN_PLUS_IS_PROMOTION = {
+    'shogi': true, 'mini-shogi': true, 'tori-shogi': true,
+    'kotaishi-shogi': true, 'kyoto-shogi': true, 'chu-shogi': true,
+};
+
 const SAN_NAMES_PAWN = {
     'xiangqi': true, 'janggi': true,
     'shogi': true, 'mini-shogi': true, 'tori-shogi': true,
@@ -1508,12 +1518,33 @@ export function BuildSanMove(natural, rivals, game, options) {
     const text = String(natural || '').trim();
     // L'echec et le mat font partie du jeton : jocly marque le premier d'un
     // « + », le second se lit sur la partie et l'appelant le signale.
-    const check = (options && options.mate) ? '#' : (/[+]$/.test(text) ? '+' : '');
+    // Le « + » final de jocly est un ECHEC aux echecs, une PROMOTION au shogi.
+    // Quand l'appelant repond sur la promotion -- il la lit dans l'USI -- ce
+    // « + »-la est deja pris en compte et ne doit pas etre repete.
+    // Le « + » final de jocly est un ECHEC aux echecs, une PROMOTION au shogi --
+    // et sur un coup de shogi qui fait les deux, il n'y en a QU'UN. L'echec y
+    // est donc irrecuperable depuis la notation, et jocly n'expose rien
+    // d'autre pour le retrouver.
+    //
+    // On l'omet plutot que de l'inventer : c'est une decoration, que tous les
+    // lecteurs de PGN ignorent -- le notre compris. Le mat, lui, se sait de la
+    // partie et l'appelant le signale.
+    const marksPromotion = SAN_PLUS_IS_PROMOTION[game] === true;
+    const check = (options && options.mate) ? '#'
+        : (!marksPromotion && /[+]$/.test(text) ? '+' : '');
     if (/^O-O(-O)?/.test(text)) return text.replace(/[+#]*$/, '') + check;
 
     // Parachutage : « N@h5 ». La piece garde sa lettre, il n'y a pas de depart.
     const drop = /^([A-Z+]*)@([a-o][0-9]{1,2})[+#]?$/.exec(text);
-    if (drop) return (SanLetterOf(drop[1], game, 'drop') || 'P') + '@' + drop[2];
+    if (drop) {
+        // Le « + » d'un parachutage designe la FACE posee, pas un echec : au
+        // Kyoto on choisit la face en posant la piece, et jocly la marque
+        // ainsi. La lettre du fichier nomme directement cette face.
+        const face = drop[1] + (/\+$/.test(text.replace(/[#]$/, '')) ? '+' : '');
+        const letter = SanLetterOf(face, game, 'drop')
+            || SanLetterOf(drop[1], game, 'drop') || 'P';
+        return letter + '@' + drop[2] + ((options && options.mate) ? '#' : '');
+    }
 
     const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x])([a-o][0-9]{1,2})(?:=(\+?[A-Z]+))?[+#]?$/.exec(text);
     if (!m) return null;
@@ -1542,8 +1573,32 @@ export function BuildSanMove(natural, rivals, game, options) {
     }
     // Un pion qui PREND commence par sa colonne de depart : « exf5 ». C'est la
     // seule forme ou la case de depart apparait sans etre une ambiguite.
-    if (!letter) return (capture ? from[0] + 'x' : '') + to + PromotionSuffix(m[5], game) + check;
-    return letter + disambig + (capture ? 'x' : '') + to + PromotionSuffix(m[5], game) + check;
+    // La promotion. jocly l'ecrit « =Q » aux echecs, ou la piece obtenue est un
+    // choix ; au shogi il n'ecrit RIEN -- la promotion y est marquee dans
+    // l'USI, et c'est l'appelant qui la signale. Le fichier, lui, la nomme
+    // toujours : « =D » pour une tour promue, « =G » pour tout ce qui bouge
+    // comme un or.
+    let promo = PromotionSuffix(m[5], game);
+    if (!promo && options && options.promoted) {
+        const obtained = SanLetterOf('+' + (abbrev || 'P'), game);
+        if (obtained) promo = '=' + obtained;
+    }
+    // Kyoto Shogi : chaque piece se RETOURNE a chaque coup, et le fichier nomme
+    // toujours la face obtenue. Elle est l'autre face de celle qui joue : une
+    // piece promue redevient simple, et inversement.
+    if (!promo && SAN_FACE_NOT_PROMOTION[game]) {
+        const flipped = /^\+/.test(abbrev) ? abbrev.slice(1) : '+' + (abbrev || 'P');
+        // Le roi n'a pas de seconde face : on ne nomme une face que si elle
+        // existe. Une face SIMPLE existe toujours -- c'est la piece de base ;
+        // une face promue doit figurer dans la table du jeu, sans quoi « K »
+        // se verrait promu en « +K », qui n'existe pas.
+        const known = !/^\+/.test(flipped)
+            || Object.keys(SAN_PIECE_ALIASES[game] || {})
+                .some((k) => SAN_PIECE_ALIASES[game][k].indexOf(flipped) >= 0);
+        if (known) promo = '=' + SanLetterOf(flipped, game);
+    }
+    if (!letter) return (capture ? from[0] + 'x' : '') + to + promo + check;
+    return letter + disambig + (capture ? 'x' : '') + to + promo + check;
 }
 
 // La lettre du fichier pour une abreviation de jocly : l'inverse des tables
