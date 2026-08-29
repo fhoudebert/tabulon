@@ -1481,6 +1481,94 @@ export function SanMatches(parsed, natural, letterAt, options) {
 }
 
 /**
+ * Ecrire un coup en SAN, a partir de la notation de jocly.
+ *
+ * C'est l'inverse de SanMatches, et il est PLUS SIMPLE : les tables d'alias
+ * sont plusieurs-vers-un dans le sens de la lecture (« G » vaut l'or et toute
+ * piece promue qui bouge comme lui), donc un-vers-un dans celui-ci. Un pion
+ * promu s'ecrit « G » sans hesitation.
+ *
+ * `natural` est ce qu'ecrit jocly — « Nb1-d2 », « e4xf5 », « O-O »,
+ * « b7-b8=Q+ ». `rivals` sont les cases de depart des AUTRES coups legaux de
+ * la meme piece menant a la meme arrivee : ce sont eux, et eux seuls, qui
+ * imposent une desambiguisation.
+ *
+ * Renvoie le jeton, ou null si la chaine n'est pas reconnue.
+ */
+// Jeux ou le fichier NOMME le pion. Aux echecs il ne l'est jamais (« e4 »),
+// mais PyChess ecrit « Pg6 » au xiangqi et au janggi, « Pb6 » au shogi : le
+// pion y est une piece comme une autre.
+const SAN_NAMES_PAWN = {
+    'xiangqi': true, 'janggi': true,
+    'shogi': true, 'mini-shogi': true, 'tori-shogi': true,
+    'kotaishi-shogi': true, 'kyoto-shogi': true, 'chu-shogi': true,
+};
+
+export function BuildSanMove(natural, rivals, game, options) {
+    const text = String(natural || '').trim();
+    // L'echec et le mat font partie du jeton : jocly marque le premier d'un
+    // « + », le second se lit sur la partie et l'appelant le signale.
+    const check = (options && options.mate) ? '#' : (/[+]$/.test(text) ? '+' : '');
+    if (/^O-O(-O)?/.test(text)) return text.replace(/[+#]*$/, '') + check;
+
+    // Parachutage : « N@h5 ». La piece garde sa lettre, il n'y a pas de depart.
+    const drop = /^([A-Z+]*)@([a-o][0-9]{1,2})[+#]?$/.exec(text);
+    if (drop) return (SanLetterOf(drop[1], game, 'drop') || 'P') + '@' + drop[2];
+
+    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x])([a-o][0-9]{1,2})(?:=(\+?[A-Z]+))?[+#]?$/.exec(text);
+    if (!m) return null;
+    const abbrev = m[1] || '', from = m[2], capture = m[3] === 'x', to = m[4];
+
+    // La desambiguisation, dans l'ordre que suit le SAN : la colonne si elle
+    // suffit, sinon la rangee, sinon la case entiere.
+    let disambig = '';
+    const others = (rivals || []).filter(Boolean);
+    if (others.length) {
+        if (!others.some(r => r[0] === from[0])) disambig = from[0];
+        else if (!others.some(r => r.slice(1) === from.slice(1))) disambig = from.slice(1);
+        else disambig = from;
+    }
+
+    // L'abreviation VIDE ne veut pas dire la meme chose partout. jocly ne
+    // nomme ni le pion des echecs, ni le soldat du janggi, ni l'hoplite du
+    // Spartan qui a bouge -- trois pieces que le fichier ecrit « rien », « P »
+    // et « H ». Seule la lettre du PLATEAU les distingue, et l'appelant la
+    // fournit ; a defaut on suppose un pion.
+    let letter = SanLetterOf(abbrev, game);
+    if (!abbrev) {
+        const onBoard = options && options.letterAt && options.letterAt(from);
+        letter = onBoard ? SanLetterOf(onBoard.toUpperCase(), game) : 'P';
+        if (letter === 'P' && !SAN_NAMES_PAWN[game]) letter = '';
+    }
+    // Un pion qui PREND commence par sa colonne de depart : « exf5 ». C'est la
+    // seule forme ou la case de depart apparait sans etre une ambiguite.
+    if (!letter) return (capture ? from[0] + 'x' : '') + to + PromotionSuffix(m[5], game) + check;
+    return letter + disambig + (capture ? 'x' : '') + to + PromotionSuffix(m[5], game) + check;
+}
+
+// La lettre du fichier pour une abreviation de jocly : l'inverse des tables
+// d'alias, deterministe. Rend '' pour le pion, que le SAN ne nomme pas.
+function SanLetterOf(abbrev, game, kind) {
+    if (!abbrev) return '';
+    const tables = [(kind === 'drop' ? SAN_DROP_ALIASES : SAN_PIECE_ALIASES)[game],
+                    SAN_PIECE_ALIASES[game], SAN_PIECE_ALIASES['*']];
+    for (const table of tables) {
+        if (!table) continue;
+        for (const letter of Object.keys(table))
+            if (table[letter].indexOf(abbrev) >= 0) return letter;
+    }
+    return abbrev;
+}
+
+// « =Q » : la piece obtenue, dans les lettres du fichier. Absente quand jocly
+// n'a rien ecrit -- il ne le fait que lorsqu'un choix se posait.
+function PromotionSuffix(promoted, game) {
+    if (!promoted) return '';
+    const letter = SanLetterOf(promoted, game);
+    return letter ? '=' + letter : '';
+}
+
+/**
  * Le fichier annonce-t-il un probleme de mat (tsume) ?
  *
  * ChuShogiLite ne pose pas de tag : il ecrit le nom du probleme en COMMENTAIRE
