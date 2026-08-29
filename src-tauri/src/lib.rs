@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{engine_cmds, scan_cmds, extension_cmds, fs_cmds, hub_cmds, match_cmds, peer_cmds, problem_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, scan_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -139,6 +139,7 @@ pub fn run() {
             window_cmds::open_extensions,
             // ── Jeu a distance pair-a-pair (aucun serveur) ───────────────────
             engine_cmds::engine_probe,
+            install_cmds::install_status,
             engine_cmds::engine_search,
             engine_cmds::engine_stop,
             scan_cmds::scan_probe,

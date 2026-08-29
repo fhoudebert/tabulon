@@ -854,6 +854,107 @@ function InitInvitationPane() {
     });
 }
 
+// Signale UNE FOIS une installation manifestement incomplete.
+//
+// Le seul cas qui merite d'interrompre : la ludotheque manque, et Tabulon
+// tourne sur son jeu embarque minimal. Le moteur absent ne se signale pas --
+// l'IA interne joue, la partie a lieu, et une alerte permanente pour un
+// element facultatif serait vite ignoree.
+//
+// La banniere ne revient pas : une fois vue et fermee, l'entree
+// « Installation » suffit a la retrouver.
+async function CheckInstall() {
+    if (await store.get('install-notice-seen').catch(() => false)) return;
+    let status = null;
+    try { status = await tRpc.call('install_status'); }
+    catch (e) { return; }        // commande absente : rien a signaler
+    if (!status || status.external_dist) return;
+
+    const notifier = document.querySelector('.hub-notifier');
+    if (!notifier) return;
+    document.querySelectorAll('.hub-notifier > *').forEach(el => el.style.display = 'none');
+    const text = document.querySelector('.hub-notifier-text');
+    if (text) { text.style.display = ''; text.textContent = t('install.incomplete'); }
+    const button = document.querySelector('.hub-notifier-ok');
+    if (button) {
+        button.style.display = '';
+        button.textContent = t('install.open');
+        button.onclick = () => {
+            store.set('install-notice-seen', true);
+            notifier.style.display = 'none';
+            document.getElementById('nav-install')?.click();
+        };
+    }
+    notifier.style.display = '';
+}
+
+// ── Etat de l'installation ───────────────────────────────────────────────────
+//
+// Tabulon se telecharge comme un binaire seul : la ludotheque, le moteur natif
+// et son reseau NNUE s'ajoutent a cote de l'executable. Rien ne le disait, et
+// l'utilisateur decouvrait une ludotheque reduite sans savoir pourquoi.
+//
+// Ce panneau DECRIT, il n'installe pas. Les chemins affiches sont ceux ou
+// Tabulon cherche vraiment -- calcules par le Rust, avec les memes fonctions
+// que la recherche elle-meme, pour qu'ils ne se desynchronisent jamais d'une
+// explication ecrite a la main.
+async function RenderInstall() {
+    const host = document.getElementById('install-items');
+    if (!host) return;
+    host.textContent = '';
+    let status = null;
+    try { status = await tRpc.call('install_status'); }
+    catch (e) { console.warn('[hub] install_status:', e); }
+    if (!status) { host.textContent = t('install.unavailable'); return; }
+
+    for (const item of status.items) {
+        const row = document.createElement('div');
+        row.className = 'install-item' + (item.present ? ' present' : ' missing');
+
+        const head = document.createElement('h5');
+        head.textContent = (item.present ? '\u2713 ' : '\u2717 ') + t('install.' + item.id);
+        row.appendChild(head);
+
+        const what = document.createElement('p');
+        what.textContent = t('install.' + item.id + '.what');
+        row.appendChild(what);
+
+        // Present : ou il a ete trouve. Absent : ou le poser. Dans les deux
+        // cas un chemin exact, jamais une paraphrase.
+        const where = document.createElement('p');
+        where.className = 'install-path';
+        where.textContent = item.present
+            ? t('install.foundAt') + ' ' + (item.path || '')
+            : t('install.putAt') + ' ' + (item.expected || '');
+        row.appendChild(where);
+
+        // Le moteur est le seul element qu'on puisse VERIFIER : une poignee de
+        // main UCI dit s'il repond, et sous quel nom. Le reste ne se teste pas,
+        // il se constate.
+        if (item.id === 'engine' && item.present) {
+            const button = document.createElement('button');
+            button.className = 'btn btn-default btn-mini';
+            button.textContent = t('install.test');
+            const answer = document.createElement('span');
+            answer.className = 'install-answer';
+            button.addEventListener('click', async () => {
+                button.disabled = true;
+                answer.textContent = t('install.testing');
+                try {
+                    const name = await tRpc.call('engine_probe');
+                    answer.textContent = '\u2713 ' + name;
+                } catch (e) {
+                    answer.textContent = '\u2717 ' + (e?.message || e);
+                }
+                button.disabled = false;
+            });
+            row.appendChild(button);
+            row.appendChild(answer);
+        }
+        host.appendChild(row);
+    }
+}
+
 function SetNav(which) {
     document.querySelectorAll('.sidebar .nav-group-item').forEach(el => el.classList.remove('active'));
     document.getElementById('nav-' + which)?.classList.add('active');
@@ -945,12 +1046,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         tRpc.call('open_extensions');
     });
 
+    document.getElementById('nav-install').addEventListener('click', () => {
+        SetNav('install'); document.getElementById('install').style.display = '';
+        RenderInstall();
+    });
+
     document.getElementById('nav-about').addEventListener('click', () => {
         SetNav('about'); document.getElementById('about').style.display = '';
         RenderAbout();
     });
 
     document.getElementById('gamefilter').addEventListener('input', Filter);
+    CheckInstall().catch(e => console.warn('[hub] CheckInstall:', e));
     try { InitInvitationPane(); }
     catch (e) { console.error('[hub] InitInvitationPane:', e); }
     try { InitDetailButtons(); }

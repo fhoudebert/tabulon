@@ -50,6 +50,9 @@
 					</nav>
 					<nav class="nav-group">
 						<h5 class="nav-group-title" data-i18n="nav.about">About</h5>
+						<span id="nav-install" class="nav-group-item">
+                			<span class="icon icon-download"></span> <span data-i18n="nav.install">Installation</span>
+						</span>
 						<span id="nav-about" class="nav-group-item">
                 			<span class="icon icon-info"></span> Tabulon
 						</span>
@@ -155,6 +158,20 @@
 							<div id="loadgame-samples" class="loadgame-samples"></div>
 						</div>
 					</div>
+					<!-- Etat de l'installation. Tabulon se telecharge comme un
+					     binaire seul : la ludotheque, le moteur et son reseau
+					     s'ajoutent a cote. Ce panneau dit ce qui est en place,
+					     ou poser ce qui manque, et permet de TESTER le moteur
+					     plutot que de l'esperer. Il n'installe rien lui-meme. -->
+					<div class="pane" id="install" style="display:none">
+						<h3 data-i18n="install.title">Installation</h3>
+						<p data-i18n="install.intro">Tabulon works on its own, but the game library, the engine and its neural network are added next to the executable. This page shows what is in place and where to put what is missing.</p>
+						<div id="install-items"></div>
+						<p class="install-links">
+							<a href="https://github.com/fhoudebert/jocly2/releases/" data-i18n="install.releases">Downloads (jocly2 releases)</a>
+						</p>
+					</div>
+
 					<div class="pane" id="about" style="display:none">
 						<h3 class="appName"></h3>
 						<p><span data-i18n="about.version">Version</span> <span class="appVersion"></span></p>
