@@ -462,7 +462,22 @@ export function ParseNaturalMove(text) {
     const promo = /=(\+?[A-Z]+)/.exec(raw);
     const s = raw.replace(/[+#!?]*$/, '').replace(/=.*$/, '');
     const m = /^(\+?[A-Z]+)?(?:([a-l][0-9]{1,2}))?((?:[-x][a-l][0-9]{1,2})+)$/.exec(s);
-    if (!m) return null;
+    if (!m) {
+        // Forme SANS SEPARATEUR : le xiangqi de jocly ecrit « c9e7 », ni
+        // abreviation ni tiret. Faute de la reconnaitre, la case de DEPART
+        // restait nulle -- et sans depart, pas de rivales, donc pas de
+        // desambiguisation : l'export ecrivait « Ee8 » la ou deux elephants
+        // visaient la meme case, et le fichier produit ne se rechargeait pas.
+        const flat = /^([a-l][0-9]{1,2})([a-l][0-9]{1,2})$/.exec(s);
+        if (!flat) return null;
+        return {
+            piece: null, from: flat[1],
+            // La prise n'apparait pas dans cette forme : l'appelant la connait
+            // par l'objet coup, on ne l'invente pas ici.
+            steps: [{ capture: false, square: flat[2] }],
+            promote: promo ? promo[1].startsWith('+') : null,
+        };
+    }
     const steps = [];
     const re = /([-x])([a-l][0-9]{1,2})/g;
     let step;

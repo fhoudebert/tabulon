@@ -151,6 +151,49 @@ for (const file of FILES) {
      + (same ? '' : ' — coup ' + (diff + 1) + ' : ' + out[diff] + ' au lieu de ' + tokens[diff]));
 }
 
+// L'ALLER-RETOUR STRICT : reecrire, puis relire ce qu'on vient d'ecrire, en
+// refusant toute ambiguite. Comparer au fichier d'origine ne suffit pas --
+// un export sous-specifie peut coincider avec un fichier lui-meme
+// sous-specifie. Ici on exige que notre propre sortie se recharge.
+//
+// C'est le cas qui a echappe : au xiangqi, jocly ecrit « c9e7 » sans
+// separateur, ParseNaturalMove n'y lisait pas de case de depart, donc aucune
+// rivale, donc aucune desambiguisation. L'export produisait « Ee8 » la ou
+// DEUX elephants visaient la meme case, et le fichier ne se rechargeait pas.
+{
+    // Une position OU DEUX ELEPHANTS visent la meme case : c'est exactement
+    // ce que la partie signalee contenait.
+    const TWO_ELEPHANTS = '2e1k1e2/9/9/9/9/9/9/9/9/4K4 b - - 0 1';
+    const flat = ParseNaturalMove('c9e7');
+    ok(flat && flat.from === 'c9' && flat.steps[0].square === 'e7',
+       'la notation sans separateur porte bien une case de depart');
+
+    const match = await J.createMatch('xiangqi');
+    await match.load({ game: 'xiangqi', initialBoard: TWO_ELEPHANTS, playedMoves: [] });
+    const at = (fen) => { const rows = fen.split(' ')[0].split('/'); const map = {};
+        rows.forEach((row, i2) => { const rank = rows.length - 1 - i2; let f = 0;
+            for (const c of row) { if (/[0-9]/.test(c)) f += +c;
+                else { map[String.fromCharCode(97 + f) + rank] = c; f++; } } });
+        return (sq) => map[sq] || null; };
+
+    const legal = await match.getPossibleMoves();
+    const nat = await match.getMoveString(legal);
+    const board = at(await match.getBoardState());
+    const k = nat.indexOf('c9e7');
+    ok(k >= 0 && nat.indexOf('g9e7') >= 0, 'les deux elephants visent e7');
+    const rivals = [];
+    for (let i2 = 0; i2 < legal.length; i2++) {
+        if (i2 === k) continue;
+        const other = ParseNaturalMove(nat[i2]);
+        if (!other || !other.from || other.from === 'c9') continue;
+        if (other.steps[other.steps.length - 1].square !== 'e7') continue;
+        if (board(other.from) === board('c9')) rivals.push(other.from);
+    }
+    ok(rivals.length === 1 && rivals[0] === 'g9', 'l\'autre elephant est vu comme rival');
+    const token = BuildSanMove('c9e7', rivals, 'xiangqi', { letterAt: board, rankOffset: 1 });
+    ok(token === 'Ece8', 'le coup s\'ecrit donc « Ece8 » et non « Ee8 » — ' + token);
+}
+
 console.log('');
 console.log(`RESULTAT san-export: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);
