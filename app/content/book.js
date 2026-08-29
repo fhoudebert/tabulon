@@ -98,6 +98,12 @@ async function OpenBookMatch(match, index, count) {
             // (probleme, finale, position d'etude). play.js charge cette
             // position AVANT de rejouer les coups.
             initialBoard: BookFen(match.tags),
+            // Le RESULTAT, tel que le fichier le declare. Sans lui, une partie
+            // rechargee perd son issue : la fenetre de jeu ne la calcule qu'en
+            // jouant, et une partie rejouee depuis un fichier ne passe pas par
+            // la. Le tag existait deja et n'etait simplement pas transmis --
+            // l'Historique la reexportait donc en « * », partie en cours.
+            result: (match.tags && match.tags.Result) || null,
             // Probleme de mat : le camp attaquant n'a pas de roi, et sans
             // cette option jocly tient sa position pour perdue d'avance --
             // aucun coup legal, rien a rejouer ni a parcourir.

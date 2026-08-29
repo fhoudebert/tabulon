@@ -16,7 +16,7 @@ import { installNativeEngine } from './engine-native.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove,
-         ParseWxfMove, WxfMatches, ParseSanMove, SanMatches } from './book-format.js';
+         ParseWxfMove, WxfMatches, ParseSanMove, SanMatches, BuildSanMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -966,6 +966,18 @@ async function WesternGame() {
     const files = (board.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
         .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0) || 12;
 
+    // Le xiangqi est le seul a numeroter ses rangees a partir de 0. Le janggi,
+    // sur le meme plateau, ecrit « a4-a5 » : la geometrie ne dit rien de la
+    // notation, seul le jeu la dit.
+    const zeroBasedRanks = gameName === 'xiangqi';
+    // La lettre du plateau n'est fiable que si le FEN et les NOMS de cases ont
+    // la meme largeur : les jeux a reserve (shogi, crazyhouse) ont des
+    // colonnes de main qui ne portent pas de nom et decalent toute lecture.
+    const fenBoard = (await joclyMatch.getBoardState().catch(() => '') || '').split(' ')[0];
+    const fenWidth = (fenBoard.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
+        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0);
+    const reliableLetters = fenWidth === files || gameName === 'chu-shogi';
+
     const here = played.length;
     const out = [];
     try {
@@ -975,7 +987,8 @@ async function WesternGame() {
         for (let ply = 0; ply < here; ply++) {
             const legal = await joclyMatch.getPossibleMoves();
             const naturals = await joclyMatch.getMoveString(legal);
-            const letterAt = BoardLetters(await joclyMatch.getBoardState());
+            const letterAt = BoardLetters(await joclyMatch.getBoardState(),
+                                          { zeroBased: zeroBasedRanks });
             const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
                 && (m.via || null) === (played[ply].via || null)
                 && (m.pr || null) === (played[ply].pr || null));
@@ -1004,9 +1017,27 @@ async function WesternGame() {
                 if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
                     rivals.push(other.from);
             }
-            const token = BuildWesternMove(mine, letter, rivals);
+            // DEUX notations, selon le destinataire. Le chu shogi va chez
+            // ChuShogiLite, qui attend la notation occidentale ; tous les
+            // autres jeux vont chez PyChess, qui attend du SAN. Le jeu tranche
+            // seul, il n'y a rien a demander a l'utilisateur.
+            let token;
+            if (gameName === 'chu-shogi') {
+                token = BuildWesternMove(mine, letter, rivals);
+            } else {
+                const usiMove = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
+                token = BuildSanMove(naturals[index], rivals, gameName, {
+                    letterAt: reliableLetters ? letterAt : undefined,
+                    // Le xiangqi numerote ses rangees a partir de 0 et n'ecrit
+                    // ni separateur ni prise : l'appelant fournit les deux.
+                    rankOffset: zeroBasedRanks ? 1 : 0,
+                    capture: legal[index].c !== null && legal[index].c !== undefined,
+                    promoted: (typeof usiMove === 'string' && usiMove !== '??')
+                        ? usiMove.endsWith('+') : undefined,
+                });
+            }
             if (!token) console.warn('[play] export : coup', ply + 1,
-                '(' + naturals[index] + ') non traduisible en notation occidentale');
+                '(' + naturals[index] + ') non traduisible');
             out.push(token || '?');
             await joclyMatch.rollback(ply + 1);
         }
@@ -1603,6 +1634,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     // puis appliqués par playMove. On tolère les décorations (+ # ! ?) en
     // retentant sans elles si pickMove ne trouve pas.
 
+// Pourquoi ce jeton n'a-t-il pas ete resolu ? On le redemande a la position
+// courante et on compte les correspondances : zero veut dire que le fichier
+// ne parle pas de cette position, plusieurs qu'il est ambigu.
+async function ExplainUnresolved(token) {
+    try {
+        const parsed = ParseSanMove(token);
+        if (!parsed) { console.warn('[play] book: jeton illisible'); return; }
+        const moves = await joclyMatch.getPossibleMoves();
+        const naturals = await joclyMatch.getMoveString(moves);
+        const letterAt = BoardLetters(await joclyMatch.getBoardState(),
+                                      { zeroBased: gameName === 'xiangqi' });
+        const matches = [];
+        for (let i = 0; i < moves.length; i++)
+            if (SanMatches(parsed, naturals[i], letterAt,
+                           { game: gameName, rankOffset: sanRankOffset || 0 }))
+                matches.push(naturals[i]);
+        if (matches.length > 1)
+            console.warn('[play] book: « ' + token +' » est ambigu —',
+                matches.length, 'coups y correspondent :', matches.join(', '),
+                '— le fichier omet la désambiguïsation');
+        else if (matches.length === 0)
+            console.warn('[play] book: « ' + token + ' » ne correspond à aucun coup légal ici');
+    } catch (e) { console.warn('[play] book: diagnostic impossible:', e.message || e); }
+}
+
 async function BookReplay(book) {
         // Tag [FEN] du PGN/PJN : la partie ne commence PAS a la position
         // standard (probleme, finale, position d'etude). Sans ce chargement
@@ -1710,7 +1766,19 @@ async function BookReplay(book) {
                 }
             } catch (e) { console.warn('[play] book: relecture trait inversé:', e.message || e); }
         }
-        if (unresolved) console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
+        if (unresolved) {
+            console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
+            // Un jeton peut echouer pour deux raisons opposees : AUCUN coup
+            // legal ne lui correspond (le fichier decrit une autre position),
+            // ou PLUSIEURS y correspondent (le fichier omet la
+            // desambiguisation). Les distinguer epargne une enquete.
+            await ExplainUnresolved(unresolved);
+        }
+        // L'issue declaree par le fichier. « * » veut dire « partie en cours »
+        // et ne vaut pas un resultat : on le laisse a null, comme une partie
+        // qu'on vient de commencer. Sans cela, une partie gagnee, rechargee
+        // puis reexportee ressortait en « * ».
+        if (book.result && book.result !== '*') gameResult = book.result;
         // Humain contre humain, en pause : sans ca l'IA du camp B rejouerait
         // par-dessus la partie chargee, et surtout des qu'on reculerait d'un
         // coup pour naviguer dans la fenetre Historique.
@@ -1719,11 +1787,22 @@ async function BookReplay(book) {
         // charge : une position seule, sans sa solution. Il n'y a alors rien
         // a proteger et rien ou naviguer -- ce qu'on veut, c'est CHERCHER,
         // donc jouer pour de bon, avec l'adversaire habituel.
-        if (played > 0) {
+        // « * » veut dire partie EN COURS : le fichier ne s'arrete pas sur un
+        // resultat, il s'interrompt. On rend alors la main au joueur plutot
+        // que de figer le plateau -- c'est ce qu'on attend en rouvrant une
+        // partie qu'on n'a pas finie.
+        //
+        // Avec un resultat, au contraire, il n'y a plus rien a jouer : on
+        // passe en humain contre humain et en pause, sans quoi l'IA du camp B
+        // rejouerait par-dessus la partie chargee, et surtout des qu'on
+        // reculerait d'un coup pour naviguer dans la fenetre Historique.
+        const ongoing = book.result === '*';
+        if (played > 0 && !ongoing) {
             SetBothHuman();
             paused = true;
             UpdatePause();
         }
+        if (played > 0 && ongoing) console.info('[play] book: partie en cours — le trait est rendu');
         // Libelle calcule par book.js (qui a les tags ET le nom du fichier).
         // Ancien affichage : "? vs ?", les tags [White]/[Black] etant absents
         // de tout fichier ecrit par Tabulon.
