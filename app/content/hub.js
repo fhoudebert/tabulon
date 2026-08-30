@@ -785,11 +785,18 @@ function RenderAbout() {
     // Locale retenue (déduite du système), ex. "Français (fr)"
     document.querySelectorAll('.appLocale').forEach(el =>
         el.textContent = `${t('lang.' + getLocale())} (${getLocale()})`);
-    // Le panneau About (réécrit côté HTML) contient des <a href> directs :
-    // dans une webview Tauri, un clic les ferait naviguer DANS la fenêtre.
-    // On les intercepte pour les ouvrir dans le navigateur système.
-    document.querySelectorAll('#about a[href]').forEach(el => {
-        if (el.dataset.extBound) return;   // RenderAbout peut être rappelé
+    BindExternalLinks('#about');
+}
+
+// Les <a href> d'un panneau ouvrent le NAVIGATEUR, pas la fenêtre.
+//
+// Dans une webview Tauri, un clic sur un lien fait naviguer la fenêtre
+// elle-même : le hub disparaît, remplacé par une page web, sans retour
+// possible. Chaque panneau qui affiche un lien doit donc l'intercepter — comme
+// le fait « Obtenir des extensions… » dans la fenêtre Extensions.
+function BindExternalLinks(selector) {
+    document.querySelectorAll(selector + ' a[href]').forEach(el => {
+        if (el.dataset.extBound) return;   // le rendu peut être rappelé
         el.dataset.extBound = '1';
         el.style.cursor = 'pointer';
         el.addEventListener('click', (e) => { e.preventDefault(); open(el.getAttribute('href')); });
@@ -902,6 +909,10 @@ async function RenderInstall() {
     const host = document.getElementById('install-items');
     if (!host) return;
     host.textContent = '';
+    // Avant tout : le lien vers les versions publiees doit ouvrir le
+    // navigateur meme si l'etat n'a pas pu etre lu. C'est justement quand rien
+    // ne marche qu'on a besoin d'aller telecharger.
+    BindExternalLinks('#install');
     let status = null;
     try { status = await tRpc.call('install_status'); }
     catch (e) { console.warn('[hub] install_status:', e); }

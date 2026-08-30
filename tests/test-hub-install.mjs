@@ -75,6 +75,39 @@ console.log('Ce que le panneau fait de la réponse');
 }
 
 console.log('');
+console.log('Les liens sortent de la fenêtre');
+{
+    const hub = readFileSync(path.join(repo, 'app/content/hub.js'), 'utf-8');
+    // Dans une webview Tauri, un <a href> fait naviguer la FENÊTRE : le hub
+    // disparaît, remplacé par une page web, sans retour. Chaque panneau qui
+    // affiche un lien doit l'intercepter, comme « Obtenir des extensions… ».
+    ok(/function BindExternalLinks/.test(hub), 'un seul endroit ouvre les liens au dehors');
+    ok(/BindExternalLinks\('#about'\)/.test(hub), 'le panneau À propos y passe');
+    ok(/BindExternalLinks\('#install'\)/.test(hub), 'le panneau Installation aussi');
+
+    // Et il y passe AVANT de lire l'état : c'est justement quand rien ne
+    // marche qu'on a besoin d'aller télécharger.
+    const render = hub.slice(hub.indexOf('async function RenderInstall'));
+    const bind = render.indexOf("BindExternalLinks('#install')");
+    const call = render.indexOf("tRpc.call('install_status')");
+    ok(bind >= 0 && call >= 0 && bind < call,
+       'le lien est armé avant l\'appel qui peut échouer');
+}
+
+console.log('');
+console.log('Le style : une carte par élément, un chemin lisible');
+{
+    const css = readFileSync(path.join(repo, 'app/content/tabulon.css'), 'utf-8');
+    ok(/\.install-item\s*\{/.test(css), 'chaque élément est une carte');
+    ok(/\.install-item\.present/.test(css) && /\.install-item\.missing/.test(css),
+       'présent et manquant se distinguent à la couleur, pas seulement au texte');
+    // Le chemin est fait pour être recopié : police fixe et sélectionnable.
+    ok(/\.install-path[\s\S]{0,400}monospace/.test(css), 'le chemin est en police fixe');
+    ok(/\.install-path[\s\S]{0,400}user-select:\s*text/.test(css), 'et sélectionnable');
+    ok(/overflow-wrap:\s*anywhere/.test(css), 'un chemin long se coupe au lieu de déborder');
+}
+
+console.log('');
 console.log('La bannière d\'installation incomplète');
 {
     const hub = readFileSync(path.join(repo, 'app/content/hub.js'), 'utf-8');

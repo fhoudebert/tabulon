@@ -1234,3 +1234,66 @@ strong { font-weight: 600; }
   padding: 6px 8px;
   margin: 6px 0 0 0;
 }
+
+/* Page « Installation » — chaque élément est une carte, pas une ligne.
+   L'utilisateur y cherche UN chemin à recopier : il doit le trouver d'un coup
+   d'œil, pas le déchiffrer dans un paragraphe. D'où l'aération, le chemin sur
+   sa propre ligne en police fixe, et la coche qui donne l'état avant même la
+   lecture. */
+#install > p { max-width: 60ch; line-height: 1.5; }
+
+.install-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin: 0 0 12px 0;
+}
+/* Vert quand c'est en place, ambre quand il manque quelque chose : la couleur
+   dit l'état sans qu'on ait à lire, la coche le confirme. Jamais du rouge —
+   rien n'est cassé, il manque seulement un fichier. */
+.install-item.present { border-left-color: var(--accent); }
+.install-item.missing { border-left-color: #b58900; }
+
+.install-item h5 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.install-item.present h5 { color: var(--accent); }
+.install-item.missing h5 { color: #8a6d3b; }
+
+.install-item p {
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+/* Le chemin : à recopier, donc en police fixe, détaché, et sélectionnable
+   d'un geste. Il peut être long — on le laisse se couper plutôt que déborder. */
+.install-item .install-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg-alt);
+  border-radius: 3px;
+  padding: 5px 7px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.install-item .install-path + button { margin-top: 10px; }
+.install-item .install-answer {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.install-links {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.install-links a { cursor: pointer; }
