@@ -1331,3 +1331,19 @@ strong { font-weight: 600; }
   color: var(--text-muted);
   max-width: 60ch;
 }
+
+/* Les liens vers les sources des moteurs. Sous GPL v3, redistribuer un binaire
+   oblige à fournir la source correspondante ou un lien vers elle : ces liens
+   font partie de ce que la licence demande, pas de la décoration. Discrets,
+   mais toujours atteignables. */
+.install-credits ul {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0;
+}
+.install-credits li {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--text-muted);
+}
+.install-credits li a { cursor: pointer; }

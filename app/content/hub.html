@@ -180,9 +180,20 @@
 							<a href="https://github.com/fhoudebert/jocly2/releases/" data-i18n="install.releases">Download a Jocly game library…</a><br>
 							<a href="https://github.com/fhoudebert/tabulon/releases/" data-i18n="install.extras">Download engines, networks and images…</a>
 						</p>
-						<p class="install-credits" data-i18n="install.credits">
-							Fairy-Stockfish and Scan are separate projects, by their own authors and under their own licences. Tabulon only tells you where to put them.
-						</p>
+						<!-- Les deux moteurs sont sous GPL v3. Redistribuer un binaire
+						     oblige a fournir la source correspondante OU un lien vers
+						     elle. Ces liens ne sont donc pas de la politesse : ils sont
+						     la moitie de ce que la licence demande, et ils doivent
+						     rester atteignables depuis l'application, la ou se trouve
+						     celui qui a recu une archive toute faite. -->
+						<div class="install-credits">
+							<p data-i18n="install.credits">Fairy-Stockfish and Scan are separate projects, by their own authors, both under the GNU GPL v3. Tabulon only tells you where to put them. Their source code:</p>
+							<ul>
+								<li><a href="https://github.com/fairy-stockfish/Fairy-Stockfish">Fairy-Stockfish</a> — GPL v3</li>
+								<li><a href="https://github.com/rhalbersma/scan">Scan</a> — GPL v3</li>
+								<li><a href="https://fairy-stockfish.github.io/nnue/">Fairy-Stockfish NNUE networks</a></li>
+							</ul>
+						</div>
 					</div>
 
 					<div class="pane" id="about" style="display:none">
@@ -200,6 +211,7 @@
                             <li data-i18n="about.feat.clock">Clocked games</li> 
                             <li data-i18n="about.feat.rules">Rules available for every game</li>
                             <li data-i18n="about.feat.multi">Multi-windows: any number of games can be launched simultaneously</li>
+                            <li data-i18n="about.feat.remote">Play locally, against the computer, or remotely over the Internet</li>
                         </ul>
 					</div>
 				</div>

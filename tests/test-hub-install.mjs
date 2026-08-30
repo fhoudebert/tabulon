@@ -132,6 +132,22 @@ console.log('Choisir le bon binaire, et bien nommer les réseaux');
     ok(!!doc.querySelector('#install a[href*="jocly2/releases"]'), 'lien vers la ludothèque');
     ok(!!doc.querySelector('#install a[href*="tabulon/releases"]'), 'lien vers les archives d\'appoint');
     ok(!!doc.querySelector('#install .install-credits'), 'la paternité des moteurs est indiquée');
+
+    // GPL v3 : redistribuer un binaire oblige à fournir la source
+    // correspondante OU un lien vers elle. Ces liens ne sont donc pas de la
+    // politesse — ils sont la moitié de ce que la licence demande, et ils
+    // doivent rester atteignables depuis l'application, là où se trouve celui
+    // qui a reçu une archive toute faite.
+    const sources = [...doc.querySelectorAll('#install .install-credits a[href]')]
+        .map(a => a.getAttribute('href'));
+    ok(sources.some(u => /fairy-stockfish\/Fairy-Stockfish/i.test(u)),
+       'la source de Fairy-Stockfish est liée');
+    ok(sources.some(u => /scan/i.test(u)), 'celle de Scan aussi');
+    ok(sources.some(u => /fairy-stockfish\.github\.io\/nnue/i.test(u)),
+       'et les réseaux renvoient à leur page officielle plutôt qu\'à une copie');
+    ok(/GPL v3/.test(doc.querySelector('#install .install-credits').textContent)
+       || /GPL v3/.test(readFileSync(path.join(repo, 'app/content/tabulon-i18n.js'), 'utf-8')),
+       'la licence est nommée');
 }
 
 console.log('');
