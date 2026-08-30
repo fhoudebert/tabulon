@@ -895,6 +895,19 @@ async function CheckInstall() {
     notifier.style.display = '';
 }
 
+// Les reseaux publies, sous le nom EXACT que le moteur attend.
+//
+// Fairy-Stockfish n'active un reseau que si le nom du fichier commence par
+// celui de la variante (evaluate.cpp, `on_eval_file_change`) -- la meme regle
+// que verifie `nnue_name_matches` cote Rust. Un fichier renomme « nn.nnue »
+// est charge sans effet et sans message : d'ou cette liste, qui n'est pas
+// decorative.
+const NNUE_NAMES = [
+    'shogi.nnue', 'minishogi.nnue', 'kyotoshogi.nnue', 'makruk.nnue',
+    'shako.nnue', 'capablanca-chess.nnue', 'grand.nnue', 'khans.nnue',
+    'spartan.nnue',
+];
+
 // ── Etat de l'installation ───────────────────────────────────────────────────
 //
 // Tabulon se telecharge comme un binaire seul : la ludotheque, le moteur natif
@@ -909,14 +922,21 @@ async function RenderInstall() {
     const host = document.getElementById('install-items');
     if (!host) return;
     host.textContent = '';
-    // Avant tout : le lien vers les versions publiees doit ouvrir le
-    // navigateur meme si l'etat n'a pas pu etre lu. C'est justement quand rien
-    // ne marche qu'on a besoin d'aller telecharger.
+    // Avant tout : les liens de telechargement doivent ouvrir le navigateur
+    // meme si l'etat n'a pas pu etre lu. C'est justement quand rien ne marche
+    // qu'on a besoin d'aller telecharger.
     BindExternalLinks('#install');
     let status = null;
     try { status = await tRpc.call('install_status'); }
     catch (e) { console.warn('[hub] install_status:', e); }
     if (!status) { host.textContent = t('install.unavailable'); return; }
+
+    // Nommer le systeme : les binaires de moteur en dependent, et l'archive a
+    // prendre n'est pas la meme. Le dire evite de choisir au hasard entre
+    // plusieurs fichiers dont les noms se ressemblent.
+    const platform = document.getElementById('install-platform');
+    if (platform) platform.textContent = t('install.platform.' + status.platform)
+        + ' — ' + status.engine_file;
 
     for (const item of status.items) {
         const row = document.createElement('div');
@@ -938,6 +958,18 @@ async function RenderInstall() {
             ? t('install.foundAt') + ' ' + (item.path || '')
             : t('install.putAt') + ' ' + (item.expected || '');
         row.appendChild(where);
+
+        // Le NNUE n'est pas un fichier qu'on pose au hasard : Fairy-Stockfish
+        // n'active un reseau que si son NOM COMMENCE par celui de la variante.
+        // Un fichier bien telecharge mais mal nomme reste silencieusement
+        // inactif -- on liste donc les noms attendus, c'est la seule facon de
+        // rendre la regle utilisable.
+        if (item.id === 'nnue') {
+            const names = document.createElement('p');
+            names.className = 'install-names';
+            names.textContent = NNUE_NAMES.join('  ');
+            row.appendChild(names);
+        }
 
         // Le moteur est le seul element qu'on puisse VERIFIER : une poignee de
         // main UCI dit s'il repond, et sous quel nom. Le reste ne se teste pas,

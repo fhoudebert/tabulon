@@ -108,6 +108,33 @@ console.log('Le style : une carte par élément, un chemin lisible');
 }
 
 console.log('');
+console.log('Choisir le bon binaire, et bien nommer les réseaux');
+{
+    const hub = readFileSync(path.join(repo, 'app/content/hub.js'), 'utf-8');
+    const css = readFileSync(path.join(repo, 'app/content/tabulon.css'), 'utf-8');
+
+    // Le système est nommé : les binaires en dépendent, et plusieurs archives
+    // portent des noms voisins.
+    ok(!!doc.getElementById('install-platform'), 'la page dit sur quel système on est');
+    ok(/install\.platform\.\s*\+\s*status\.platform|install\.platform\.' \+ status\.platform/.test(hub),
+       'et le remplit depuis la réponse du Rust');
+
+    // Fairy-Stockfish n'active un réseau que si le NOM commence par celui de
+    // la variante : un fichier mal nommé est chargé sans effet ET sans
+    // message. La liste des noms attendus n'est donc pas décorative.
+    ok(/const NNUE_NAMES/.test(hub), 'les noms de réseaux attendus sont listés');
+    for (const name of ['shogi.nnue', 'khans.nnue', 'capablanca-chess.nnue', 'spartan.nnue'])
+        ok(hub.includes(`'${name}'`), `« ${name} » y figure`);
+    ok(/\.install-names[\s\S]{0,300}monospace/.test(css), 'et s\'affichent en police fixe');
+
+    // Deux dépôts, deux rôles — et les moteurs restent l'œuvre de leurs
+    // auteurs : on renvoie vers eux sans rien s'attribuer.
+    ok(!!doc.querySelector('#install a[href*="jocly2/releases"]'), 'lien vers la ludothèque');
+    ok(!!doc.querySelector('#install a[href*="tabulon/releases"]'), 'lien vers les archives d\'appoint');
+    ok(!!doc.querySelector('#install .install-credits'), 'la paternité des moteurs est indiquée');
+}
+
+console.log('');
 console.log('La bannière d\'installation incomplète');
 {
     const hub = readFileSync(path.join(repo, 'app/content/hub.js'), 'utf-8');
