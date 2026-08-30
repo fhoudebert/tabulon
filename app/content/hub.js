@@ -10,7 +10,7 @@ import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
 import { Matches } from './text-search.js';
 import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
-         IsChuKif, ParseKif,
+         IsChuKif, ParseKif, IsShogiKif, ParseShogiKif,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
@@ -401,6 +401,31 @@ async function OpenGameFile(text, fileName, hintGame) {
     //    plateau dessine en kanji, puis des lignes de coups. La lecture vit
     //    dans book-format.js (module pur) ; ici on se contente de deposer le
     //    resultat par le meme canal que la fenetre livre.
+    // 2 ter. KIF de shogi orthodoxe : meme famille, autre dialecte. Pas de
+    //    plateau dessine, un en-tete « cle：valeur », et des coups nommes en
+    //    kanji. La position est celle du jeu, sauf handicap -- qu'on refuse
+    //    plutot que de charger une partie qui ne commence pas ou il faut.
+    if (IsShogiKif(text)) {
+        const kif = ParseShogiKif(text);
+        if (!kif) return Notify(t('hub.loadFailed'));
+        if (kif.handicap && kif.handicap !== '\u5e73\u624b') {
+            console.warn('[hub] KIF : handicap non gere —', kif.handicap);
+            return Notify(t('hub.loadFailed'));
+        }
+        const r = ResolveGame('shogi', selected);
+        if (!r.game) return Notify(t('hub.loadUnknownGame'));
+        const id = 'kif-' + Date.now();
+        await store.set('fork:' + id, {
+            book: {
+                moves: kif.moves,
+                kif: true,
+                label: (fileName || '').replace(/^.*[/\\]/, '') || 'KIF',
+            },
+        });
+        console.info('[hub] KIF de shogi :', kif.moves.length, 'coups');
+        return tRpc.call('new_match', r.game, null, id);
+    }
+
     if (IsChuKif(text)) {
         const kif = ParseKif(text);
         if (!kif) return Notify(t('hub.loadFailed'));
@@ -760,11 +785,18 @@ function RenderAbout() {
     // Locale retenue (déduite du système), ex. "Français (fr)"
     document.querySelectorAll('.appLocale').forEach(el =>
         el.textContent = `${t('lang.' + getLocale())} (${getLocale()})`);
-    // Le panneau About (réécrit côté HTML) contient des <a href> directs :
-    // dans une webview Tauri, un clic les ferait naviguer DANS la fenêtre.
-    // On les intercepte pour les ouvrir dans le navigateur système.
-    document.querySelectorAll('#about a[href]').forEach(el => {
-        if (el.dataset.extBound) return;   // RenderAbout peut être rappelé
+    BindExternalLinks('#about');
+}
+
+// Les <a href> d'un panneau ouvrent le NAVIGATEUR, pas la fenêtre.
+//
+// Dans une webview Tauri, un clic sur un lien fait naviguer la fenêtre
+// elle-même : le hub disparaît, remplacé par une page web, sans retour
+// possible. Chaque panneau qui affiche un lien doit donc l'intercepter — comme
+// le fait « Obtenir des extensions… » dans la fenêtre Extensions.
+function BindExternalLinks(selector) {
+    document.querySelectorAll(selector + ' a[href]').forEach(el => {
+        if (el.dataset.extBound) return;   // le rendu peut être rappelé
         el.dataset.extBound = '1';
         el.style.cursor = 'pointer';
         el.addEventListener('click', (e) => { e.preventDefault(); open(el.getAttribute('href')); });
@@ -827,6 +859,143 @@ function InitInvitationPane() {
                     ? t('invitation.peerInvalidCode') : t('invitation.peerConnectFail'), 'fail');
         }
     });
+}
+
+// Signale UNE FOIS une installation manifestement incomplete.
+//
+// Le seul cas qui merite d'interrompre : la ludotheque manque, et Tabulon
+// tourne sur son jeu embarque minimal. Le moteur absent ne se signale pas --
+// l'IA interne joue, la partie a lieu, et une alerte permanente pour un
+// element facultatif serait vite ignoree.
+//
+// La banniere ne revient pas : une fois vue et fermee, l'entree
+// « Installation » suffit a la retrouver.
+async function CheckInstall() {
+    if (await store.get('install-notice-seen').catch(() => false)) return;
+    let status = null;
+    try { status = await tRpc.call('install_status'); }
+    catch (e) { return; }        // commande absente : rien a signaler
+    if (!status || status.external_dist) return;
+
+    const notifier = document.querySelector('.hub-notifier');
+    if (!notifier) return;
+    document.querySelectorAll('.hub-notifier > *').forEach(el => el.style.display = 'none');
+    const text = document.querySelector('.hub-notifier-text');
+    if (text) { text.style.display = ''; text.textContent = t('install.incomplete'); }
+    const button = document.querySelector('.hub-notifier-ok');
+    if (button) {
+        button.style.display = '';
+        button.textContent = t('install.open');
+        button.onclick = () => {
+            store.set('install-notice-seen', true);
+            notifier.style.display = 'none';
+            document.getElementById('nav-install')?.click();
+        };
+    }
+    notifier.style.display = '';
+}
+
+// Les reseaux publies, sous le nom EXACT que le moteur attend.
+//
+// Fairy-Stockfish n'active un reseau que si le nom du fichier commence par
+// celui de la variante (evaluate.cpp, `on_eval_file_change`) -- la meme regle
+// que verifie `nnue_name_matches` cote Rust. Un fichier renomme « nn.nnue »
+// est charge sans effet et sans message : d'ou cette liste, qui n'est pas
+// decorative.
+const NNUE_NAMES = [
+    'shogi.nnue', 'minishogi.nnue', 'kyotoshogi.nnue', 'makruk.nnue',
+    'shako.nnue', 'capablanca-chess.nnue', 'grand.nnue', 'khans.nnue',
+    'spartan.nnue',
+];
+
+// ── Etat de l'installation ───────────────────────────────────────────────────
+//
+// Tabulon se telecharge comme un binaire seul : la ludotheque, le moteur natif
+// et son reseau NNUE s'ajoutent a cote de l'executable. Rien ne le disait, et
+// l'utilisateur decouvrait une ludotheque reduite sans savoir pourquoi.
+//
+// Ce panneau DECRIT, il n'installe pas. Les chemins affiches sont ceux ou
+// Tabulon cherche vraiment -- calcules par le Rust, avec les memes fonctions
+// que la recherche elle-meme, pour qu'ils ne se desynchronisent jamais d'une
+// explication ecrite a la main.
+async function RenderInstall() {
+    const host = document.getElementById('install-items');
+    if (!host) return;
+    host.textContent = '';
+    // Avant tout : les liens de telechargement doivent ouvrir le navigateur
+    // meme si l'etat n'a pas pu etre lu. C'est justement quand rien ne marche
+    // qu'on a besoin d'aller telecharger.
+    BindExternalLinks('#install');
+    let status = null;
+    try { status = await tRpc.call('install_status'); }
+    catch (e) { console.warn('[hub] install_status:', e); }
+    if (!status) { host.textContent = t('install.unavailable'); return; }
+
+    // Nommer le systeme : les binaires de moteur en dependent, et l'archive a
+    // prendre n'est pas la meme. Le dire evite de choisir au hasard entre
+    // plusieurs fichiers dont les noms se ressemblent.
+    const platform = document.getElementById('install-platform');
+    if (platform) platform.textContent = t('install.platform.' + status.platform)
+        + ' — ' + status.engine_file;
+
+    for (const item of status.items) {
+        const row = document.createElement('div');
+        row.className = 'install-item' + (item.present ? ' present' : ' missing');
+
+        const head = document.createElement('h5');
+        head.textContent = (item.present ? '\u2713 ' : '\u2717 ') + t('install.' + item.id);
+        row.appendChild(head);
+
+        const what = document.createElement('p');
+        what.textContent = t('install.' + item.id + '.what');
+        row.appendChild(what);
+
+        // Present : ou il a ete trouve. Absent : ou le poser. Dans les deux
+        // cas un chemin exact, jamais une paraphrase.
+        const where = document.createElement('p');
+        where.className = 'install-path';
+        where.textContent = item.present
+            ? t('install.foundAt') + ' ' + (item.path || '')
+            : t('install.putAt') + ' ' + (item.expected || '');
+        row.appendChild(where);
+
+        // Le NNUE n'est pas un fichier qu'on pose au hasard : Fairy-Stockfish
+        // n'active un reseau que si son NOM COMMENCE par celui de la variante.
+        // Un fichier bien telecharge mais mal nomme reste silencieusement
+        // inactif -- on liste donc les noms attendus, c'est la seule facon de
+        // rendre la regle utilisable.
+        if (item.id === 'nnue') {
+            const names = document.createElement('p');
+            names.className = 'install-names';
+            names.textContent = NNUE_NAMES.join('  ');
+            row.appendChild(names);
+        }
+
+        // Le moteur est le seul element qu'on puisse VERIFIER : une poignee de
+        // main UCI dit s'il repond, et sous quel nom. Le reste ne se teste pas,
+        // il se constate.
+        if (item.id === 'engine' && item.present) {
+            const button = document.createElement('button');
+            button.className = 'btn btn-default btn-mini';
+            button.textContent = t('install.test');
+            const answer = document.createElement('span');
+            answer.className = 'install-answer';
+            button.addEventListener('click', async () => {
+                button.disabled = true;
+                answer.textContent = t('install.testing');
+                try {
+                    const name = await tRpc.call('engine_probe');
+                    answer.textContent = '\u2713 ' + name;
+                } catch (e) {
+                    answer.textContent = '\u2717 ' + (e?.message || e);
+                }
+                button.disabled = false;
+            });
+            row.appendChild(button);
+            row.appendChild(answer);
+        }
+        host.appendChild(row);
+    }
 }
 
 function SetNav(which) {
@@ -920,12 +1089,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         tRpc.call('open_extensions');
     });
 
+    document.getElementById('nav-install').addEventListener('click', () => {
+        SetNav('install'); document.getElementById('install').style.display = '';
+        RenderInstall();
+    });
+
     document.getElementById('nav-about').addEventListener('click', () => {
         SetNav('about'); document.getElementById('about').style.display = '';
         RenderAbout();
     });
 
     document.getElementById('gamefilter').addEventListener('input', Filter);
+    CheckInstall().catch(e => console.warn('[hub] CheckInstall:', e));
     try { InitInvitationPane(); }
     catch (e) { console.error('[hub] InitInvitationPane:', e); }
     try { InitDetailButtons(); }

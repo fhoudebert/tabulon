@@ -13,9 +13,10 @@ import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
 import { installNativeEngine } from './engine-native.js';
-import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen,
+import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
-         ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove } from './book-format.js';
+         ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove,
+         ParseWxfMove, WxfMatches, ParseSanMove, SanMatches, BuildSanMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
@@ -876,11 +877,18 @@ function initSatelliteListeners() {
 // ChuShogiLite ("+H"), la ou jocly ecrit son abreviation naturelle ("+DH").
 // Plutot que de transporter une table de correspondance entre les deux, on lit
 // la lettre a la source : le plateau la donne, et il est deja a notre portee.
-function BoardLetters(fen) {
-    const rows = String(fen || '').split(' ')[0].split('/');
+function BoardLetters(fen, options) {
+    // Le xiangqi de jocly nomme ses rangees a partir de 0, les autres jeux a
+    // partir de 1. L'appelant le sait, la fonction non.
+    const base = (options && options.zeroBased) ? 1 : 0;
+    // La reserve du crazyhouse est collee au plateau, entre crochets
+    // (« …/RNBQKBNR[Nn] »). Sans la retirer, les crochets comptent comme des
+    // cases et decalent toute la derniere rangee : la lettre lue n'est plus
+    // celle de la piece, et un coup parfaitement identifie se voit refuse.
+    const rows = String(fen || '').split(' ')[0].replace(/\[[^\]]*\]/g, '').split('/');
     const map = {};
     rows.forEach((row, index) => {
-        const rank = rows.length - index;
+        const rank = rows.length - index - base;
         let file = 0;
         for (let k = 0; k < row.length; ) {
             const c = row[k];
@@ -958,6 +966,18 @@ async function WesternGame() {
     const files = (board.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
         .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0) || 12;
 
+    // Le xiangqi est le seul a numeroter ses rangees a partir de 0. Le janggi,
+    // sur le meme plateau, ecrit « a4-a5 » : la geometrie ne dit rien de la
+    // notation, seul le jeu la dit.
+    const zeroBasedRanks = gameName === 'xiangqi';
+    // La lettre du plateau n'est fiable que si le FEN et les NOMS de cases ont
+    // la meme largeur : les jeux a reserve (shogi, crazyhouse) ont des
+    // colonnes de main qui ne portent pas de nom et decalent toute lecture.
+    const fenBoard = (await joclyMatch.getBoardState().catch(() => '') || '').split(' ')[0];
+    const fenWidth = (fenBoard.split('/')[0].match(/\d+|\+?[A-Za-z]/g) || [])
+        .reduce((n, tok) => n + (/^\d+$/.test(tok) ? parseInt(tok, 10) : 1), 0);
+    const reliableLetters = fenWidth === files || gameName === 'chu-shogi';
+
     const here = played.length;
     const out = [];
     try {
@@ -967,7 +987,8 @@ async function WesternGame() {
         for (let ply = 0; ply < here; ply++) {
             const legal = await joclyMatch.getPossibleMoves();
             const naturals = await joclyMatch.getMoveString(legal);
-            const letterAt = BoardLetters(await joclyMatch.getBoardState());
+            const letterAt = BoardLetters(await joclyMatch.getBoardState(),
+                                          { zeroBased: zeroBasedRanks });
             const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
                 && (m.via || null) === (played[ply].via || null)
                 && (m.pr || null) === (played[ply].pr || null));
@@ -996,9 +1017,27 @@ async function WesternGame() {
                 if (other.from && other.from !== mine.from && letterAt(other.from) === letter)
                     rivals.push(other.from);
             }
-            const token = BuildWesternMove(mine, letter, rivals);
+            // DEUX notations, selon le destinataire. Le chu shogi va chez
+            // ChuShogiLite, qui attend la notation occidentale ; tous les
+            // autres jeux vont chez PyChess, qui attend du SAN. Le jeu tranche
+            // seul, il n'y a rien a demander a l'utilisateur.
+            let token;
+            if (gameName === 'chu-shogi') {
+                token = BuildWesternMove(mine, letter, rivals);
+            } else {
+                const usiMove = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
+                token = BuildSanMove(naturals[index], rivals, gameName, {
+                    letterAt: reliableLetters ? letterAt : undefined,
+                    // Le xiangqi numerote ses rangees a partir de 0 et n'ecrit
+                    // ni separateur ni prise : l'appelant fournit les deux.
+                    rankOffset: zeroBasedRanks ? 1 : 0,
+                    capture: legal[index].c !== null && legal[index].c !== undefined,
+                    promoted: (typeof usiMove === 'string' && usiMove !== '??')
+                        ? usiMove.endsWith('+') : undefined,
+                });
+            }
             if (!token) console.warn('[play] export : coup', ply + 1,
-                '(' + naturals[index] + ') non traduisible en notation occidentale');
+                '(' + naturals[index] + ') non traduisible');
             out.push(token || '?');
             await joclyMatch.rollback(ply + 1);
         }
@@ -1021,6 +1060,21 @@ async function WesternGame() {
 // jocly n'ecrit pas la case de depart sur un coup a deux pas : on compare
 // alors les seules cases qu'il donne, passage puis arrivee.
 async function MoveFromSquares(token) {
+    // Parachutage : « P@c6 », la piece nommee et la case, sans depart.
+    const drop = /^([A-Z+]*)@([a-l]\d{1,2})$/.exec(String(token || '').trim());
+    if (drop) {
+        const moves = await joclyMatch.getPossibleMoves();
+        if (!moves || !moves.length) return null;
+        const naturals = await joclyMatch.getMoveString(moves);
+        let found = null;
+        for (let i = 0; i < moves.length; i++) {
+            const d = /^([A-Z+]*)@([a-l]\d{1,2})[+#]?$/.exec(naturals[i]);
+            if (!d || d[2] !== drop[2] || d[1] !== drop[1]) continue;
+            if (found) { console.warn('[play] KIF : parachutage ambigu', token); return null; }
+            found = moves[i];
+        }
+        return found;
+    }
     const m = /^([a-l]\d{1,2}(?:-[a-l]\d{1,2})+)([+=]?)$/.exec(String(token || '').trim());
     if (!m) return null;
     const want = m[1].split('-');
@@ -1042,6 +1096,144 @@ async function MoveFromSquares(token) {
         found = moves[i];
     }
     return found;
+}
+
+// Le coup que designe un jeton WXF (xiangqi), ou null.
+//
+// La notation est ecrite du point de vue du joueur : colonnes comptees depuis
+// sa droite, « + » vers l'avant. Le camp au trait est donc indispensable pour
+// la lire, et c'est le moteur qui le donne — pas le fichier.
+async function MoveFromWxf(token) {
+    const parsed = ParseWxfMove(token);
+    if (!parsed) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    const state = await joclyMatch.getBoardState();
+    const letterAt = BoardLetters(state);
+    const width = (state.split(' ')[0].split('/')[0].match(/\d+|[A-Za-z]/g) || [])
+        .reduce((n, tok2) => n + (/^\d+$/.test(tok2) ? parseInt(tok2, 10) : 1), 0) || 9;
+    const red = (await joclyMatch.getTurn()) === Jocly.PLAYER_A;
+    let found = null;
+    for (let i = 0; i < moves.length; i++) {
+        const m = /^([a-z]\d{1,2})([a-z]\d{1,2})$/.exec(naturals[i]);
+        if (!m) continue;
+        if (!WxfMatches(parsed, m[1], m[2], letterAt(m[1]), red, width)) continue;
+        if (found) { console.warn('[play] WXF : jeton ambigu', token); return null; }
+        found = moves[i];
+    }
+    return found;
+}
+
+// Le coup que designe un jeton SAN (echecs et variantes), ou null.
+//
+// Resolution EXACTE, comme pour les autres notations etrangeres : pickMove
+// choisirait par distance d'edition et jouerait « Nbd2 » comme « Nf3 » sans le
+// dire. Ici la case d'arrivee, la prise, la desambiguisation et la promotion
+// doivent toutes correspondre, et la piece est identifiee par la lettre que
+// porte le PLATEAU a la case de depart -- pas par une table d'abreviations,
+// qui differe d'une variante a l'autre.
+// Decalage de rangee entre le fichier et jocly, DETERMINE et non devine.
+//
+// jocly numerote les rangees du xiangqi a partir de 0 (« c0e2 ») quand PyChess
+// compte a partir de 1 (« Hc3 ») : le meme point du plateau s'ecrit
+// differemment. Le decalage ne se lit nulle part, mais il se verifie -- une
+// seule des deux lectures resout le premier coup. On l'essaie donc, et on le
+// retient pour la partie.
+let sanRankOffset = null;
+
+// Repond au prelude, s'il y en a un, en essayant les choix offerts.
+//
+// Renvoie true si un choix a ete joue. Le critere est le premier coup du
+// fichier : sans lui (partie sans coups), on prend le premier choix, faute de
+// mieux, et on le dit.
+// Un coup de prelude, reconnaissable a son nom : « #0 », « #1 »... pour un
+// choix, « -- » pour une etape qui ne demande rien mais qu'il faut franchir.
+const PRELUDE_MOVE = /^(#\d+|--)$/;
+
+async function AnswerPrelude(firstToken) {
+    // PLUSIEURS ETAPES. Sho Shogi en a deux : le choix de la regle, puis un
+    // passage. N'en franchir qu'une laissait la partie sur un coup « -- »
+    // unique, et le premier coup du fichier restait introuvable -- exactement
+    // le symptome qu'on croyait venir de la notation.
+    const stages = [];
+    for (let depth = 0; depth < 4; depth++) {
+        const moves = await joclyMatch.getPossibleMoves().catch(() => []);
+        if (!moves || !moves.length) break;
+        const names = await joclyMatch.getMoveString(moves).catch(() => []);
+        if (!PRELUDE_MOVE.test(names[0] || '')) break;
+
+        // Une etape sans choix se franchit sans se poser de question.
+        if (moves.length === 1) {
+            await joclyMatch.playMove(moves[0]);
+            stages.push(names[0]);
+            continue;
+        }
+        // Une etape a plusieurs choix : le bon est celui sous lequel le
+        // premier coup du fichier se resout. Sans coup pour departager, on
+        // prend le premier et on le dit.
+        let chosen = null;
+        for (let i = 0; i < moves.length && firstToken; i++) {
+            await joclyMatch.playMove(moves[i]);
+            const rest = await AnswerPrelude(null);      // franchir les suivantes
+            const resolved = await MoveFromSan(firstToken).catch(() => null)
+                || await joclyMatch.pickMove(firstToken).catch(() => null);
+            if (resolved) { chosen = names[i]; break; }
+            await joclyMatch.rollback(stages.length).catch(() => {});
+            void rest;
+        }
+        if (chosen === null) {
+            await joclyMatch.playMove(moves[0]).catch(() => {});
+            chosen = names[0];
+            if (firstToken) console.warn('[play] prelude : aucun choix ne resout le premier coup, « '
+                + chosen + ' » retenu');
+        }
+        stages.push(chosen);
+    }
+    if (stages.length) console.info('[play] prelude :', stages.join(' '));
+    return stages.length > 0;
+}
+
+async function MoveFromSan(token) {
+    const parsed = ParseSanMove(token);
+    if (!parsed) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    const letterAt = BoardLetters(await joclyMatch.getBoardState(), { zeroBased: true });
+
+    // La promotion se lit dans l'USI, dont le « + » final est sans ambiguite.
+    // La notation naturelle, elle, ne la montre pas de facon fiable : pour le
+    // shogi jocly n'ecrit rien du tout, et le « + » qu'on y voit parfois est
+    // un echec. Les jeux qui ne savent pas ecrire l'USI n'ont pas de
+    // promotion a departager, et l'absence de reponse convient.
+    const usi = await joclyMatch.getMoveString(moves, 'usi').catch(() => null);
+
+    const tryOffset = (offset) => {
+        let found = null, ambiguous = false;
+        for (let i = 0; i < moves.length; i++) {
+            // Le nom du jeu accompagne la comparaison : la table d'alias est
+            // organisee par jeu, la meme lettre y designant des pieces
+            // differentes selon la variante.
+            const options = { rankOffset: offset, game: gameName };
+            if (usi && typeof usi[i] === 'string') options.promoted = usi[i].endsWith('+');
+            if (!SanMatches(parsed, naturals[i], letterAt, options)) continue;
+            if (found) { ambiguous = true; continue; }
+            found = moves[i];
+        }
+        return ambiguous ? null : found;
+    };
+
+    if (sanRankOffset !== null) return tryOffset(sanRankOffset);
+    for (const offset of [0, 1]) {
+        const move = tryOffset(offset);
+        if (move) {
+            sanRankOffset = offset;
+            if (offset) console.info('[play] SAN : rangées décalées de', offset, '— notation de PyChess');
+            return move;
+        }
+    }
+    return null;
 }
 
 // Le coup que designe un jeton USI dans la position courante, ou null.
@@ -1442,6 +1634,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     // puis appliqués par playMove. On tolère les décorations (+ # ! ?) en
     // retentant sans elles si pickMove ne trouve pas.
 
+// Pourquoi ce jeton n'a-t-il pas ete resolu ? On le redemande a la position
+// courante et on compte les correspondances : zero veut dire que le fichier
+// ne parle pas de cette position, plusieurs qu'il est ambigu.
+async function ExplainUnresolved(token) {
+    try {
+        const parsed = ParseSanMove(token);
+        if (!parsed) { console.warn('[play] book: jeton illisible'); return; }
+        const moves = await joclyMatch.getPossibleMoves();
+        const naturals = await joclyMatch.getMoveString(moves);
+        const letterAt = BoardLetters(await joclyMatch.getBoardState(),
+                                      { zeroBased: gameName === 'xiangqi' });
+        const matches = [];
+        for (let i = 0; i < moves.length; i++)
+            if (SanMatches(parsed, naturals[i], letterAt,
+                           { game: gameName, rankOffset: sanRankOffset || 0 }))
+                matches.push(naturals[i]);
+        if (matches.length > 1)
+            console.warn('[play] book: « ' + token +' » est ambigu —',
+                matches.length, 'coups y correspondent :', matches.join(', '),
+                '— le fichier omet la désambiguïsation');
+        else if (matches.length === 0)
+            console.warn('[play] book: « ' + token + ' » ne correspond à aucun coup légal ici');
+    } catch (e) { console.warn('[play] book: diagnostic impossible:', e.message || e); }
+}
+
 async function BookReplay(book) {
         // Tag [FEN] du PGN/PJN : la partie ne commence PAS a la position
         // standard (probleme, finale, position d'etude). Sans ce chargement
@@ -1458,7 +1675,7 @@ async function BookReplay(book) {
         if (book.initialBoard) {
             book.initialBoard = PgnFenToJocly(book.initialBoard)
                 || PgnFenToShogiSfen(book.initialBoard)
-                || book.initialBoard;
+                || VariantFen(book.initialBoard, gameName);
         }
         // `tsume` accompagne la position partout ou elle est rechargee : la
         // fenetre Historique fait revenir play.js a la position de depart pour
@@ -1469,8 +1686,14 @@ async function BookReplay(book) {
             try {
                 await joclyMatch.load({ game: gameName, playedMoves: [], initialBoard: book.initialBoard, tsume: tsumeMatch });
             } catch (e) {
+                // La position est refusee : on ARRETE la. Rejouer les coups
+                // depuis la position standard n'a aucun sens -- ils ne s'y
+                // rapportent pas -- et les premiers passeraient parfois,
+                // laissant croire a un chargement partiel plutot qu'a un
+                // echec. Mieux vaut un plateau vierge et un message.
                 console.warn('[play] book: position de depart refusee:', e.message || e);
                 UpdateFooter(t('play.loadFailed'));
+                return;
             }
         }
         // La resolution des jetons (decorations, coups colles) vit dans
@@ -1490,9 +1713,24 @@ async function BookReplay(book) {
         // (`book.kif`), et c'est necessaire — « e4-e5 » est aussi la notation
         // naturelle d'un pion chez jocly, les deux formes ne se distinguent
         // pas a la lecture du seul jeton.
+        sanRankOffset = null;   // redetermine a chaque livre charge
+        // Prelude : certains jeux ouvrent par un choix qui compte pour un
+        // coup -- les dix dispositions de Capablanca, les deux regles de Sho
+        // Shogi. jocly les nomme « #0 », « #1 »... et tant qu'il n'est pas
+        // repondu, aucun coup de la partie n'est legal.
+        //
+        // Quand la position est fournie, jocly saute le prelude de lui-meme
+        // pour les jeux dont le choix se LIT sur le plateau. Reste ceux dont
+        // le choix est une REGLE : rien dans le fichier ne dit laquelle, et
+        // on ne devine pas -- on essaie. Le bon choix est celui sous lequel
+        // le premier coup du fichier se resout.
+        await AnswerPrelude(book.moves && book.moves[0]);
+
         const format = book.kif ? 'kif' : MoveFormat(book.moves);
         let exact = null;
         if (format === 'kif') exact = MoveFromSquares;
+        else if (format === 'wxf') exact = MoveFromWxf;
+        else if (format === 'san') exact = MoveFromSan;
         else if (format === 'usi') exact = MoveFromUSI;
         else if (format === 'western' && await MoveFromWestern(book.moves[0]).catch(() => null))
             exact = MoveFromWestern;
@@ -1528,7 +1766,19 @@ async function BookReplay(book) {
                 }
             } catch (e) { console.warn('[play] book: relecture trait inversé:', e.message || e); }
         }
-        if (unresolved) console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
+        if (unresolved) {
+            console.warn('[play] book: coup non résolu:', unresolved, 'après', played, 'coups');
+            // Un jeton peut echouer pour deux raisons opposees : AUCUN coup
+            // legal ne lui correspond (le fichier decrit une autre position),
+            // ou PLUSIEURS y correspondent (le fichier omet la
+            // desambiguisation). Les distinguer epargne une enquete.
+            await ExplainUnresolved(unresolved);
+        }
+        // L'issue declaree par le fichier. « * » veut dire « partie en cours »
+        // et ne vaut pas un resultat : on le laisse a null, comme une partie
+        // qu'on vient de commencer. Sans cela, une partie gagnee, rechargee
+        // puis reexportee ressortait en « * ».
+        if (book.result && book.result !== '*') gameResult = book.result;
         // Humain contre humain, en pause : sans ca l'IA du camp B rejouerait
         // par-dessus la partie chargee, et surtout des qu'on reculerait d'un
         // coup pour naviguer dans la fenetre Historique.
@@ -1537,11 +1787,22 @@ async function BookReplay(book) {
         // charge : une position seule, sans sa solution. Il n'y a alors rien
         // a proteger et rien ou naviguer -- ce qu'on veut, c'est CHERCHER,
         // donc jouer pour de bon, avec l'adversaire habituel.
-        if (played > 0) {
+        // « * » veut dire partie EN COURS : le fichier ne s'arrete pas sur un
+        // resultat, il s'interrompt. On rend alors la main au joueur plutot
+        // que de figer le plateau -- c'est ce qu'on attend en rouvrant une
+        // partie qu'on n'a pas finie.
+        //
+        // Avec un resultat, au contraire, il n'y a plus rien a jouer : on
+        // passe en humain contre humain et en pause, sans quoi l'IA du camp B
+        // rejouerait par-dessus la partie chargee, et surtout des qu'on
+        // reculerait d'un coup pour naviguer dans la fenetre Historique.
+        const ongoing = book.result === '*';
+        if (played > 0 && !ongoing) {
             SetBothHuman();
             paused = true;
             UpdatePause();
         }
+        if (played > 0 && ongoing) console.info('[play] book: partie en cours — le trait est rendu');
         // Libelle calcule par book.js (qui a les tags ET le nom du fichier).
         // Ancien affichage : "? vs ?", les tags [White]/[Black] etant absents
         // de tout fichier ecrit par Tabulon.

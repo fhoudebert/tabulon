@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/3q5LBVRC"]
+[Date "2026.08.11"]
+[Round "-"]
+[White "emanuelesaiu"]
+[Black "11826205"]
+[Result "1/2-1/2"]
+[TimeControl "600+0"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Grand"]
+[FEN "r8r/1nbqkcabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKCABN1/R8R w - - 0 1"]
+[SetUp "1"]
+
+1. f5 f6 2. Nh4 Nh7 3. g4 b7 4. Nc4 c7 5. d4 Bb8 6. e5 g7 7. e6 d7 8. d5 d6 9. b4 i7 10. a5 a6 11. Ba4 Ba7 12. Cd3 b6 13. Bc6 Nd8 14. axb6 cxb6 15. b5 Nxc6 16. bxc6 b5 17. Na5 Ce7 18. Nb7 Bi8 19. Ng6 Cg8 20. Rxa6 Be3 21. Qa2 Rxa6 22. Qxa6 Bc5 23. Nxc5 dxc5 24. Qxd9+ Kxd9 25. Ra1 1/2-1/2

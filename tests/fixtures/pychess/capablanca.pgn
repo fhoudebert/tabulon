@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/4a5nPo7u"]
+[Date "2021.01.08"]
+[Round "-"]
+[White "MasterRikiki"]
+[Black "CouchTomato87"]
+[Result "1-0"]
+[TimeControl "300+3"]
+[WhiteElo "1500?"]
+[BlackElo "1397?"]
+[Variant "Capablanca"]
+[FEN "rnabqkbcnr/pppppppppp/10/10/10/10/PPPPPPPPPP/RNABQKBCNR w KQkq - 0 1"]
+[SetUp "1"]
+
+1. e4 e5 2. Bg4 f6 3. f3 Be6 4. Nc3 Bxg4 5. fxg4 Nh6 6. Ae2 g5 7. Qf2 Qe6 8. Cg3 d6 9. h3 Ci6 10. O-O-O O-O 11. j4 Ab6 12. Qf1 Nc6 13. j5 Ch4 14. i3 Cg6 15. i4 Aa5 16. Ci2 Nb4 17. Kb1 d5 18. exd5 Nxd5 19. i5 Nf7 20. i6 hxi6 21. jxi6 jxi6 22. Bf2 Nxc3+ 23. dxc3 Be7 24. Re1 Rad8 25. Cj2 Kh7 26. Ci4 Kg7 27. Bi5+ Nh6 28. Qf2 Ab6 29. Bxh6+ ixh6 30. Rj7+ Rh7 31. Rxh7+ Kxh7 32. Qj6 Ri8 33. Ad3 e4 34. Rxe4 Qxe4 35. Axe4 Ae3 36. Qj7+ Ri7 37. Axg6+ Kxg6 38. Qxi7 Ad2+ 39. Ka1 Ae1 40. Qxh6+ Kf7 41. Qh7+ Ke6 42. Qe4+ Kf7 43. Qxe1 c5 44. Cxi6 Ke8 45. Cg7+ Kf8 46. Qxe7# 1-0

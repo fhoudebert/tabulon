@@ -1,0 +1,15 @@
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/biJ14SDr"]
+[Date "2022.03.11"]
+[Round "-"]
+[White "Random-Mover"]
+[Black "Olekaze"]
+[Result "0-1"]
+[TimeControl "5400+10"]
+[WhiteElo "1500?"]
+[BlackElo "1150?"]
+[Variant "Kyotoshogi"]
+[FEN "p+nks+l/5/5/5/+LSK+NP[-] w 0 1"]
+[SetUp "1"]
+
+1. Ge2=N Pa4=R 2. Kb2 Gb4=N 3. Kc3 Sc4=B 4. Sb2=B Gd4=L 5. Ba3=S Rxa3=P 6. Kb2 Ld2=G 7. Ga2=L Pxa2=R+ 8. Kc3 Gxe2=L 9. Pxe2=R Rxe2=P 10. L@a1 Pe1=R 11. La2=G Bxa2=S 12. Kb2 Sa1=B+ 13. Kb3 B@c2+ 14. Ka3 L@a4# 0-1

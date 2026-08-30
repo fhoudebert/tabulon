@@ -1,0 +1,15 @@
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/NrmGxFe1"]
+[Date "2020.09.05"]
+[Round "-"]
+[White "yawnoc"]
+[Black "Fairy-Stockfish"]
+[Result "1/2-1/2"]
+[TimeControl "600+20"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Xiangqi"]
+[FEN "4k1b2/9/4b4/9/9/9/8r/4B4/4A4/2B1KA3 w - - 0 1"]
+[SetUp "1"]
+
+1. Kd1 Ec6 2. Ke1 Rc4 3. Kd1 Rd4+ 4. Ke1 Rf4 5. Kd1 Ke9 6. Ke1 Ece8 7. Kd1 Rc4 8. Ke1 Eg6 9. Kd1 Rc6 10. Ke1 Kd9 11. Ea3 Rd6 12. Eac1 E6e8 13. Ea3 Ec6 14. Eac1 Rd4 15. Ea3 Kd8 16. Eac1 Ege8 17. Ea3 Ra4 18. Eac1 Rc4 19. Ad1 Re4 20. Ade2 Rd4 21. Ea3 Rd6 22. Eac1 Kd9 23. Ea3 Ke9 24. Eac1 Rf6 25. Kd1 Rf5 26. Ke1 Ra5 27. Kd1 Re5 28. Ke1 Eg10 29. Kd1 Rd5+ 30. Ke1 Kd9 31. Ea3 Ege8 32. Eac1 Rd7 33. Ea3 Eg6 34. Eac1 Rd5 35. Ea3 Ea8 36. Eac1 Ee8 37. Ea3 Ke9 38. Eac1 Eac6 39. Ea3 Ra5 40. Eac1 Kf9 41. Kd1 Ri5 42. Ke1 Rf5 43. Kd1 Rd5+ 44. Ke1 Ke9 45. Ea3 Kd9 46. Eac1 Rd2 47. Ea3 Rb2 48. Ad1 Ri2 49. Eac1 Rd2 50. Ade2 Rd1+ 1/2-1/2

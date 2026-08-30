@@ -4,7 +4,7 @@
 // mocks : elles vérifient que Tabulon lit les bons tags, choisit le bon jeu et
 // transmet le bon texte, mais jamais qu'un coup écrit dans le fichier est un
 // coup LÉGAL du jeu visé. Celle-ci ferme la boucle en passant chaque fichier
-// de tests/fixtures-problems/ au vrai moteur, par le même chemin que play.js :
+// de tests/fixtures/problems/ au vrai moteur, par le même chemin que play.js :
 // résolution du jeu → chargement du FEN → ReplayBookMoves.
 //
 // C'est ce qui permet d'affirmer qu'une variante nouvellement ajoutée au dist
@@ -13,7 +13,7 @@
 // et deux pièces personnalisées définies par un variants.ini embarqué) ne sont
 // jouables que si le dist les fournit — un catalogue à jour ne suffit pas.
 //
-// Ajouter un problème dans tests/fixtures-problems/<jeu>/ le fait entrer ici
+// Ajouter un problème dans tests/fixtures/problems/<jeu>/ le fait entrer ici
 // automatiquement : c'est le même dossier que l'écran « Charger une partie ».
 // Usage : npm test  (ou node tests/test-problems-replay.mjs)
 import { createRequire } from 'module';
@@ -21,10 +21,10 @@ import { readdirSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { ExtractMoves, BookGame, BookFen, BookVariant, ParseSolution,
-         ReplayBookMoves, FairyGameIndex, FairyVariantAlias } from '../app/content/book-format.js';
+         ReplayBookMoves, FairyGameIndex, FairyVariantAlias } from '../../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const Jocly = require(path.join(root, 'dist/node/jocly.core.js'));
 
 let PASS = 0, FAIL = 0;
@@ -72,7 +72,7 @@ function ResolveGame(tags, folder) {
     return names.includes(folder) ? folder : null;
 }
 
-const problems = path.join(root, 'tests', 'fixtures-problems');
+const problems = path.join(root, 'tests', 'fixtures/problems');
 const folders = readdirSync(problems, { withFileTypes: true })
     .filter(d => d.isDirectory()).map(d => d.name).sort();
 ok(folders.length > 0, `${folders.length} dossier(s) de problèmes : ${folders.join(', ')}`);
