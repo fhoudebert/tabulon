@@ -328,6 +328,17 @@ const VARIANT_ALIASES = {
     // Orthographes des exportateurs de variantes : PyChess et chessvariants
     // ecrivent le nom du jeu en toutes lettres, Fairy-Stockfish le colle.
     'kyoto shogi': 'kyotoshogi',
+    'janggi': 'janggi',
+    'korean chess': 'janggi',
+    'makruk': 'makruk',
+    'thai chess': 'makruk',
+    'shako': 'shako',
+    'spartan': 'spartan',
+    'spartan chess': 'spartan',
+    // « Shō shogi » est le nom que jocly donne a kotaishi-shogi, dont le
+    // prelude choisit justement entre les deux regles.
+    'shoshogi': 'shoshogi',
+    'sho shogi': 'shoshogi',
     'mini shogi': 'minishogi',
     'tori shogi': 'torishogi',
     'chu shogi': 'chu',
@@ -1021,6 +1032,33 @@ const XIANGQI_LETTERS = { n: 'h', N: 'H', b: 'e', B: 'E' };
 // plateau ou il ne reste qu'un pion.
 const KYOTO_LETTERS = { t: '+l', T: '+L', g: '+n', G: '+N' };
 
+// Capablanca et ses parents (Grand Chess, Gothic...) : la piece qui combine
+// tour et cavalier n'a pas de nom unique. chessvariants et PyChess l'appellent
+// CHANCELLOR et l'ecrivent « C » ; jocly la nomme MARSHALL et ecrit « M ».
+// Meme piece, meme case, deux lettres — et un FEN parfaitement valide refuse
+// (« FEN invalid board spec c »).
+//
+// L'archeveque (fou + cavalier) ne pose pas le probleme : les deux ecrivent
+// « A ». Seule cette lettre-ci differe, d'ou une table d'une seule entree
+// plutot qu'une correspondance complete qu'il faudrait tenir a jour.
+const CHANCELLOR_LETTERS = { c: 'm', C: 'M' };
+
+// Makruk : PyChess nomme les pieces d'apres le thai — « s » pour le khon
+// (l'elephant, qui se deplace comme l'argent du shogi) et « m » pour le met
+// (le conseiller) — quand jocly reprend les lettres des echecs, « b » et « q ».
+//
+// Ce n'est pas cosmetique : un FEN dont les lettres ne sont pas reconnues
+// produit un plateau AMPUTE, sans roi, et jocly s'y plante en cherchant les
+// attaquants d'une case qui n'existe pas. Une position qu'on croit chargee
+// fait tomber la fenetre de jeu.
+const MAKRUK_LETTERS = { s: 'b', S: 'B', m: 'q', M: 'Q' };
+
+// Shatranj : PyChess garde les lettres des echecs pour deux pieces qui n'en
+// sont pourtant pas -- l'alfil (« b ») n'est pas un fou, il saute de deux
+// cases en diagonale, et le firz (« q ») n'est pas une dame, il ne va que
+// d'une case. jocly les nomme d'apres ce qu'elles sont : elephant et general.
+const SHATRANJ_LETTERS = { b: 'e', B: 'E', q: 'g', Q: 'G' };
+
 /**
  * Un FEN de variante, ramene a ce que le jeu Jocly vise attend — ou le FEN
  * inchange quand il n'y a rien a faire.
@@ -1040,8 +1078,27 @@ export function VariantFen(fen, game) {
     if (!text) return fen;
     const f = text.split(/\s+/);
 
-    if (game === 'xiangqi') {
+    // Le janggi partage la convention du xiangqi : PyChess y ecrit le cavalier
+    // « n » et l'elephant « b », jocly « h » et « e ». Meme plateau, memes
+    // pieces, memes lettres a traduire.
+    if (game === 'xiangqi' || game === 'janggi') {
         return [f[0].replace(/[nbNB]/g, (c) => XIANGQI_LETTERS[c]), ...f.slice(1)].join(' ');
+    }
+    // Les jeux ou le chancelier s'ecrit « C » ailleurs et « M » chez jocly. La
+    // liste est explicite : « c » est une lettre courante (le cannon du
+    // xiangqi, le camel de certaines variantes), et une conversion appliquee
+    // au hasard casserait plus qu'elle ne repare.
+    if (game === 'capablanca-chess' || game === 'grand-chess' || game === 'gothic-chess') {
+        f[0] = f[0].replace(/[cC]/g, (ch) => CHANCELLOR_LETTERS[ch]);
+        return f.join(' ');
+    }
+    if (game === 'shatranj-chess') {
+        f[0] = f[0].replace(/[bBqQ]/g, (ch) => SHATRANJ_LETTERS[ch]);
+        return f.join(' ');
+    }
+    if (game === 'makruk') {
+        f[0] = f[0].replace(/[sSmM]/g, (ch) => MAKRUK_LETTERS[ch]);
+        return f.join(' ');
     }
     if (game === 'kyoto-shogi') {
         // Traduire d'abord les lettres, normaliser la forme ensuite : les deux
@@ -1056,6 +1113,540 @@ export function VariantFen(fen, game) {
         return `${f[0]} ${f[1] === 'w' ? 'b' : 'w'} - ${f[3]}`;
     }
     return text;
+}
+
+// ── Xiangqi : la notation WXF ────────────────────────────────────────────────
+//
+// « H2+3 », « C2=5 » — et en pleine largeur « Ｈ２＋３ », qui est la forme des
+// archives chinoises. Elle ne ressemble a aucune autre notation d'echecs, pour
+// une raison de fond : elle est ecrite DU POINT DE VUE DU JOUEUR.
+//
+//   - les colonnes se comptent depuis la DROITE DU CAMP AU TRAIT. La colonne 2
+//     des Rouges et la colonne 2 des Noirs sont a l'oppose du plateau ;
+//   - « + » avance, « − » recule, toujours relativement au camp — donc dans
+//     des sens opposes sur le plateau ;
+//   - le dernier chiffre change de SENS selon la piece : pour le pion, le
+//     char, le canon et le general, c'est un NOMBRE DE RANGEES parcourues ;
+//     pour le mandarin, le cheval et l'elephant, qui se deplacent en diagonale,
+//     c'est la COLONNE d'arrivee.
+//
+// Aucun de ces trois points ne se devine, et se tromper sur l'un donne un coup
+// legal mais faux — la faute silencieuse habituelle. La lecture s'appuie donc
+// sur le parseur de reference de wukong-xiangqi (Code Monkey King), dont les
+// regles sont reprises ici telles quelles.
+
+const WXF_PIECES = { P: 'P', A: 'A', E: 'E', H: 'H', C: 'C', R: 'R', K: 'K' };
+// Les chiffres pleine largeur des archives chinoises, ramenes a l'ASCII.
+const WXF_WIDE = { '\uff10': '0', '\uff11': '1', '\uff12': '2', '\uff13': '3', '\uff14': '4',
+                   '\uff15': '5', '\uff16': '6', '\uff17': '7', '\uff18': '8', '\uff19': '9',
+                   '\uff0b': '+', '\uff1d': '=', '\uff0d': '-', '\u2212': '-',
+                   '\uff30': 'P', '\uff21': 'A', '\uff25': 'E', '\uff28': 'H',
+                   '\uff23': 'C', '\uff32': 'R', '\uff2b': 'K' };
+
+/**
+ * Un jeton WXF, ramene a ses quatre elements — ou null.
+ *
+ * { piece, file, dir, num, rank } ou `file` est la colonne de depart vue par le
+ * joueur, `dir` vaut '+', '-' ou '=', et `num` le dernier chiffre. `rank` porte
+ * le prefixe des pieces empilees (« + » devant, « - » derriere), qui remplace
+ * la colonne de depart quand deux pieces identiques occupent la meme colonne.
+ */
+export function ParseWxfMove(token) {
+    const t = String(token || '').trim().replace(/[\uff00-\uffef\u2212]/g,
+        (c) => WXF_WIDE[c] || c);
+    const m = /^([+-])?([PAEHCRK])([1-9])([+=-])([1-9])$/.exec(t);
+    if (!m) return null;
+    return { rank: m[1] || null, piece: WXF_PIECES[m[2]], file: +m[3], dir: m[4], num: +m[5] };
+}
+
+// La colonne du joueur, ramenee a l'index de jocly (0 a gauche). Les Rouges
+// comptent depuis leur droite, qui est la droite du plateau ; les Noirs depuis
+// la leur, qui est la gauche.
+function WxfFile(n, red, files) { return red ? files - n : n - 1; }
+
+/**
+ * Le jeton decrit-il le coup qui va de `from` a `to` ?
+ *
+ * `from`/`to` sont des cases jocly (« c0 », « e2 »), `letter` la lettre du
+ * plateau a la case de depart, et `red` dit si le camp au trait est celui des
+ * majuscules. La geometrie est passee en parametre plutot que codee en dur :
+ * les regles valent pour un plateau de xiangqi, mais rien n'oblige a en figer
+ * les dimensions ici.
+ */
+export function WxfMatches(parsed, from, to, letter, red, files) {
+    if (!parsed || !from || !to || !letter) return false;
+    if (letter.toUpperCase() !== parsed.piece) return false;
+    if ((letter === letter.toUpperCase()) !== !!red) return false;
+    const width = files || 9;
+    const fileOf = (sq) => sq.charCodeAt(0) - 97;
+    const rankOf = (sq) => parseInt(sq.slice(1), 10);
+    const forward = red ? 1 : -1;
+
+    // Sans prefixe, la colonne de depart doit correspondre. Avec prefixe, deux
+    // pieces se partagent la colonne et c'est l'appelant qui tranche entre
+    // elles — on ne verifie alors que l'arrivee.
+    if (!parsed.rank && fileOf(from) !== WxfFile(parsed.file, red, width)) return false;
+
+    if (parsed.dir === '=') {
+        return rankOf(to) === rankOf(from)
+            && fileOf(to) === WxfFile(parsed.num, red, width);
+    }
+    const step = parsed.dir === '+' ? forward : -forward;
+    if ('PRCK'.includes(parsed.piece)) {
+        // Deplacement en ligne : le chiffre est un nombre de rangees.
+        return fileOf(to) === fileOf(from) && rankOf(to) - rankOf(from) === step * parsed.num;
+    }
+    // Deplacement en diagonale : le chiffre est la colonne d'arrivee, et le
+    // signe dit seulement de quel cote de la rangee de depart on tombe.
+    return fileOf(to) === WxfFile(parsed.num, red, width)
+        && Math.sign(rankOf(to) - rankOf(from)) === step;
+}
+
+// ── SAN : la notation algebrique des echecs ──────────────────────────────────
+//
+// Celle de tous les PGN d'echecs et de leurs variantes — « Nbd2 », « exf5 »,
+// « O-O », « e8=Q », « Qxd8+ ». Elle ressemble a la notation « occidentale »
+// du chu shogi sans en partager les regles, et les confondre coute cher :
+//
+//   - le « + » final est un ECHEC, pas une promotion. ParseWesternMove le lit
+//     comme une promotion, ce qui pour « Qxd8+ » exige un coup promouvant et
+//     n'en trouve aucun ;
+//   - la desambiguisation s'ecrit COLLEE a la piece (« Nbd2 », « R1a3 »),
+//     alors que le chu shogi ne la note pas du tout ;
+//   - une prise de pion commence par la COLONNE de depart (« exf5 »), qui
+//     ressemble a une lettre de piece minuscule ;
+//   - le roque et la promotion ont leurs formes propres.
+//
+// D'ou un lecteur separe. jocly, lui, ecrit « Nb1-d2 », « e4xf5 », « O-O »,
+// « b7-b8=Q+ » : la case de depart y est toujours presente, et c'est ce qui
+// permet de resoudre exactement au lieu de deviner.
+
+/**
+ * Un jeton SAN, ramene a ses elements — ou null si ce n'en est pas un.
+ *
+ * { piece, fromFile, fromRank, capture, square, promotion, castle }
+ * `piece` vaut '' pour un pion. `castle` vaut 'K' (petit) ou 'Q' (grand).
+ */
+export function ParseSanMove(token) {
+    const t = String(token || '').trim().replace(/[!?]+$/, '');
+    const castle = /^(?:O-O-O|0-0-0)[+#]?$/.test(t) ? 'Q'
+                 : (/^(?:O-O|0-0)[+#]?$/.test(t) ? 'K' : null);
+    if (castle) return { castle, piece: 'K', capture: false, square: null, promotion: null, drop: false };
+    // Parachutage : « N@h5 » au crazyhouse, « P*5e » au shogi. jocly l'ecrit
+    // « N@h5 » aussi, mais on le compare quand meme piece par piece : la
+    // lettre du plateau n'existe pas encore a la case de depart, et il n'y a
+    // donc rien a lire dessus.
+    const drop = /^([A-Z])[@*]([a-o][0-9]{1,2})[+#]?$/.exec(t);
+    if (drop) return { castle: null, drop: true, piece: drop[1], fromFile: null, fromRank: null,
+                       capture: false, square: drop[2], promotion: null };
+    // « P » figure parmi les lettres de piece : aux echecs le pion n'est jamais
+    // nomme, mais le xiangqi de PyChess ecrit « Pg6 » et le shogi occidentalise
+    // « P-4d ». Sans lui, ces coups-la ne se lisent pas du tout — et comme la
+    // detection exige que TOUS les jetons se lisent, une seule poussee de pion
+    // faisait retomber la partie entiere sur la resolution floue.
+    // N'IMPORTE QUELLE majuscule peut nommer une piece : le shogi a S et G, le
+    // tori F et C, le makruk S et M. Enumerer les lettres revenait a tenir la
+    // liste de toutes les variantes du monde, et chaque oubli faisait retomber
+    // une partie entiere sur la resolution floue -- « Sd7 » suffisait.
+    //
+    // La distinction avec une prise de pion (« exf5 », ou la lettre de tete
+    // est une COLONNE) tient a la casse, pas a la lettre : les pieces sont en
+    // majuscules, les colonnes en minuscules.
+    const m = /^([A-Z])?([a-o])?([0-9]{1,2})?(x)?([a-o][0-9]{1,2})(?:=(\+?[A-Z]))?([+#]?)$/.exec(t);
+    if (!m) return null;
+    // Un pion qui prend s'ecrit « exf5 » : la lettre de tete est sa COLONNE de
+    // depart, pas une piece. Le groupe 1 n'a capture que des majuscules, donc
+    // la distinction est deja faite -- mais « e4 » sans prise laisse le groupe
+    // 2 vide et le groupe 5 porte la case, ce qui est correct.
+    return {
+        castle: null,
+        drop: false,
+        piece: m[1] || '',
+        fromFile: m[2] || null,
+        fromRank: m[3] || null,
+        capture: !!m[4],
+        square: m[5],
+        promotion: m[6] || null,
+    };
+}
+
+/**
+ * Le jeton SAN designe-t-il le coup que jocly nomme `natural` ?
+ *
+ * `letterAt` n'est plus consulte -- l'abreviation ecrite par jocly suffit et
+ * vaut mieux (voir plus bas). Le parametre reste pour les appelants existants.
+ */
+// Le meme desaccord de lettre que dans les FEN, applique aux COUPS : le
+// fichier ecrit « Ch2 » (chancellor), jocly « Mh1-h2 » (marshall). La table
+// est la meme, dans l'autre sens.
+// Une lettre de fichier peut designer PLUSIEURS abreviations de jocly.
+//
+//   C   chancellor chez PyChess et chessvariants, marshall chez jocly
+//   E   l'elephant ivre du Sho Shogi, que jocly abrege « DE »
+//   H   le cheval-dragon du shogi : un fou promu, « +B »
+//   D   le dragon : une tour promue, « +R »
+//   G   l'or -- et AUSSI toute piece promue qui se deplace comme lui. PyChess
+//       « oublie » la piece d'origine, son propre convertisseur le dit :
+//       « PyChess PGN forgets the unpromoted version of the piece ».
+//
+// Les collisions sont sans effet : le general du Spartan s'ecrit « G » lui
+// aussi, mais ce jeu n'a aucune piece promue, donc aucun « +P » a confondre.
+//   P   le pion, que jocly ne nomme JAMAIS -- son abreviation est vide.
+//   H   le cheval-dragon... et l'hoplite du Spartan une fois qu'il a bouge :
+//       jocly le nomme « H » tant qu'il est sur sa case de depart et plus
+//       rien ensuite, alors que PyChess l'appelle « H » du debut a la fin.
+// La table est ORGANISEE PAR JEU, et il le faut : la meme lettre y designe
+// des pieces differentes, et une entree valable pour l'un est fausse pour
+// l'autre. « H » vaut le cheval-dragon au shogi (« +B ») et l'hoplite au
+// Spartan, que jocly cesse de nommer une fois qu'il a bouge (abreviation
+// VIDE). Melanger les deux faisait correspondre « Hf6 » a la fois au fou promu
+// et a un pion : deux candidats, donc un refus, et une partie de Sho Shogi
+// bloquee au 65e coup.
+//
+// `'*'` porte ce qui vaut partout : le pion, que jocly ne nomme jamais.
+const SAN_PIECE_ALIASES = {
+    '*': { P: [''] },
+
+    // Echecs a grand plateau : le chancelier de chessvariants est le marshall
+    // de jocly.
+    'capablanca-chess': { C: ['M'] },
+    'grand-chess':      { C: ['M'] },
+    'gothic-chess':     { C: ['M'] },
+
+    // Shogi et ses variantes. PyChess nomme les pieces par leur MOUVEMENT :
+    // « G » vaut l'or, mais aussi tout ce qui se deplace comme lui -- son
+    // propre convertisseur le dit, « PyChess PGN forgets the unpromoted
+    // version of the piece ».
+    'shogi':          { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'] },
+    'mini-shogi':     { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'] },
+    'kotaishi-shogi': { H: ['+B'], D: ['+R'], G: ['G', '+P', '+L', '+N', '+S'],
+                        E: ['DE'],      // l'elephant ivre du Sho Shogi
+                        K: ['K', '+DE'] },  // ...promu en prince heritier, que
+                                            // PyChess nomme comme le roi
+
+    // Tori Shogi : l'hirondelle est le pion du jeu, et jocly ne la nomme pas.
+    'tori-shogi': { S: [''], G: ['+S'] },
+
+    // Makruk : PyChess nomme les pieces d'apres le thai, jocly reprend les
+    // lettres des echecs.
+    'makruk': { S: ['B'], M: ['Q'] },
+
+    // Shatranj : le fou du fichier est l'elephant de jocly, la dame son
+    // general -- deux pieces qui n'ont des echecs que la lettre.
+    'shatranj-chess': { B: ['E'], Q: ['G'] },
+
+    // Spartan : l'hoplite, nomme « H » tant qu'il est sur sa case de depart et
+    // plus rien ensuite.
+    'spartan-chess': { H: ['H', ''] },
+
+    // Kyoto Shogi : chaque piece a DEUX FACES et se retourne a chaque coup.
+    // PyChess nomme la face qui joue, jocly le TYPE, dont la face « promue »
+    // porte un « + ». L'or est ainsi la face promue du cavalier ET de la
+    // lance -- deux pieces distinctes qui se deplacent pareil, exactement le
+    // cas du « G » au shogi.
+    'kyoto-shogi': { G: ['+N', '+L'], B: ['+S'], R: ['+P'] },
+};
+
+// Les PARACHUTAGES peuvent nommer autrement que les deplacements. Au tori,
+// jocly ne nomme pas l'hirondelle quand elle se deplace -- son abreviation est
+// vide -- mais ecrit « P@e6 » quand on la parachute, la ou PyChess ecrit
+// « S@e6 ». La table est donc distincte : etendre l'alias de deplacement
+// ferait aussi correspondre « Sxe5 » aux coups du faisan, dont l'abreviation
+// est justement « P ».
+// Jeux dont le suffixe « =X » ne designe PAS une promotion.
+//
+// Au Kyoto Shogi chaque piece a deux faces et se retourne a CHAQUE coup :
+// PyChess note la face obtenue, ce qui n'est pas un choix mais une
+// consequence. jocly, lui, marque d'un « + » le passage vers la face promue
+// seulement -- « +Nd1-e2 » retourne l'or en cavalier sans rien marquer, alors
+// que « e1-e2+ » retourne le pion en tour. Comparer les deux refuserait la
+// moitie des coups. La face obtenue est deja verifiee par la table d'alias,
+// qui identifie la piece qui joue.
+const SAN_FACE_NOT_PROMOTION = { 'kyoto-shogi': true };
+
+// Un suffixe « + » dans une entree designe la face PROMUE : au Kyoto, chaque
+// piece se parachute sur l'une de ses deux faces, et jocly marque ce choix
+// d'un « + » final -- « S@c2 » pose l'argent, « S@c2+ » le fou. Le fichier,
+// lui, nomme directement la face posee.
+const SAN_DROP_ALIASES = {
+    // « L » du fichier est la lance, que jocly pose sur la face NON promue
+    // (« L@a1 ») ; « G » est l'or, sa face promue (« L@a1+ » ou « N@e3+ »).
+    'kyoto-shogi': { B: ['S+'], R: ['P+', '+'], G: ['N+', 'L+'],
+                     L: ['L'], S: ['S'], N: ['N'], P: ['P'] },
+};
+
+/**
+ * Les abreviations de jocly qu'une lettre de fichier peut designer, pour un
+ * jeu donne. Toujours au moins la lettre elle-meme.
+ *
+ * `kind` vaut 'drop' pour un parachutage, dont la nomenclature peut differer.
+ */
+export function PieceAliases(letter, game, kind) {
+    const common = SAN_PIECE_ALIASES['*'][letter] || [];
+    const own = (SAN_PIECE_ALIASES[game] || {})[letter] || [];
+    const drops = kind === 'drop' ? ((SAN_DROP_ALIASES[game] || {})[letter] || []) : [];
+    return [letter].concat(own, common, drops);
+}
+
+export function SanMatches(parsed, natural, letterAt, options) {
+    const rankOffset = (options && options.rankOffset) || 0;
+    // `promoted` : le coup candidat promeut-il ? L'appelant le sait par l'USI
+    // de jocly, dont le « + » final est sans ambiguite. Voir plus bas pourquoi
+    // la lettre du SAN ne suffit pas.
+    const promoted = options && typeof options.promoted === 'boolean' ? options.promoted : null;
+    if (!parsed) return false;
+    const text = String(natural || '').trim();
+    if (parsed.castle) return text === (parsed.castle === 'K' ? 'O-O' : 'O-O-O');
+    if (/^O-O/.test(text)) return false;
+    // Parachutage : une piece et une case, pas de depart a comparer.
+    // La lettre peut MANQUER cote jocly : l'hirondelle du tori n'a pas
+    // d'abreviation, son parachutage s'ecrit « @c4 » tout court.
+    const dropped = /^([A-Z+]*)[@*]([a-o][0-9]{1,2})[+#]?$/.exec(text);
+    if (parsed.drop || dropped) {
+        if (!parsed.drop || !dropped || dropped[2] !== parsed.square) return false;
+        // La FACE posee fait partie de l'identite du coup : « S@c2 » et
+        // « S@c2+ » sont deux parachutages differents au Kyoto. On compare
+        // donc la lettre ET le « + » final.
+        const face = dropped[1] + (/\+$/.test(text.replace(/[#]$/, '')) ? '+' : '');
+        const game = (options && options.game) || '';
+        const allowed = PieceAliases(parsed.piece, game, 'drop');
+        // Quand le jeu declare une face pour cette lettre, elle FAIT PARTIE de
+        // l'identite du coup et doit correspondre : accepter la lettre seule
+        // en repli ferait de nouveau correspondre « L@a1 » aux deux faces, et
+        // l'ambiguite reviendrait par la porte de derriere.
+        if ((SAN_DROP_ALIASES[game] || {})[parsed.piece]) return allowed.indexOf(face) >= 0;
+        return allowed.indexOf(face) >= 0 || allowed.indexOf(dropped[1]) >= 0;
+    }
+
+    // jocly prefixe la case de depart de l'abreviation de la piece
+    // (« Nb1-d2 ») et l'omet pour le pion (« e4xf5 »).
+    //
+    // Le separateur est FACULTATIF : le xiangqi de jocly ecrit « c0e2 », sans
+    // abreviation ni tiret. La notation d'un jeu ne se devine pas depuis son
+    // nom, on accepte donc les deux formes et on compare ce qui est present.
+    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x]?)([a-o][0-9]{1,2})(?:=([A-Z+]+))?[+#]?$/.exec(text);
+    if (!m) return false;
+    // Le xiangqi de jocly numerote ses rangees a partir de 0, PyChess a partir
+    // de 1 : le meme point du plateau s'ecrit « c2 » d'un cote et « c3 » de
+    // l'autre. Le decalage est donne par l'appelant, qui seul sait a quel jeu
+    // il a affaire.
+    const shift = (sq) => sq[0] + (parseInt(sq.slice(1), 10) + rankOffset);
+    if (shift(m[4]) !== parsed.square) return false;
+    // La prise n'est comparee que si la notation de jocly la marque. Sans
+    // separateur, elle ne dit rien : l'exiger refuserait toutes les prises.
+    if (m[3] && (m[3] === 'x') !== parsed.capture) return false;
+    if (parsed.fromFile && m[2][0] !== parsed.fromFile) return false;
+    if (parsed.fromRank && String(parseInt(m[2].slice(1), 10) + rankOffset) !== parsed.fromRank) return false;
+    // La promotion : jocly ecrit « =Q », le SAN aussi. Absente des deux cotes,
+    // il n'y a rien a comparer ; presente d'un seul, les coups different.
+    // LA PROMOTION.
+    //
+    // Quand l'appelant sait si le coup promeut, c'est cette reponse-la qui
+    // compte, et la lettre du fichier est ignoree. Il le faut pour le shogi :
+    // PyChess y ecrit « =G » pour un pion, une lance, un cavalier OU un argent
+    // promus -- tous se deplacent comme un or, et son propre convertisseur le
+    // dit (« PyChess PGN forgets the unpromoted version of the piece »). La
+    // lettre nomme donc un MOUVEMENT, pas un type : la comparer au « =+S » de
+    // jocly refuserait un coup parfaitement identifie.
+    //
+    // Aux echecs, ou « =Q » designe bien une dame, la comparaison de lettre
+    // reste faite -- c'est elle qui distingue une sous-promotion.
+    if (SAN_FACE_NOT_PROMOTION[(options && options.game) || '']) {
+        // Rien a comparer : voir SAN_FACE_NOT_PROMOTION.
+    } else if (promoted !== null) {
+        if (!!parsed.promotion !== promoted) return false;
+    } else {
+        const got = m[5] ? m[5].replace(/\+/g, '') : null;
+        // La piece obtenue passe elle aussi par la table : le met du makruk
+        // s'ecrit « =M » dans le fichier et « =Q » chez jocly.
+        if (parsed.promotion
+            && PieceAliases(parsed.promotion, options && options.game).indexOf(got) < 0) return false;
+        if (!parsed.promotion && got) return false;
+    }
+
+    // La piece : jocly ecrit son abreviation devant la case de depart, et
+    // l'omet pour le pion — exactement comme le SAN. On compare donc les deux
+    // notations entre elles, sans passer par le plateau.
+    //
+    // C'est important au-dela de la simplicite : le FEN de certaines variantes
+    // compte des colonnes de RESERVE (le crazyhouse de jocly en a deux de
+    // chaque cote) qui ne portent pas de nom de case. Lire la lettre sur le
+    // plateau y decale toute la rangee, et un coup parfaitement identifie se
+    // voit refuse. L'abreviation, elle, vient de la meme source que le reste
+    // de la chaine.
+    const abbrev = m[1] || '';
+    // Le xiangqi est le cas a part : jocly n'y ecrit JAMAIS d'abreviation, et
+    // son absence ne dit rien. On le reconnait a l'absence de separateur --
+    // « c0e2 » contre « b7-b6 » -- et c'est la lettre du plateau qui tranche.
+    if (!abbrev && !m[3] && parsed.piece) {
+        const onBoard = letterAt && letterAt(m[2]);
+        return !!onBoard && onBoard.toUpperCase() === parsed.piece;
+    }
+    // Partout ailleurs, l'abreviation ecrite par jocly repond -- y compris
+    // quand elle est VIDE : c'est ainsi qu'il note le pion, et l'hoplite du
+    // Spartan une fois qu'il a bouge.
+    //
+    // Se fier au plateau plutot qu'a l'abreviation serait un piege : les
+    // geometries a colonnes de reserve (shogi, crazyhouse) decalent les noms
+    // de case, et la lettre lue n'est pas celle qu'on croit.
+    return PieceAliases(parsed.piece, options && options.game).indexOf(abbrev) >= 0;
+    // Ni l'un ni l'autre ne nomme la piece : c'est un pion des deux cotes, et
+    // il n'y a rien de plus a verifier. Confirmer par le plateau serait une
+    // securite illusoire -- elle ne pourrait que se tromper sur les geometries
+    // a colonnes de reserve, sans jamais rien apprendre de neuf.
+    return true;
+}
+
+/**
+ * Ecrire un coup en SAN, a partir de la notation de jocly.
+ *
+ * C'est l'inverse de SanMatches, et il est PLUS SIMPLE : les tables d'alias
+ * sont plusieurs-vers-un dans le sens de la lecture (« G » vaut l'or et toute
+ * piece promue qui bouge comme lui), donc un-vers-un dans celui-ci. Un pion
+ * promu s'ecrit « G » sans hesitation.
+ *
+ * `natural` est ce qu'ecrit jocly — « Nb1-d2 », « e4xf5 », « O-O »,
+ * « b7-b8=Q+ ». `rivals` sont les cases de depart des AUTRES coups legaux de
+ * la meme piece menant a la meme arrivee : ce sont eux, et eux seuls, qui
+ * imposent une desambiguisation.
+ *
+ * Renvoie le jeton, ou null si la chaine n'est pas reconnue.
+ */
+// Jeux ou le fichier NOMME le pion. Aux echecs il ne l'est jamais (« e4 »),
+// mais PyChess ecrit « Pg6 » au xiangqi et au janggi, « Pb6 » au shogi : le
+// pion y est une piece comme une autre.
+// Jeux ou le « + » final de jocly marque une PROMOTION et non un echec. C'est
+// la famille shogi : la promotion y est facultative, jocly produit les deux
+// versions du deplacement et distingue la promue par ce suffixe.
+const SAN_PLUS_IS_PROMOTION = {
+    'shogi': true, 'mini-shogi': true, 'tori-shogi': true,
+    'kotaishi-shogi': true, 'kyoto-shogi': true, 'chu-shogi': true,
+};
+
+const SAN_NAMES_PAWN = {
+    'xiangqi': true, 'janggi': true,
+    'shogi': true, 'mini-shogi': true, 'tori-shogi': true,
+    'kotaishi-shogi': true, 'kyoto-shogi': true, 'chu-shogi': true,
+};
+
+export function BuildSanMove(natural, rivals, game, options) {
+    const text = String(natural || '').trim();
+    // L'echec et le mat font partie du jeton : jocly marque le premier d'un
+    // « + », le second se lit sur la partie et l'appelant le signale.
+    // Le « + » final de jocly est un ECHEC aux echecs, une PROMOTION au shogi.
+    // Quand l'appelant repond sur la promotion -- il la lit dans l'USI -- ce
+    // « + »-la est deja pris en compte et ne doit pas etre repete.
+    // Le « + » final de jocly est un ECHEC aux echecs, une PROMOTION au shogi --
+    // et sur un coup de shogi qui fait les deux, il n'y en a QU'UN. L'echec y
+    // est donc irrecuperable depuis la notation, et jocly n'expose rien
+    // d'autre pour le retrouver.
+    //
+    // On l'omet plutot que de l'inventer : c'est une decoration, que tous les
+    // lecteurs de PGN ignorent -- le notre compris. Le mat, lui, se sait de la
+    // partie et l'appelant le signale.
+    const marksPromotion = SAN_PLUS_IS_PROMOTION[game] === true;
+    const check = (options && options.mate) ? '#'
+        : (!marksPromotion && /[+]$/.test(text) ? '+' : '');
+    if (/^O-O(-O)?/.test(text)) return text.replace(/[+#]*$/, '') + check;
+
+    // Parachutage : « N@h5 ». La piece garde sa lettre, il n'y a pas de depart.
+    const drop = /^([A-Z+]*)@([a-o][0-9]{1,2})[+#]?$/.exec(text);
+    if (drop) {
+        // Le « + » d'un parachutage designe la FACE posee, pas un echec : au
+        // Kyoto on choisit la face en posant la piece, et jocly la marque
+        // ainsi. La lettre du fichier nomme directement cette face.
+        const face = drop[1] + (/\+$/.test(text.replace(/[#]$/, '')) ? '+' : '');
+        const letter = SanLetterOf(face, game, 'drop')
+            || SanLetterOf(drop[1], game, 'drop') || 'P';
+        return letter + '@' + drop[2] + ((options && options.mate) ? '#' : '');
+    }
+
+    // Le separateur est FACULTATIF : le xiangqi de jocly ecrit « a3a4 », sans
+    // abreviation ni tiret. La prise n'y apparait donc pas non plus, et
+    // l'appelant la fournit -- il l'a dans l'objet coup.
+    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x]?)([a-o][0-9]{1,2})(?:=(\+?[A-Z]+))?[+#]?$/.exec(text);
+    if (!m) return null;
+    const abbrev = m[1] || '';
+    const capture = m[3] ? m[3] === 'x' : !!(options && options.capture);
+
+    // Les rangees peuvent etre decalees : jocly les compte a partir de 0 au
+    // xiangqi et au janggi, le fichier a partir de 1.
+    const shift = (options && options.rankOffset) || 0;
+    const moved = (sq) => sq[0] + (parseInt(sq.slice(1), 10) + shift);
+    const from = m[2], to = moved(m[4]);
+
+    // La desambiguisation, dans l'ordre que suit le SAN : la colonne si elle
+    // suffit, sinon la rangee, sinon la case entiere.
+    let disambig = '';
+    const others = (rivals || []).filter(Boolean);
+    if (others.length) {
+        const own = moved(from);
+        if (!others.some(r => r[0] === own[0])) disambig = own[0];
+        else if (!others.some(r => moved(r).slice(1) === own.slice(1))) disambig = own.slice(1);
+        else disambig = own;
+    }
+
+    // L'abreviation VIDE ne veut pas dire la meme chose partout. jocly ne
+    // nomme ni le pion des echecs, ni le soldat du janggi, ni l'hoplite du
+    // Spartan qui a bouge -- trois pieces que le fichier ecrit « rien », « P »
+    // et « H ». Seule la lettre du PLATEAU les distingue, et l'appelant la
+    // fournit ; a defaut on suppose un pion.
+    let letter = SanLetterOf(abbrev, game);
+    if (!abbrev) {
+        const onBoard = options && options.letterAt && options.letterAt(from);
+        letter = onBoard ? SanLetterOf(onBoard.toUpperCase(), game) : 'P';
+        if (letter === 'P' && !SAN_NAMES_PAWN[game]) letter = '';
+    }
+    // Un pion qui PREND commence par sa colonne de depart : « exf5 ». C'est la
+    // seule forme ou la case de depart apparait sans etre une ambiguite.
+    // La promotion. jocly l'ecrit « =Q » aux echecs, ou la piece obtenue est un
+    // choix ; au shogi il n'ecrit RIEN -- la promotion y est marquee dans
+    // l'USI, et c'est l'appelant qui la signale. Le fichier, lui, la nomme
+    // toujours : « =D » pour une tour promue, « =G » pour tout ce qui bouge
+    // comme un or.
+    let promo = PromotionSuffix(m[5], game);
+    if (!promo && options && options.promoted) {
+        const obtained = SanLetterOf('+' + (abbrev || 'P'), game);
+        if (obtained) promo = '=' + obtained;
+    }
+    // Kyoto Shogi : chaque piece se RETOURNE a chaque coup, et le fichier nomme
+    // toujours la face obtenue. Elle est l'autre face de celle qui joue : une
+    // piece promue redevient simple, et inversement.
+    if (!promo && SAN_FACE_NOT_PROMOTION[game]) {
+        const flipped = /^\+/.test(abbrev) ? abbrev.slice(1) : '+' + (abbrev || 'P');
+        // Le roi n'a pas de seconde face : on ne nomme une face que si elle
+        // existe. Une face SIMPLE existe toujours -- c'est la piece de base ;
+        // une face promue doit figurer dans la table du jeu, sans quoi « K »
+        // se verrait promu en « +K », qui n'existe pas.
+        const known = !/^\+/.test(flipped)
+            || Object.keys(SAN_PIECE_ALIASES[game] || {})
+                .some((k) => SAN_PIECE_ALIASES[game][k].indexOf(flipped) >= 0);
+        if (known) promo = '=' + SanLetterOf(flipped, game);
+    }
+    if (!letter) return (capture ? moved(from)[0] + 'x' : '') + to + promo + check;
+    return letter + disambig + (capture ? 'x' : '') + to + promo + check;
+}
+
+// La lettre du fichier pour une abreviation de jocly : l'inverse des tables
+// d'alias, deterministe. Rend '' pour le pion, que le SAN ne nomme pas.
+function SanLetterOf(abbrev, game, kind) {
+    if (!abbrev) return '';
+    const tables = [(kind === 'drop' ? SAN_DROP_ALIASES : SAN_PIECE_ALIASES)[game],
+                    SAN_PIECE_ALIASES[game], SAN_PIECE_ALIASES['*']];
+    for (const table of tables) {
+        if (!table) continue;
+        for (const letter of Object.keys(table))
+            if (table[letter].indexOf(abbrev) >= 0) return letter;
+    }
+    return abbrev;
+}
+
+// « =Q » : la piece obtenue, dans les lettres du fichier. Absente quand jocly
+// n'a rien ecrit -- il ne le fait que lorsqu'un choix se posait.
+function PromotionSuffix(promoted, game) {
+    if (!promoted) return '';
+    const letter = SanLetterOf(promoted, game);
+    return letter ? '=' + letter : '';
 }
 
 /**
