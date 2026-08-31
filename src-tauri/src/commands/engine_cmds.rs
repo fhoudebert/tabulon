@@ -317,9 +317,16 @@ pub(crate) fn search_commands(
     if let Some(s) = req.skill_level {
         out.push(format!("setoption name Skill Level value {}", s));
     }
-    if req.chess960.unwrap_or(false) {
-        out.push("setoption name UCI_Chess960 value true".to_string());
-    }
+    // TOUJOURS envoyee, `true` ou `false`. N'envoyer l'option que pour la
+    // mettre a `true` la laissait collee : le moteur qui avait joue une
+    // variante Chess960 gardait le reglage pour la suivante et ecrivait le
+    // roque dans la mauvaise notation. Le worker wasm de jocly se le permet
+    // parce qu'il cree un worker par partie ; Tabulon, lui, garde son
+    // processus d'une partie a l'autre.
+    out.push(format!(
+        "setoption name UCI_Chess960 value {}",
+        if req.chess960.unwrap_or(false) { "true" } else { "false" }
+    ));
     out.push("isready".to_string());
     out.push(format!("position fen {}", req.fen));
     match req.move_time_ms {
@@ -391,10 +398,16 @@ pub async fn engine_probe(app: AppHandle) -> Result<String, String> {
         .map_err(|e| format!("moteur non demarrable ({}): {}", path.display(), e))?;
 
     let mut name = String::new();
+    let mut variants = String::new();
     child.write(b"uci\n").map_err(|e| e.to_string())?;
     let res = read_until(&mut rx, HANDSHAKE_TIMEOUT, |line| {
         if let Some(rest) = line.trim().strip_prefix("id name ") {
             name = rest.to_string();
+        }
+        // La liste des variantes annoncees par le moteur, dans sa reponse a
+        // `uci`. C'est elle qui trahit une build ordinaire.
+        if line.contains("option name UCI_Variant") {
+            variants = line.to_string();
         }
         match classify(line) {
             UciLine::UciOk => Some(Ok(())),
@@ -404,11 +417,42 @@ pub async fn engine_probe(app: AppHandle) -> Result<String, String> {
     .await;
     let _ = child.kill();
     res?;
-    Ok(if name.is_empty() {
+    let label = if name.is_empty() {
         "Fairy-Stockfish".to_string()
     } else {
         name
-    })
+    };
+    // GARDE-FOU : un binaire compile sans `largeboards=yes` ne REFUSE pas une
+    // variante a grand plateau, il joue silencieusement aux echecs 8x8. Le
+    // signaler ici, ou l'utilisateur teste son installation, vaut mieux que de
+    // le laisser decouvrir une partie de chu shogi jouee comme des echecs.
+    if !supports_large_boards(&variants) {
+        return Ok(format!("{} — {}", label, LARGE_BOARDS_WARNING));
+    }
+    Ok(label)
+}
+
+/// Message ajoute au nom du moteur quand la build ne gere pas les grands
+/// plateaux. Cote interface, il s'affiche tel quel a cote de la coche.
+pub(crate) const LARGE_BOARDS_WARNING: &str =
+    "build sans grands plateaux (largeboards), les variantes au-dela de 8x8 seront mal jouees";
+
+/// La build gere-t-elle les grands plateaux ?
+///
+/// On le lit dans la liste des variantes annoncee en reponse a `uci` : une
+/// build `largeboards` declare des variantes qui n'existent pas ailleurs. La
+/// liste est longue et son ordre n'est pas garanti, d'ou une recherche par
+/// presence plutot qu'une comparaison.
+///
+/// En cas de doute -- liste absente ou illisible -- on repond OUI : mieux vaut
+/// se taire que crier au loup sur un moteur correct.
+pub(crate) fn supports_large_boards(uci_variant_line: &str) -> bool {
+    if uci_variant_line.is_empty() {
+        return true;
+    }
+    const LARGE_ONLY: [&str; 3] = ["chushogi", "shogi", "xiangqi"];
+    let line = uci_variant_line.to_ascii_lowercase();
+    LARGE_ONLY.iter().any(|v| line.contains(v))
 }
 
 #[tauri::command]
@@ -714,14 +758,51 @@ mod tests {
     fn options_facultatives_absentes_par_defaut() {
         let c = search_commands(&req(), None, Nnue::Default);
         assert!(!c.iter().any(|l| l.contains("Skill Level")));
-        assert!(!c.iter().any(|l| l.contains("UCI_Chess960")));
 
         let mut r = req();
         r.skill_level = Some(7);
-        r.chess960 = Some(true);
         let c = search_commands(&r, None, Nnue::Default);
         assert!(c.iter().any(|l| l == "setoption name Skill Level value 7"));
+    }
+
+    #[test]
+    fn une_build_sans_grands_plateaux_est_signalee() {
+        // Un binaire ordinaire ne refuse pas une variante 10x10 : il joue aux
+        // echecs 8x8 sans rien dire. La reponse a `uci` le trahit -- elle
+        // n'annonce ni shogi, ni xiangqi, ni chu shogi.
+        let ordinaire = "option name UCI_Variant type combo default chess \
+                         var chess var crazyhouse var atomic var horde";
+        assert!(!supports_large_boards(ordinaire));
+
+        let largeboards = "option name UCI_Variant type combo default chess \
+                           var chess var shogi var xiangqi var chushogi";
+        assert!(supports_large_boards(largeboards));
+
+        // Dans le doute, on se tait : une liste absente ne prouve rien, et
+        // crier au loup sur un moteur correct serait pire que le silence.
+        assert!(supports_large_boards(""));
+    }
+
+    #[test]
+    fn chess960_est_toujours_pose_explicitement() {
+        // L'option est COLLANTE : ne l'envoyer que pour la mettre a `true`
+        // laissait le reglage d'une partie contaminer la suivante, qui
+        // ecrivait alors le roque dans la mauvaise notation. Le processus
+        // survit d'une partie a l'autre, donc chaque recherche doit dire
+        // explicitement ou elle en est.
+        let c = search_commands(&req(), None, Nnue::Default);
+        assert!(c.iter().any(|l| l == "setoption name UCI_Chess960 value false"),
+                "sans Chess960, l'option doit etre remise a false");
+
+        let mut r = req();
+        r.chess960 = Some(true);
+        let c = search_commands(&r, None, Nnue::Default);
         assert!(c.iter().any(|l| l == "setoption name UCI_Chess960 value true"));
+
+        let mut r = req();
+        r.chess960 = Some(false);
+        let c = search_commands(&r, None, Nnue::Default);
+        assert!(c.iter().any(|l| l == "setoption name UCI_Chess960 value false"));
     }
 
     #[test]

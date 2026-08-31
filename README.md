@@ -1,7 +1,7 @@
 # Tabulon
 
 
-Tabulon is a free, cross-platform application (Linux, Windows, macOS) for playing 125 board games on your desktop: chess and its variants, draughts, shogi, xiangqi, go-style territory games, mills, tafl, and many more.
+Tabulon is a free, cross-platform application (Linux, Windows, macOS) for playing 130 board games on your desktop: chess and its variants, draughts, shogi, xiangqi, go-style territory games, mills, tafl, and many more.
 
 Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-defunct JoclyBoard.
 

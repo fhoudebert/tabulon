@@ -15,7 +15,7 @@ dist-ssr
 dist-minimal
 src-tauri/Cargo.lock
 *.local
-
+*.patch
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
