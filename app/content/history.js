@@ -133,8 +133,8 @@ async function SavePJN() {
     const path = await saveDialog({
         defaultPath: gameName,
         filters: [
-            { name: 'PJN (Tabulon)', extensions: ['pjn'] },
-            { name: 'PGN (ChuShogiLite)', extensions: ['pgn'] },
+            { name: 'PJN (Jocly)', extensions: ['pjn'] },
+            { name: 'PGN', extensions: ['pgn'] },
         ],
     }).catch(() => null);
     if (!path) return;

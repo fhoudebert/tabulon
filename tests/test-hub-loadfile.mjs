@@ -115,7 +115,7 @@ const notifierText = () => document.querySelector('.hub-notifier-text')?.textCon
 // ── 1. Solution JSON : le fichier dit de quel jeu il s'agit ───────────────────
 console.log('Solution JSON (es3-solution.json)');
 {
-  const calls = await DropFile('es3-solution.json', readFileSync('./tests/fixtures-es3-solution.json', 'utf-8'));
+  const calls = await DropFile('es3-solution.json', readFileSync('./tests/fixtures/jocly/es3-solution.json', 'utf-8'));
   assert(!errors.some(e => /ReferenceError/.test(e)),
     'aucune ReferenceError (regression : g() hors de portee dans OpenGameFile)');
   const nm = calls.find(c => c.cmd === 'new_match');
@@ -131,7 +131,7 @@ console.log('Solution JSON (es3-solution.json)');
 // ── 2. PJN Tabulon : tag [JoclyGame] ─────────────────────────────────────────
 console.log('PJN avec [JoclyGame] (es3.pjn)');
 {
-  const text  = readFileSync('./tests/fixtures-es3.pjn', 'utf-8');
+  const text  = readFileSync('./tests/fixtures/jocly/es3.pjn', 'utf-8');
   const calls = await DropFile('es3.pjn', text);
   const ob = calls.find(c => c.cmd === 'open_book');
   assert(ob, 'open_book appele (fenetre livre)');

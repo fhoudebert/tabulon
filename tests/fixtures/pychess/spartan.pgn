@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/qCo9rFfQ"]
+[Date "2026.08.15"]
+[Round "-"]
+[White "emanuelesaiu"]
+[Black "MaximeJaccon"]
+[Result "1-0"]
+[TimeControl "300+12"]
+[WhiteElo "1839"]
+[BlackElo "1500?"]
+[Variant "Spartan"]
+[FEN "lgkcckwl/hhhhhhhh/8/8/8/8/PPPPPPPP/RNBQKBNR w KQ - 0 1"]
+[SetUp "1"]
+
+1. d4 Hbd5 2. Nf3 Wf6 3. b3 Kb7 4. Bg5 We4 5. e3 Lc6 6. Bd3 Wd6 7. Bf4 Wxf4 8. exf4 Hed6 9. c3 Ke7 10. Ne5 La8 11. Be2 Hxd4 12. Qxd4 Lf6 13. Qe4 Hc6 14. Bf3 Hcd5 15. Qa4 Cg8 16. c4 Lxe5 17. fxe5 Cde8 18. exd6 Kxd6 1-0

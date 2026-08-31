@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/mTfPIMmi"]
+[Date "2023.12.20"]
+[Round "-"]
+[White "CouchTomato87"]
+[Black "LilyLionmane"]
+[Result "0-1"]
+[TimeControl "900+30"]
+[WhiteElo "1627?"]
+[BlackElo "1707?"]
+[Variant "Xiangqi"]
+[FEN "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"]
+[SetUp "1"]
+
+1. Che3 Hc8 2. Hg3 Pg6 3. Rh1 Cg8 4. Rh9 Cxg4 5. Ei3 Cb6 6. Pc5 Ra9 7. Rxa9 Hxa9 8. Cxe7 Ce6+ 9. Ce3 Cxe3 10. Exe3 Hg8 11. Ce5 Rh10 12. Ra2 Rh3 13. He2 Rxi3 14. Rd2 Ke9 15. Rd7 Rf3 16. Re7+ Kf9 17. Hg3 Hxe7 18. Ade2 Rxg3 19. Hc3 Rxe3 20. Cxe3 Cg1# 0-1

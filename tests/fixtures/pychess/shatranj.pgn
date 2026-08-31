@@ -1,0 +1,16 @@
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/YFaWC7Ry"]
+[Date "2025.06.04"]
+[Round "-"]
+[White "Anon–5TgwDcVb"]
+[Black "Anon–WCteIuf0"]
+[Result "0-1"]
+[TimeControl "5400+3"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Shatranj"]
+[FEN "rnbkqbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBKQBNR w - - 0 1"]
+[SetUp "1"]
+
+1. d3 d6 2. d4 d5 3. Be3 Nf6 4. Nf3 Bd6 5. Bc5 Ne4 6. Nc3 Nxc5 7. e3 Nd3 8. Bxd3 Qd7 9. Nb5 Qc6 10. Ne5 Qxb5 11. Bxb5 Nd7 12. Nxf7+ Ke8 13. Nxh8 Kd8 14. Nf7+ Ke8 15. Ne5 Nxe5 16. Qd2 Nc4 17. Qc3 Be6 18. Re1 Bg4 19. e4 dxe4 20. Rxe4 h6 21. Rxg4 h5 22. Rxg7 Kf8 23. b3 Kxg7 24. Bd3 Nb6 25. Qb4 Rf8 26. Qc5 Nd5 27. Qxd6 cxd6 28. g3 Rxf2 29. c3 Rxh2 30. c4 Ne3+ 31. Ke1 Rh3 32. c5 dxc5 33. dxc5 Rxg3 34. Rc1 h4 35. Bf5 h3 36. c6 bxc6 37. Bd7 h2 38. Ke2 h1=Q 39. Rxh1 Kg6 40. b4 a6 41. a3 e6 42. a4 e5 43. b5 cxb5 44. axb5 axb5 45. Bxb5 e4 46. Bd7 Ng4 47. Rf1 e3 48. Bf5 Rg2+ 49. Kf3 Kxf5 50. Kxg2+ Ke4 51. Kg3 Ne5 52. Rf4+ Kd3 53. Rf5 Nc4 54. Rd5+ Ke2 55. Kf4 Nd2 56. Re5 Nf1 57. Re4 Kf2 58. Ke5 e2 59. Rxe2+ Kxe2 60. Kd4 0-1
+

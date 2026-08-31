@@ -111,7 +111,12 @@ export function BookCommentary(text) {
 export function ExtractMoves(text) {
     const parts = String(text).replace(/\r\n?/g, '\n').split(/\n\n+/);
     const movesPart = (parts.length > 1 ? parts.slice(1) : parts).join('\n');
-    let s = movesPart.replace(/\{[^}]*\}/g, ' ');
+    // Commentaire de LIGNE « ; … » : il court jusqu'au bout de la ligne, et
+    // c'est la seconde forme que la specification PGN autorise. Sans le
+    // retirer, chaque mot du commentaire devient un faux coup — le fichier
+    // d'exemples de variantes en porte plusieurs, et sa premiere ligne
+    // « ; variants-examples.pgn » suffisait a produire trois coups fantomes.
+    let s = movesPart.replace(/(^|\s);[^\n]*/g, '$1').replace(/\{[^}]*\}/g, ' ');
     while (/\([^()]*\)/.test(s)) s = s.replace(/\([^()]*\)/g, ' ');
     // Numerotation ecrite a la main : "4 ." au lieu de "4.". Sans cette
     // normalisation le "4" devient un faux coup ET le vrai coup garde un
@@ -446,7 +451,22 @@ export function ParseNaturalMove(text) {
     const promo = /=(\+?[A-Z]+)/.exec(raw);
     const s = raw.replace(/[+#!?]*$/, '').replace(/=.*$/, '');
     const m = /^(\+?[A-Z]+)?(?:([a-l][0-9]{1,2}))?((?:[-x][a-l][0-9]{1,2})+)$/.exec(s);
-    if (!m) return null;
+    if (!m) {
+        // Forme SANS SEPARATEUR : le xiangqi de jocly ecrit « c9e7 », ni
+        // abreviation ni tiret. Faute de la reconnaitre, la case de DEPART
+        // restait nulle -- et sans depart, pas de rivales, donc pas de
+        // desambiguisation : l'export ecrivait « Ee8 » la ou deux elephants
+        // visaient la meme case, et le fichier produit ne se rechargeait pas.
+        const flat = /^([a-l][0-9]{1,2})([a-l][0-9]{1,2})$/.exec(s);
+        if (!flat) return null;
+        return {
+            piece: null, from: flat[1],
+            // La prise n'apparait pas dans cette forme : l'appelant la connait
+            // par l'objet coup, on ne l'invente pas ici.
+            steps: [{ capture: false, square: flat[2] }],
+            promote: promo ? promo[1].startsWith('+') : null,
+        };
+    }
     const steps = [];
     const re = /([-x])([a-l][0-9]{1,2})/g;
     let step;
@@ -747,6 +767,143 @@ function KifSquare(file, rankKanji, size) {
     return String.fromCharCode(97 + (size - f)) + (size - r);
 }
 
+// ── KIF du shogi orthodoxe (logiciels japonais, shogidb2, lishogi) ──────────
+//
+// Un dialecte distinct de celui du chu shogi, et rien n'y ressemble :
+//
+//   手合割：平手      en-tete « cle：valeur » ; « 平手 » est la partie a egalite
+//   1 ２六歩(27)      colonne et piece en PLEINE largeur, depart entre
+//                     parentheses en DEMI-largeur
+//   11 同　銀(68)     « meme case » que le coup precedent
+//   47 ７四歩打       parachutage (打), sans case de depart
+//   10 ７七角成(22)   promotion (成) ; « 不成 » la refuse explicitement
+//   188 投了          abandon : la partie s'arrete la
+//
+// Pas de plateau dessine, contrairement au chu : c'est ce qui distingue les
+// deux dialectes a coup sur.
+//
+// Les colonnes se comptent depuis la DROITE (1 a 9) et les rangees en kanji
+// depuis le HAUT -- le meme systeme que l'USI, l'inverse de celui de jocly.
+const KIF_SHOGI_DIGITS = { '\uff10':0, '\uff11':1, '\uff12':2, '\uff13':3, '\uff14':4,
+                           '\uff15':5, '\uff16':6, '\uff17':7, '\uff18':8, '\uff19':9 };
+const KIF_SHOGI_RANKS = ['\u4e00','\u4e8c','\u4e09','\u56db','\u4e94',
+                         '\u516d','\u4e03','\u516b','\u4e5d'];
+
+// Les pieces, pour les PARACHUTAGES : le KIF nomme la piece posee, et jocly
+// l'attend aussi. Un parachutage sans lettre serait ambigu -- « @c6 » vaut
+// aussi bien pour un pion que pour un fou en main.
+const KIF_SHOGI_PIECES = {
+    '\u6b69': 'P', '\u9999': 'L', '\u6842': 'N', '\u9280': 'S',
+    '\u91d1': 'G', '\u89d2': 'B', '\u98db': 'R', '\u7389': 'K', '\u738b': 'K',
+};
+
+// « 2 » (colonne, depuis la droite) et « 六 » (rangee, depuis le haut) -> « h4 ».
+function KifShogiSquare(file, rank, size) {
+    if (!(file >= 1 && file <= size) || !(rank >= 1 && rank <= size)) return null;
+    return String.fromCharCode(97 + size - file) + (size + 1 - rank);
+}
+
+/**
+ * Est-ce un KIF de shogi orthodoxe ? On exige l'en-tete des coups, que ces
+ * fichiers portent tous, et l'ABSENCE du plateau dessine qui signe le
+ * dialecte du chu shogi -- lire l'un pour l'autre donnerait n'importe quoi.
+ */
+export function IsShogiKif(text) {
+    const t = String(text || '');
+    return /\u624b\u6570-+\u6307\u624b/.test(t) && !/^\+-+\+$/m.test(t);
+}
+
+/**
+ * Lecture d'un KIF de shogi. Renvoie { moves, handicap, comments }, ou null si
+ * ce n'en est pas un.
+ *
+ * `moves` est une liste de « depart-arrivee » en coordonnees jocly, avec « + »
+ * pour une promotion, « = » pour un refus explicite, et « @arrivee » pour un
+ * parachutage -- la meme forme que pour le chu shogi, que l'appelant resout
+ * contre les coups legaux.
+ */
+export function ParseShogiKif(text, size) {
+    if (!IsShogiKif(text)) return null;
+    const board = size || 9;
+    const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+    const moves = [], comments = [];
+    let handicap = null, previous = null;
+
+    for (const line of lines) {
+        // En-tete « cle：valeur ». Le deux-points PLEINE largeur est celui des
+        // fichiers japonais ; le demi-largeur apparait dans les exports.
+        const header = /^([^\s：:]+)[：:](.*)$/.exec(line.trim());
+        if (header) {
+            if (header[1] === '\u624b\u5408\u5272') handicap = header[2].trim();
+            continue;
+        }
+        const comment = /^\s*[*\u3000]\s?(.*)$/.exec(line);
+        if (comment) { comments.push(comment[1]); continue; }
+
+        const move = /^\s*\d+\s+(.*)$/.exec(line);
+        if (!move) continue;
+        // Le temps consomme, entre parentheses, ne fait pas partie du coup ;
+        // et « 同　銀(68) » porte une ESPACE IDEOGRAPHIQUE (U+3000) au milieu,
+        // que JavaScript compte comme un blanc. Un simple \S+ s'arretait donc
+        // sur « 同 » et perdait la case de depart -- le fichier entier etait
+        // refuse au 11e coup.
+        const body = move[1]
+            .replace(/\s*[（(]\d+:\d\d[/\uff0f][\d:]+[）)]\s*$/, '')
+            .replace(/[\s\u3000]+/g, '');
+        if (!body) continue;
+        // 投了 (abandon), 中断, 千日手, 持将棋, 詰み, 切れ負け : la partie
+        // s'arrete, et ce qui suit n'est plus un coup.
+        if (/^(\u6295\u4e86|\u4e2d\u65ad|\u5343\u65e5\u624b|\u6301\u5c06\u68cb|\u8a70\u307f|\u5207\u308c\u8ca0\u3051)/.test(body))
+            break;
+
+        // « 同 » : meme case d'arrivee que le coup precedent. Une erreur ici se
+        // propagerait en silence sur toute la suite, d'ou le refus net quand
+        // il n'y a pas de coup precedent.
+        let to;
+        if (/^\u540c/.test(body)) {
+            if (!previous) return null;
+            to = previous;
+        } else {
+            const file = KIF_SHOGI_DIGITS[body[0]];
+            const rank = KIF_SHOGI_RANKS.indexOf(body[1]) + 1;
+            to = KifShogiSquare(file, rank, board);
+            if (!to) return null;
+        }
+        previous = to;
+
+        // « 成 » promeut, « 不成 » refuse. Le « 成 » de « 成銀 » (un argent
+        // DEJA promu qui joue) precede le nom de piece, celui d'une promotion
+        // le suit : on ne regarde donc que la fin du jeton.
+        // La promotion se lit AVANT les parentheses de la case de depart : dans
+        // « ７七角成(22) », le « 成 » ne termine pas le jeton. Et il faut bien
+        // regarder la FIN de ce prefixe : le « 成 » de « 成銀 » -- un argent
+        // deja promu qui joue -- le PRECEDE, et ne promeut rien.
+        const named = body.replace(/[（(].*$/, '');
+        // L'ABSENCE de « 成 » vaut refus explicite, pas indifference : le KIF
+        // note toujours la promotion quand elle est prise. Sans cela, un coup
+        // qui entre dans la zone de promotion correspond aux DEUX versions
+        // que jocly propose, et la resolution refuse pour ambiguite -- ce qui
+        // arretait une partie de lishogi au 3e coup.
+        const promote = /\u6210$/.test(named) && !/\u4e0d\u6210$/.test(named) ? '+' : '=';
+
+        // Parachutage : « 打 », et aucune case de depart.
+        if (/\u6253/.test(body)) {
+            // La lettre de la piece posee : « ７四歩打 » parachute un pion.
+            const letter = KIF_SHOGI_PIECES[named.replace(/^..(\u6210)?/, '')[0]]
+                || KIF_SHOGI_PIECES[named[2]] || '';
+            moves.push(letter + '@' + to);
+            continue;
+        }
+
+        const from = /[（(](\d)(\d)[）)]/.exec(body);
+        if (!from) return null;
+        const start = KifShogiSquare(parseInt(from[1], 10), parseInt(from[2], 10), board);
+        if (!start) return null;
+        moves.push(start + '-' + to + promote);
+    }
+    return { moves, handicap, comments };
+}
+
 /**
  * Est-ce un KIF de chu shogi ? On exige le dessin du plateau (bordure « +---+ »)
  * ET une ligne de coups « N 手目 » : le KIF du shogi orthodoxe, qui n'a ni l'un
@@ -958,6 +1115,20 @@ export function MoveFormat(tokens) {
     // refuserait un roque ou une promotion. C'est donc a l'appelant de
     // verifier que le premier coup se resout avant d'engager tout le fichier
     // dans cette lecture -- voir BookReplay dans play.js.
+    // Le WXF avant l'occidentale : « C2=5 » se lit aussi comme une piece C et
+    // une case... non, « 2=5 » n'est pas une case. Mais « P7+1 » et un SAN de
+    // variante peuvent se ressembler, et le WXF est le plus contraint des
+    // deux -- cinq caracteres, une grammaire fermee -- donc le plus sur a
+    // reconnaitre en premier.
+    if (list.every(tok => ParseWxfMove(tok))) return 'wxf';
+    // Le SAN avant l'occidentale : les deux se ressemblent, mais le SAN a des
+    // formes que l'autre n'a pas (roque, desambiguisation, promotion « =Q »)
+    // et surtout une lecture opposee du « + » final -- echec ici, promotion
+    // la-bas. Une partie d'echecs lue comme du chu shogi cherche des coups
+    // promouvants et n'en trouve aucun.
+    if (list.some(tok => /^(?:O-O|0-0)/.test(tok) || /=[A-Z]/.test(tok) || /^[A-Z][@*]/.test(tok)
+                      || /^[KQRBNACMEHJ][a-o]?[0-9]{0,2}x?[a-o][0-9]{1,2}[+#]?$/.test(tok))
+        && list.every(tok => ParseSanMove(tok))) return 'san';
     if (list.every(tok => ParseWesternMove(tok))) return 'western';
     return 'natural';
 }
@@ -976,6 +1147,13 @@ export function MoveFormat(tokens) {
  */
 const VARIANT_GAMES = {
     'chu': 'chu-shogi',
+    // Jeux que le catalogue ne rattache a aucune variante Fairy-Stockfish :
+    // sans entree ici, leur [Variant] ne designe rien et le fichier n'ouvre
+    // aucune partie.
+    'janggi': 'janggi',
+    'korean chess': 'janggi',
+    'shoshogi': 'kotaishi-shogi',
+    'sho shogi': 'kotaishi-shogi',
     'chushogi': 'chu-shogi',
     'chu shogi': 'chu-shogi',
 };

@@ -1234,3 +1234,116 @@ strong { font-weight: 600; }
   padding: 6px 8px;
   margin: 6px 0 0 0;
 }
+
+/* Page « Installation » — chaque élément est une carte, pas une ligne.
+   L'utilisateur y cherche UN chemin à recopier : il doit le trouver d'un coup
+   d'œil, pas le déchiffrer dans un paragraphe. D'où l'aération, le chemin sur
+   sa propre ligne en police fixe, et la coche qui donne l'état avant même la
+   lecture. */
+#install > p { max-width: 60ch; line-height: 1.5; }
+
+.install-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin: 0 0 12px 0;
+}
+/* Vert quand c'est en place, ambre quand il manque quelque chose : la couleur
+   dit l'état sans qu'on ait à lire, la coche le confirme. Jamais du rouge —
+   rien n'est cassé, il manque seulement un fichier. */
+.install-item.present { border-left-color: var(--accent); }
+.install-item.missing { border-left-color: #b58900; }
+
+.install-item h5 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.install-item.present h5 { color: var(--accent); }
+.install-item.missing h5 { color: #8a6d3b; }
+
+.install-item p {
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+/* Le chemin : à recopier, donc en police fixe, détaché, et sélectionnable
+   d'un geste. Il peut être long — on le laisse se couper plutôt que déborder. */
+.install-item .install-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg-alt);
+  border-radius: 3px;
+  padding: 5px 7px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.install-item .install-path + button { margin-top: 10px; }
+.install-item .install-answer {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.install-links {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.install-links a { cursor: pointer; }
+
+/* Le système détecté, en tête de page : les binaires de moteur en dépendent,
+   et l'archive à prendre n'est pas la même. Le dire évite de choisir au hasard
+   entre des fichiers dont les noms se ressemblent. */
+.install-platform {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 16px 0;
+}
+.install-platform #install-platform {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+}
+
+/* Les noms de réseaux attendus. Ce n'est pas décoratif : Fairy-Stockfish
+   n'active un réseau que si le nom du fichier commence par celui de la
+   variante, et un fichier mal nommé est chargé sans effet et sans message. */
+.install-names {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--text);
+  word-spacing: 0.4em;
+}
+
+/* La paternité des moteurs : discrète mais présente. Tabulon indique où poser
+   des logiciels qu'il n'a pas écrits. */
+.install-credits {
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+/* Les liens vers les sources des moteurs. Sous GPL v3, redistribuer un binaire
+   oblige à fournir la source correspondante ou un lien vers elle : ces liens
+   font partie de ce que la licence demande, pas de la décoration. Discrets,
+   mais toujours atteignables. */
+.install-credits ul {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0;
+}
+.install-credits li {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--text-muted);
+}
+.install-credits li a { cursor: pointer; }

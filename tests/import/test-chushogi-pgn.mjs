@@ -28,16 +28,16 @@ import path from 'path';
 import { ExtractMoves, BookFen, BookVariant, VariantGame, MoveFormat, PgnFenToJocly,
          ParseWesternMove, ParseNaturalMove, WesternMatches, ReplayBookMoves, ParseSolution, BuildPJN, SideWithoutKing, IsTsume,
          BuildWesternMove, SfenToPgnFen, BuildPGN, PgnFenToShogiSfen, IsChuKif, ParseKif }
-    from '../app/content/book-format.js';
+    from '../../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const Jocly = require(path.join(root, 'dist/node/jocly.core.js'));
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
 
-const pgn = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite.pgn'), 'utf-8');
+const pgn = readFileSync(path.join(root, 'tests', 'fixtures/chushogilite/chushogilite.pgn'), 'utf-8');
 const tags = {};
 for (const line of pgn.split('\n')) {
     const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
@@ -215,7 +215,7 @@ console.log('Enregistrer puis rouvrir un tsume');
     // une position sans roi ne dit pas d'elle-même si elle est un problème ou
     // une erreur de saisie. joclyMatch.save() ne peut donc pas le connaître,
     // et Tabulon l'ajoute à côté des coups (SaveMatch, play.js).
-    const raw = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite.pgn'), 'utf-8');
+    const raw = readFileSync(path.join(root, 'tests', 'fixtures/chushogilite/chushogilite.pgn'), 'utf-8');
     const tags2 = {};
     for (const line of raw.split('\n')) {
         const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
@@ -271,7 +271,7 @@ console.log('La promotion, marquée par un « + » final');
        'les deux versions se distinguent');
 
     // Le fichier C22, 33 demi-coups, dont deux coups de Lion à deux pas.
-    const c22 = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.pgn'), 'utf-8');
+    const c22 = readFileSync(path.join(root, 'tests', 'fixtures/chushogilite/chushogilite-c22.pgn'), 'utf-8');
     const t22 = {};
     for (const line of c22.split('\n')) {
         const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
@@ -338,8 +338,8 @@ console.log('Le découpage en parties, sur lequel tout repose');
     // coups, séparé par des lignes vides. S'arrêter au bloc suivant donnait
     // une partie faite des tags et du diagramme, sans un seul coup : la
     // fenêtre Historique restait vide et rien ne le signalait.
-    for (const [name, count] of [['fixtures-chushogilite.pgn', 17],
-                                 ['fixtures-chushogilite-c22.pgn', 33]]) {
+    for (const [name, count] of [['fixtures/chushogilite/chushogilite.pgn', 17],
+                                 ['fixtures/chushogilite/chushogilite-c22.pgn', 33]]) {
         const txt = readFileSync(path.join(root, 'tests', name), 'utf-8');
         const parts = SplitPjn(txt);
         ok(parts.length === 1, `${name} : une seule partie (${parts.length})`);
@@ -351,7 +351,7 @@ console.log('Le découpage en parties, sur lequel tout repose');
     // Le témoin : un PGN sans diagramme, dont les coups suivent les tags.
     // C'est lui qui s'affichait correctement dans l'Historique, et il doit
     // continuer — la correction élargit l'appariement, elle ne le déplace pas.
-    const cz = readFileSync(path.join(root, 'tests', 'fixtures-crazyhouse.pgn'), 'utf-8');
+    const cz = readFileSync(path.join(root, 'tests', 'fixtures/jocly/crazyhouse.pgn'), 'utf-8');
     const czParts = SplitPjn(cz);
     ok(czParts.length === 1, 'crazyhouse : une partie');
     const czMoves = ExtractMoves(czParts[0]);
@@ -379,8 +379,8 @@ console.log('Écrire la notation occidentale : l\'aller-retour');
     // jeton pour jeton. Comparer à une valeur écrite à la main ne prouverait
     // que mon interprétation ; comparer à ce que l'applet a produit prouve
     // l'interopérabilité.
-    for (const [name, expected] of [['fixtures-chushogilite.pgn', 17],
-                                    ['fixtures-chushogilite-c22.pgn', 33]]) {
+    for (const [name, expected] of [['fixtures/chushogilite/chushogilite.pgn', 17],
+                                    ['fixtures/chushogilite/chushogilite-c22.pgn', 33]]) {
         const txt = readFileSync(path.join(root, 'tests', name), 'utf-8');
         const tg = {};
         for (const line of txt.split('\n')) {
@@ -446,7 +446,7 @@ console.log('Le fichier exporté se relit — par Tabulon, et comme l\'applet l\
     // entièrement, puis relire le résultat. Le tour de force n'est pas d'y
     // arriver mais de tomber sur le fichier de départ : c'est ce qui prouve
     // que l'export est lisible par le destinataire et pas seulement par nous.
-    const src = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.pgn'), 'utf-8');
+    const src = readFileSync(path.join(root, 'tests', 'fixtures/chushogilite/chushogilite-c22.pgn'), 'utf-8');
     const tg = {};
     for (const line of src.split('\n')) {
         const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
@@ -525,7 +525,7 @@ console.log('Une partie ordinaire, sans position de départ');
     // sans tag [FEN]. L'export la refusait, parce qu'il exigeait une position
     // de départ — or ChuShogiLite n'écrit [FEN] que pour une position NON
     // standard. La position est facultative ; les coups sont l'essentiel.
-    const pjn = readFileSync(path.join(root, 'tests', 'fixtures-chu-ordinaire.pjn'), 'utf-8');
+    const pjn = readFileSync(path.join(root, 'tests', 'fixtures/chushogilite/chu-ordinaire.pjn'), 'utf-8');
     const tokens = ExtractMoves(pjn);
     ok(tokens.length === 6, `${tokens.length} coups en notation jocly`);
     ok(BookFen({}) === null, 'et aucune position de départ dans le fichier');
@@ -618,8 +618,8 @@ console.log('KIF : lecture et rejeu');
         return found;
     };
 
-    for (const [name, count] of [['fixtures-chushogilite-d22.kif', 17],
-                                 ['fixtures-chushogilite-c22.kif', 33]]) {
+    for (const [name, count] of [['fixtures/kif/chushogilite-d22.kif', 17],
+                                 ['fixtures/kif/chushogilite-c22.kif', 33]]) {
         const text = readFileSync(path.join(root, 'tests', name), 'utf-8');
         ok(IsChuKif(text), `${name} : reconnu comme KIF de chu shogi`);
         const kif = ParseKif(text);
@@ -640,8 +640,8 @@ console.log('KIF : lecture et rejeu');
 
     // Le plateau lu dans le KIF est celui du PGN de la MÊME partie : deux
     // formats, deux chemins de lecture indépendants, un seul résultat.
-    const kif = ParseKif(readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.kif'), 'utf-8'));
-    const twin = readFileSync(path.join(root, 'tests', 'fixtures-chushogilite-c22.pgn'), 'utf-8');
+    const kif = ParseKif(readFileSync(path.join(root, 'tests', 'fixtures/kif/chushogilite-c22.kif'), 'utf-8'));
+    const twin = readFileSync(path.join(root, 'tests', 'fixtures/chushogilite/chushogilite-c22.pgn'), 'utf-8');
     const twinTags = {};
     for (const line of twin.split('\n')) {
         const m = /^\s*\[(\S+)\s+(.*)\]\s*$/.exec(line.trim());
@@ -662,7 +662,7 @@ console.log('KIF : lecture et rejeu');
     // Le KIF du shogi orthodoxe est un AUTRE dialecte — position standard
     // déclarée par « 手合割 », coordonnées pleine largeur, parachutages,
     // « même case ». Il doit être refusé plutôt que lu de travers.
-    const shogi = readFileSync(path.join(root, 'tests', 'fixtures-shogi-lishogi.kif'), 'utf-8');
+    const shogi = readFileSync(path.join(root, 'tests', 'fixtures/kif/shogi-lishogi.kif'), 'utf-8');
     ok(!IsChuKif(shogi), 'un KIF de shogi orthodoxe n\'est pas pris pour du chu');
 }
 

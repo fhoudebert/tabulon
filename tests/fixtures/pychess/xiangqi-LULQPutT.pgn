@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/LULQPutT"]
+[Date "2026.05.18"]
+[Round "-"]
+[White "CouchTomato87"]
+[Black "Calixtus"]
+[Result "1-0"]
+[TimeControl "900+10"]
+[WhiteElo "1560?"]
+[BlackElo "1431?"]
+[Variant "Xiangqi"]
+[FEN "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"]
+[SetUp "1"]
+
+1. Che3 Hg8 2. Pg5 Pc6 3. Hg3 Cc8 4. Rh1 Pc5 5. Cbc3 Pxc4 6. Cxc8 Hxc8 7. Rxh8 Hce9 8. Hf5 Ra8 9. Hxe7 Hxe7 10. Cxe7+ Hg8 11. Ce5 Pd4 12. Hc3 Pxe4 13. Hxe4 Ke9 14. Rh9+ Ke8 15. Rb1 Kf8 16. Hc5 Re8 17. Rb8 Rxb8 18. He6# 1-0

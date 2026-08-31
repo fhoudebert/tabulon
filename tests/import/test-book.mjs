@@ -5,9 +5,17 @@
 //   3. play.js : rejeu du livre via pickMove/playMove (match Jocly factice),
 //      partie en pause, footer = le libelle de la partie
 // Usage : npm test  (ou node tests/test-book.mjs)
-import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
-process.chdir(new URL('..', import.meta.url).pathname);
+import { JSDOM } from '../../app/node_modules/jsdom/lib/api.js';
+// cwd = racine tabulon/ : la suite vit un niveau plus bas depuis son
+// rangement dans tests/import/.
+process.chdir(new URL('../..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+// Ancre sur le FICHIER et non sur le repertoire courant : une suite doit
+// pouvoir se lancer seule, et survivre a un rangement.
+const repo = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function waitFor(fn, what, timeout = 4000) {
@@ -50,7 +58,7 @@ const mockTauri = {
 
 // ═══ 1 + 2 : fenêtre book (vrai book.html + vrai book.js) ═══
 {
-  const html = readFileSync('./app/content/book.html', 'utf-8').replace(/<script[\s\S]*?<\/script>/g, '');
+  const html = readFileSync(repo + '/app/content/book.html', 'utf-8').replace(/<script[\s\S]*?<\/script>/g, '');
   const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/book.html?game=classic-chess&file=test.pgn' });
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -59,7 +67,7 @@ const mockTauri = {
 
   storeData.set('book:classic-chess', { fileName: 'test.pgn', data: PGN_TEXT });
 
-  const mod = await import('../app/content/book.js');
+  const mod = await import('../../app/content/book.js');
   document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
 
   // 1. ExtractMoves — cœur du parsing des coups
@@ -70,7 +78,7 @@ const mockTauri = {
 
   // Fichier réel remonté par l'utilisateur (notation longue Jocly, produit
   // par "Save book") : 8 coups dont une prise 'e5xd4'
-  const real = readFileSync('./tests/fixtures-classic-chess2.pjn', 'utf-8');
+  const real = readFileSync(repo + '/tests/fixtures/jocly/classic-chess2.pjn', 'utf-8');
   const fromFile = mod.ExtractMoves(real);
   assert(fromFile.join(' ') === 'e2-e4 Ng8-f6 Nb1-c3 Nb8-c6 Ng1-f3 e7-e5 d2-d4 e5xd4',
     'pjn réel : 8 coups en notation longue extraits (' + fromFile.join(' ') + ')');
@@ -109,13 +117,35 @@ const mockTauri = {
     async abortUserTurn()  { const p = this.pendingUserTurn; this.pendingUserTurn = null; p?.reject(new Error('User input aborted')); },
     async abortMachineSearch() {},
     userTurn() { return new Promise((resolve, reject) => { this.pendingUserTurn = { resolve, reject }; }); },
+    // La resolution EXACTE du SAN interroge le moteur : les coups legaux, puis
+    // leur notation. Le faux match doit donc offrir ces deux methodes, sans
+    // quoi le rejeu casse sur un TypeError qui n'a rien a voir avec ce que
+    // cette suite verifie. On rend la notation de jocly pour les cinq coups de
+    // la partie, dans l'ordre ou ils sont joues.
+    natural: ['e2-e4', 'e7-e5', 'Ng1-f3', 'Nb8-c6', 'Bf1-b5+'],
+    async getPossibleMoves() {
+      const next = this.natural[this.playedMoves.length];
+      return next ? [{ san: next }] : [];
+    },
+    async getMoveString(moves, format) {
+      // jocly rend « ?? » pour un format qu'il ne sait pas ecrire (voir
+      // Model.Move.ToString) : le faux match doit faire pareil, sans quoi la
+      // resolution SAN prend la notation naturelle pour de l'USI et lit le
+      // « + » d'un echec comme une promotion.
+      const of = (m) => (format && format !== 'natural' ? '??' : m.san);
+      return Array.isArray(moves) ? moves.map(of) : of(moves);
+    },
     async pickMove(tok) {
       // 'Bb5+' n'est résolu qu'une fois la décoration retirée (teste le retry)
       if (/[+#!?]$/.test(tok)) return null;
       this.picked.push(tok);
       return { san: tok };
     },
-    async playMove(m) { this.playedMoves.push(m.san); this.turn = -this.turn; },
+    async playMove(m) {
+      // Le rejeu passe desormais par la liste legale : on enregistre le jeton
+      // du fichier quand il vient de pickMove, la notation jocly sinon.
+      this.playedMoves.push(m.san); this.turn = -this.turn;
+    },
     async save() { return {}; }, async load() {},
     async viewControl() {}, async getBoardState() { return 'FEN'; },
   };
@@ -123,7 +153,7 @@ const mockTauri = {
   const bookId = 'book-test';
   storeData.set('fork:' + bookId, { book: { moves: ['e4','e5','Nf3','Nc6','Bb5+'], label: 'Kasparov vs Topalov — 1-0, 5 moves' } });
 
-  const html = readFileSync('./app/content/play.html', 'utf-8').replace(/<script[\s\S]*?<\/script>/g, '');
+  const html = readFileSync(repo + '/app/content/play.html', 'utf-8').replace(/<script[\s\S]*?<\/script>/g, '');
   const dom = new JSDOM(html, { url: `https://tauri.localhost/content/play.html?game=classic-chess&id=9&fork=${bookId}` });
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
@@ -135,12 +165,15 @@ const mockTauri = {
     createMatch:   async () => match,
   };
 
-  await import('../app/content/play.js');
+  await import('../../app/content/play.js');
   document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true }));
 
   await waitFor(() => match.playedMoves.length === 5, 'rejeu terminé');
-  assert(match.playedMoves.join(' ') === 'e4 e5 Nf3 Nc6 Bb5',
-    'les 5 coups rejoués via pickMove/playMove (décoration + retirée au retry)');
+  // Les coups enregistres sont ceux de la liste legale, en notation jocly :
+  // c'est ce que la resolution exacte choisit, la ou pickMove rendait le jeton
+  // du fichier tel quel.
+  assert(match.playedMoves.join(' ') === 'e2-e4 e7-e5 Ng1-f3 Nb8-c6 Bf1-b5+',
+    'les 5 coups rejoués, résolus exactement contre la liste légale');
   assert(!storeData.has('fork:' + bookId), 'payload book nettoyé du store après rejeu');
   await waitFor(() => document.getElementById('board-footer-text').textContent.includes('Kasparov'), 'footer');
   assert(document.getElementById('board-footer-text').textContent === 'Kasparov vs Topalov — 1-0, 5 moves',

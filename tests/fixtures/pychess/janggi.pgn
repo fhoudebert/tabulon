@@ -1,0 +1,15 @@
+[Event "PyChess rated game"]
+[Site "https://www.pychess.org/XOcWXoJg"]
+[Date "2023.11.21"]
+[Round "-"]
+[White "SteveatKurihara"]
+[Black "CouchTomato87"]
+[Result "0-1"]
+[TimeControl "180+1"]
+[WhiteElo "1646?"]
+[BlackElo "1447"]
+[Variant "Janggi"]
+[FEN "rbna1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RBNA1ABNR w - - 0 1"]
+[SetUp "1"]
+
+1. Pab4 Pih7 2. Hg3 Ri6 3. Hd3 Ra6 4. Rxa6 Pxa6 5. Cbe3 Hg8 6. Pih4 Ce8 7. Ri5 Pb6 8. Ed4 Ei7 9. Pef4 Ed7 10. Ad2 Pcc6 11. Cf3 Ph6 12. Af2 Ra1 13. Cf1 Hd8 14. Pf5 Pgg6 15. Pfg5 Ra5 16. Phh5 Rd5 17. Pxg6 Pxg6 18. Exg6+ Kd9 19. Pgg5 Ci8 20. Pc5 Pxc5 0-1

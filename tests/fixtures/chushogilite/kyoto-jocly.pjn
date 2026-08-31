@@ -1,0 +1,7 @@
+[JoclyGame "kyoto-shogi"]
+[Event "kyoto-shogi"]
+[Date "2026.8.25"]
+[Result "1-0"]
+[PlyCount "28"]
+
+1. +Nd1-e2 a5-a4+ 2. Kc1-b2 +Nb5-b4 3. Kb2-c3 Sd5-c4+ 4. Sb1-b2+ +Le5-d4 5. +Sb2-a3 +Pa4xa3 6. Kc3-b2 Ld4-d2+ 7. +La1-a2 a3xa2+ 8. Kb2-c3 +Ld2xe2 9. e1xe2+ +Pa2xe2 10. L@a1 e2-e1+ 11. La1-a2+ +Sc4xa2 12. Kc3-b2 Sa2-a1+ 13. Kb2-b3 S@c2 14. Kb3-a3 L@a4

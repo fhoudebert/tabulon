@@ -1,0 +1,15 @@
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/So6jOUCa"]
+[Date "2026.06.02"]
+[Round "-"]
+[White "Fairy-Stockfish"]
+[Black "Doctor_Sticks"]
+[Result "0-1"]
+[TimeControl "900+5"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Shoshogi"]
+[FEN "lnsgkgsnl/1r2e2b1/ppppppppp/9/9/9/PPPPPPPPP/1B2E2R1/LNSGKGSNL w 0 1"]
+[SetUp "1"]
+
+1. Pc4 Sf8 2. Sc2 Pb6 3. Sf2 Pc6 4. Gg2 Pb5 5. Be5 Ra8 6. Nc3 Pe6 7. Bf4 Sc8 8. Kd2 Nc7 9. Kc1 Rb8 10. Nd5 Gd8 11. Kb2 Rb7 12. Gd2 Nxd5 13. Bxa9=H Nxe3=G 14. Sxe3 Se7 15. Gf2 Kf8 16. Ha8 Pg6 17. Kb1 Pa6 18. Sc3 Ng7 19. Kb2 Pf6 20. Ph4 Ph6 21. Pi4 Pi6 22. Pf4 Ed9 23. Gf3 Ec9 24. Scd4 Eb8 25. Hxb7 Exb7 26. Rf2 Gfe8 27. Pc5 Pxc5 28. Sxc5 Sc7 29. Rf1 Gf7 30. Pa4 Sed6 31. Rc1 Sxc5 32. Rxc5 Ec6 33. Rc1 Pd6 34. La2 Gd7 35. Pd4 Ke7 36. Gd3 Pe5 37. Pg4 Gfe6 38. Rc2 Pf5 39. Rc1 Pxf4 40. Gg3 Nf5 41. Sxf4 Nxg3=G 42. Sxg3 Pd5 43. Gc4 Pxd4 44. La3 Gdd6 45. Li2 Gdd5 46. Gxb5 Exb5 47. Rxc7=D Kf6 48. Db6 Ec5 49. Db8 Bg7 50. Dd8 Ec4 51. De8 Pd3=G 52. Ef2 Ec3=K 53. Ka2 Gc2 54. Sf4 Gb2 0-1

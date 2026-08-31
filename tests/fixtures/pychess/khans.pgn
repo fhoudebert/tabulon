@@ -1,0 +1,15 @@
+[Event "PyChess casual game"]
+[Site "https://www.pychess.org/gdJcWuUq"]
+[Date "2026.08.25"]
+[Round "-"]
+[White "fhou"]
+[Black "Anon–CkAeLFAD"]
+[Result "1-0"]
+[TimeControl "300+3"]
+[WhiteElo "1500?"]
+[BlackElo "1500?"]
+[Variant "Khans"]
+[FEN "lhatkahl/ssssssss/8/8/8/8/PPPPPPPP/RNBQKBNR w KQ - 0 1"]
+[SetUp "1"]
+
+1. e4 Sfe5 2. d4 Sxe4 3. Nc3 Ag6 4. h4 Hf6 5. h5 Af8 6. Rh4 Sg5 7. Nxe4 Hf5 8. Rf4 He6 9. d5 He5 10. Nf3 Hxf4 11. Bxf4 Lxh5 12. Nfxg5 Sd6 13. Nf6# 1-0
