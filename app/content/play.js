@@ -1151,7 +1151,15 @@ let sanRankOffset = null;
 // choix, « -- » pour une etape qui ne demande rien mais qu'il faut franchir.
 const PRELUDE_MOVE = /^(#\d+|--)$/;
 
-async function AnswerPrelude(firstToken) {
+async function AnswerPrelude(firstToken, recorded) {
+    // Un fichier ecrit par Tabulon PORTE la reponse : « 1. #2 -- ». Quand
+    // elle est la, on la suit au lieu de la deviner -- et il le faut, parce
+    // que la deviner ne peut pas marcher : le seul jeton dont on disposait
+    // pour departager etait « #2 » lui-meme, qui ne designe aucun coup une
+    // fois le prelude franchi. Aucun choix ne le resolvait, le repli prenait
+    // le premier arrangement, et une partie de Malett se serait rechargee en
+    // Gardner -- si la lecture etait allee au bout.
+    const queue = (recorded || []).slice();
     // PLUSIEURS ETAPES. Sho Shogi en a deux : le choix de la regle, puis un
     // passage. N'en franchir qu'une laissait la partie sur un coup « -- »
     // unique, et le premier coup du fichier restait introuvable -- exactement
@@ -1163,6 +1171,18 @@ async function AnswerPrelude(firstToken) {
         const names = await joclyMatch.getMoveString(moves).catch(() => []);
         if (!PRELUDE_MOVE.test(names[0] || '')) break;
 
+        // Le fichier dit quelle etape a ete franchie et comment.
+        if (queue.length) {
+            const want = queue.shift();
+            const i = names.indexOf(want);
+            if (i >= 0) {
+                await joclyMatch.playMove(moves[i]);
+                stages.push(names[i]);
+                continue;
+            }
+            console.warn('[play] prelude : « ' + want + ' » ne figure pas parmi '
+                + names.join(' ') + ' — on devine');
+        }
         // Une etape sans choix se franchit sans se poser de question.
         if (moves.length === 1) {
             await joclyMatch.playMove(moves[0]);
@@ -1724,7 +1744,17 @@ async function BookReplay(book) {
         // le choix est une REGLE : rien dans le fichier ne dit laquelle, et
         // on ne devine pas -- on essaie. Le bon choix est celui sous lequel
         // le premier coup du fichier se resout.
-        await AnswerPrelude(book.moves && book.moves[0]);
+        // Les jetons de prelude en tete du fichier ne sont pas des coups a
+        // rejouer : ils sont la reponse au dialogue d'ouverture. Les laisser
+        // dans la liste faisait echouer la lecture sur le tout premier jeton
+        // -- « #0 » ne designe aucun coup legal une fois le prelude franchi,
+        // donc zero coup joue et le fichier declare illisible. Ils faussaient
+        // aussi MoveFormat(), qui les lisait comme des coups pour deviner la
+        // notation du fichier.
+        const recordedPrelude = [];
+        while (book.moves && book.moves.length && PRELUDE_MOVE.test(book.moves[0]))
+            recordedPrelude.push(book.moves.shift());
+        await AnswerPrelude(book.moves && book.moves[0], recordedPrelude);
 
         const format = book.kif ? 'kif' : MoveFormat(book.moves);
         let exact = null;
