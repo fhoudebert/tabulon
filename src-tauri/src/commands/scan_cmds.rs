@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_shell::ShellExt;
 
-use super::engine_cmds::{binary_path, read_until, EngineState};
+use super::engine_cmds::{binary_path, not_found_message, read_until, EngineState};
 
 const SCAN_BIN: &str = "scan";
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30); // init charge les poids
@@ -259,7 +259,8 @@ pub(crate) fn search_budget(req: &ScanSearchRequest) -> Duration {
 /// Verifie que Scan est installe et repond en Hub. Renvoie son identite.
 #[tauri::command]
 pub async fn scan_probe(app: AppHandle) -> Result<String, String> {
-    let path = scan_path().ok_or_else(|| "moteur Scan introuvable".to_string())?;
+    let path =
+        scan_path().ok_or_else(|| not_found_message("moteur Scan", SCAN_BIN, "TABULON_SCAN"))?;
     let dir = path
         .parent()
         .ok_or_else(|| "chemin du moteur Scan invalide".to_string())?;
@@ -303,7 +304,8 @@ pub async fn scan_search(
     // echouer tout de suite, pas apres 30 s d'initialisation.
     let pos = fen_to_hub_pos(&request.fen)?;
 
-    let path = scan_path().ok_or_else(|| "moteur Scan introuvable".to_string())?;
+    let path =
+        scan_path().ok_or_else(|| not_found_message("moteur Scan", SCAN_BIN, "TABULON_SCAN"))?;
     let dir = path
         .parent()
         .ok_or_else(|| "chemin du moteur Scan invalide".to_string())?;

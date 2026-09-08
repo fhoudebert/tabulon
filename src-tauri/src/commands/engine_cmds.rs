@@ -72,11 +72,7 @@ pub fn engine_path() -> Option<PathBuf> {
 /// scan...) : variable d'environnement dediee, puis `engine/<nom>` et `<nom>`
 /// a cote de l'executable.
 pub(crate) fn binary_path(stem: &str, env_var: &str) -> Option<PathBuf> {
-    let name = if cfg!(target_os = "windows") {
-        format!("{}.exe", stem)
-    } else {
-        stem.to_string()
-    };
+    let name = binary_file_name(stem);
 
     if let Ok(p) = std::env::var(env_var) {
         if !p.is_empty() {
@@ -89,6 +85,50 @@ pub(crate) fn binary_path(stem: &str, env_var: &str) -> Option<PathBuf> {
         }
     }
 
+    for cand in binary_candidates(&name) {
+        if !cand.is_file() {
+            continue;
+        }
+        if !is_executable(&cand) {
+            // Cause frequente apres un dezippage : le fichier est bien la,
+            // mais sans bit d'execution. `is_file()` ne le voit pas, et
+            // l'echec se manifesterait plus loin, au demarrage du processus,
+            // sous la forme d'un "permission denied" que rien ne rattache a
+            // ce repertoire.
+            log::warn!(
+                "{} trouve mais non executable : {} (chmod +x ?)",
+                stem,
+                cand.display()
+            );
+            continue;
+        }
+        log::info!("moteur natif {} : {}", stem, cand.display());
+        return Some(cand);
+    }
+    log::info!(
+        "aucun binaire {} trouve — le niveau Expert se rabattra sur l'IA native. Cherche : {}",
+        stem,
+        searched_paths(&name)
+    );
+    None
+}
+
+/// Le nom de fichier attendu pour un moteur, avec l'extension de la plateforme.
+pub(crate) fn binary_file_name(stem: &str) -> String {
+    if cfg!(target_os = "windows") {
+        format!("{}.exe", stem)
+    } else {
+        stem.to_string()
+    }
+}
+
+/// Les emplacements fouilles, dans l'ordre.
+///
+/// Sortis de `binary_path` pour que le message d'echec puisse les NOMMER.
+/// « introuvable » sans dire ou l'on a regarde n'aide personne, et les
+/// log::info! de ce module partent dans la sortie de l'application, pas dans
+/// la console de la webview ou le joueur lit l'erreur.
+pub(crate) fn binary_candidates(name: &str) -> Vec<PathBuf> {
     let mut bases: Vec<PathBuf> = Vec::new();
     if let Ok(appimage) = std::env::var("APPIMAGE") {
         if let Some(dir) = Path::new(&appimage).parent() {
@@ -102,17 +142,68 @@ pub(crate) fn binary_path(stem: &str, env_var: &str) -> Option<PathBuf> {
             bases.push(dir.join("..").join("..").join(".."));
         }
     }
-
+    let mut out = Vec::new();
     for base in bases {
-        for cand in [base.join("engine").join(&name), base.join(&name)] {
-            if cand.is_file() {
-                log::info!("moteur natif {} : {}", stem, cand.display());
-                return Some(cand);
-            }
-        }
+        out.push(base.join("engine").join(name));
+        out.push(base.join(name));
     }
-    log::info!("aucun binaire {} trouve — le niveau Expert se rabattra sur l'IA native", stem);
-    None
+    out
+}
+
+/// La meme liste, lisible dans un message d'erreur.
+pub(crate) fn searched_paths(name: &str) -> String {
+    let list = binary_candidates(name)
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    if list.is_empty() {
+        "(aucun emplacement determinable)".to_string()
+    } else {
+        list
+    }
+}
+
+/// Le fichier porte-t-il le bit d'execution ? Toujours vrai sous Windows, ou
+/// la question ne se pose pas.
+pub(crate) fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return std::fs::metadata(path)
+            .map(|m| m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        true
+    }
+}
+
+/// Message d'echec d'un moteur absent, nommant ce qui a ete cherche et ou.
+///
+/// Partage par les trois pilotes. Le cas « present mais non executable » est
+/// distingue parce que c'est celui ou le fichier EST la : dire « introuvable »
+/// a quelqu'un qui le voit dans son explorateur ne l'avance a rien.
+pub(crate) fn not_found_message(label: &str, stem: &str, env_var: &str) -> String {
+    let name = binary_file_name(stem);
+    if let Some(p) = binary_candidates(&name)
+        .into_iter()
+        .find(|p| p.is_file() && !is_executable(&p))
+    {
+        return format!(
+            "{} present mais non executable : {} — chmod +x",
+            label,
+            p.display()
+        );
+    }
+    format!(
+        "{} introuvable — cherche : {} (ou la variable {})",
+        label,
+        searched_paths(&name),
+        env_var
+    )
 }
 
 /// Fairy-Stockfish n'active un reseau NNUE que si le NOM DU FICHIER commence
@@ -390,7 +481,8 @@ where
 /// se rabat sur son IA native (et Tabulon affiche le bandeau d'avertissement).
 #[tauri::command]
 pub async fn engine_probe(app: AppHandle) -> Result<String, String> {
-    let path = engine_path().ok_or_else(|| "moteur natif introuvable".to_string())?;
+    let path = engine_path()
+        .ok_or_else(|| not_found_message("moteur natif", ENGINE_BIN, "TABULON_ENGINE"))?;
     let (mut rx, mut child) = app
         .shell()
         .command(&path)
@@ -470,7 +562,8 @@ pub async fn engine_search(
         variant_file = Some(p);
     }
 
-    let path = engine_path().ok_or_else(|| "moteur natif introuvable".to_string())?;
+    let path = engine_path()
+        .ok_or_else(|| not_found_message("moteur natif", ENGINE_BIN, "TABULON_ENGINE"))?;
 
     // Reseau NNUE optionnel, cherche A COTE DU BINAIRE. Jamais bloquant :
     // son absence signifie « evaluation classique », pas un echec de recherche.
@@ -661,6 +754,47 @@ pub async fn engine_stop(state: State<'_, EngineState>) -> Result<(), String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod diag_tests {
+    use super::*;
+
+    // Le message d'echec doit NOMMER les emplacements fouilles : c'est
+    // exactement l'information qui manquait quand un binaire pourtant pose
+    // dans engine/ n'etait pas trouve, et le joueur ne voit que ce message -
+    // les log::info! partent ailleurs.
+    #[test]
+    fn the_search_is_reported_not_just_its_failure() {
+        let msg = not_found_message("moteur KataGo", "katago", "TABULON_KATAGO");
+        assert!(msg.contains("TABULON_KATAGO"), "{}", msg);
+        assert!(msg.contains("katago"), "{}", msg);
+    }
+
+    #[test]
+    fn candidates_look_in_engine_first() {
+        let list = binary_candidates("katago");
+        assert!(!list.is_empty());
+        // engine/<nom> avant <nom> pour une meme base : c'est l'emplacement
+        // documente, il doit gagner.
+        let first = list[0].to_string_lossy().to_string();
+        assert!(first.contains("engine"), "{}", first);
+    }
+
+    #[test]
+    fn windows_gets_an_exe() {
+        let name = binary_file_name("katago");
+        if cfg!(target_os = "windows") {
+            assert_eq!(name, "katago.exe");
+        } else {
+            assert_eq!(name, "katago");
+        }
+    }
+
+    #[test]
+    fn a_missing_file_is_not_executable() {
+        assert!(!is_executable(Path::new("/nonexistent/katago")));
+    }
+}
 
 #[cfg(test)]
 mod tests {
