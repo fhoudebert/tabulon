@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{engine_cmds, scan_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -145,6 +145,9 @@ pub fn run() {
             scan_cmds::scan_probe,
             scan_cmds::scan_search,
             scan_cmds::scan_stop,
+            katago_cmds::katago_probe,
+            katago_cmds::katago_search,
+            katago_cmds::katago_stop,
             peer_cmds::peer_host_start,
             peer_cmds::peer_connect,
             peer_cmds::peer_send,

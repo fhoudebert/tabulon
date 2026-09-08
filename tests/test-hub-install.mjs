@@ -36,7 +36,7 @@ console.log('Traductions');
 const i18n = readFileSync(path.join(repo, 'app/content/tabulon-i18n.js'), 'utf-8');
 // Chaque élément décrit doit avoir un intitulé ET une explication : sans le
 // « à quoi ça sert », l'utilisateur ne sait pas s'il doit s'en soucier.
-for (const id of ['dist', 'engine', 'scan', 'nnue']) {
+for (const id of ['dist', 'engine', 'scan', 'nnue', 'katago', 'katago-network', 'katago-config']) {
     ok(i18n.includes(`'install.${id}'`) && i18n.includes(`'install.${id}.what'`),
        `« ${id} » a un intitulé et une explication`);
 }

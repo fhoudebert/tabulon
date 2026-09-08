@@ -32,6 +32,7 @@
 
 const FAIRY_WORKER_RE = /(^|\/)jocly\.fairyworker\.js(\?|$)/;
 const SCAN_WORKER_RE  = /(^|\/)jocly\.scanworker\.js(\?|$)/;
+const KATA_WORKER_RE  = /(^|\/)jocly\.kataworker\.js(\?|$)/;
 
 // Une trace par variante : le joueur doit pouvoir constater si Expert tourne
 // avec son reseau NNUE ou en evaluation classique, sans lire les logs de
@@ -242,6 +243,124 @@ class NativeScanWorker {
 }
 
 /**
+ * Faux Worker pour le moteur de GO natif KataGo. Même contrat que les deux
+ * précédents, mais deux différences que jocly.kata.js impose :
+ *
+ * 1. **Le message Init porte des données dont la recherche a besoin.** KataGo
+ *    charge son réseau AU LANCEMENT, et la taille du goban est fixée avec lui.
+ *    Fairy-Stockfish résout son NNUE au moment de la recherche ; ici il faut
+ *    retenir `net` et `boardSize` posés à l'Init et les renvoyer à chaque
+ *    recherche, sinon le côté Rust n'a pas de quoi démarrer le moteur.
+ *
+ * 2. **La position n'est pas un FEN mais la suite des coups** — `moves`,
+ *    `toPlay`, `komi` —, parce que c'est ce que demande l'ABI wasm que ce
+ *    shim remplace. Rien à traduire ici : la conversion en GTP est côté Rust,
+ *    là où elle est testable sans navigateur.
+ *
+ * La réponse « Done » porte `data.bestMove`, un index d'intersection (-1 pour
+ * une passe), que jocly retrouve dans sa propre liste de coups légaux.
+ */
+class NativeKataWorker {
+    constructor(rpc) {
+        this._rpc = rpc;
+        this.onmessage = null;
+        this.onerror = null;
+        this._searching = false;
+        this._stopped = false;
+        this._dead = false;
+        this._net = null;
+        this._boardSize = null;
+    }
+
+    _post(msg) {
+        if (this._dead) return;
+        Promise.resolve().then(() => {
+            if (this._dead) return;
+            try { if (this.onmessage) this.onmessage({ data: msg }); }
+            catch (e) { console.error('[engine-native] onmessage:', e); }
+        });
+    }
+
+    _fail(err) {
+        this._post({ type: 'Error', error: String((err && err.message) || err) });
+    }
+
+    postMessage(msg) {
+        const type = msg && msg.type;
+        if (type === 'Init')   return this._init(msg);
+        if (type === 'Search') return this._search(msg);
+        if (type === 'Stop')   return this._stop();
+        console.warn('[engine-native] message ignoré (katago):', type);
+    }
+
+    terminate() {
+        this._dead = true;
+        if (this._searching) this._rpc.call('katago_stop').catch(() => {});
+    }
+
+    _init(msg) {
+        this._net = (msg && msg.net) || null;
+        this._boardSize = (msg && msg.boardSize) || null;
+        // La sonde charge vraiment le réseau : c'est long, mais c'est le seul
+        // moyen de distinguer « installé » de « installé et fonctionnel »,
+        // et le joueur doit le savoir avant sa première partie.
+        this._rpc.call('katago_probe', { net: this._net })
+            .then((name) => {
+                console.info('[engine-native] moteur de go natif :', name,
+                    '- réseau', this._net, '- goban', this._boardSize);
+                this._post({ type: 'Ready', data: { backend: 'native', engine: name } });
+            })
+            .catch((err) => {
+                // Chemin NORMAL quand `engine/katago` (ou son réseau, ou sa
+                // config) n'est pas installé : jocly marque le moteur
+                // indisponible et joue avec son IA native.
+                const why = (err && err.message) || err;
+                console.warn('[engine-native] moteur de go indisponible — ' +
+                    'les niveaux KataGo se rabattent sur l’IA native :', why);
+                this._fail(err);
+            });
+    }
+
+    _search(msg) {
+        this._stopped = false;
+        this._searching = true;
+        this._rpc.call('katago_search', {
+            moves:      msg.moves || [],
+            toPlay:     msg.toPlay,
+            komi:       msg.komi,
+            // Retenus de l'Init : KataGo en a besoin au lancement.
+            boardSize:  this._boardSize,
+            net:        this._net,
+            visits:     msg.visits,
+            moveTimeMs: msg.moveTimeMs,
+        })
+            .then((res) => {
+                this._searching = false;
+                if (this._stopped) return this._post({ type: 'Aborted' });
+                // Un abandon est un « pas de coup » comme une passe côté
+                // index (-1) ; on le dit ici, sinon il passerait pour une
+                // passe et personne ne saurait que le moteur a renoncé.
+                if (res && res.resigned)
+                    console.info('[engine-native] KataGo abandonne');
+                this._post({ type: 'Done', data: { bestMove: res && res.bestMove } });
+            })
+            .catch((err) => {
+                this._searching = false;
+                if (this._stopped) return this._post({ type: 'Aborted' });
+                console.warn('[engine-native] recherche de go échouée :',
+                    (err && err.message) || err);
+                this._fail(err);
+            });
+    }
+
+    _stop() {
+        if (!this._searching) return;
+        this._stopped = true;
+        this._rpc.call('katago_stop').catch(() => {});
+    }
+}
+
+/**
  * Remplace `Worker` dans une fenêtre donnée pour intercepter la seule
  * création du worker fairy-stockfish. Idempotent.
  */
@@ -256,6 +375,7 @@ export function installInWindow(win, rpc) {
         const s = (typeof url === 'string') ? url : String(url || '');
         if (FAIRY_WORKER_RE.test(s)) return new NativeFairyWorker(rpc);
         if (SCAN_WORKER_RE.test(s))  return new NativeScanWorker(rpc);
+        if (KATA_WORKER_RE.test(s))  return new NativeKataWorker(rpc);
         return new Previous(url, opts);
     }
     PatchedWorker.prototype = Previous.prototype;
@@ -287,4 +407,4 @@ export function installNativeEngine(root, rpc) {
     }
 }
 
-export { NativeFairyWorker, NativeScanWorker };
+export { NativeFairyWorker, NativeScanWorker, NativeKataWorker };
