@@ -2,6 +2,7 @@
 import twu  from './tabulon-winutils.js';
 import { open } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
+import { gameTitle } from './localized-field.js';
 import { rewriteCssUrls } from './css-url-rewrite.js';
 
 const gameName = (function () {
@@ -90,7 +91,7 @@ async function GetHtml(config, what) {
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(t('info.title', { game: config.model['title-en'] }));
+    await twu.init(t('info.title', { game: gameTitle(config.model, getLocale()) }));
 
     await Promise.all(['rules', 'description', 'credits'].map(t => GetHtml(config, t)));
 

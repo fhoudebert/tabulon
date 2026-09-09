@@ -9,7 +9,8 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { emit, Store } from './tauri-bridge.js';
-import { initI18n, t } from './tabulon-i18n.js';
+import { initI18n, t, getLocale } from './tabulon-i18n.js';
+import { gameTitle } from './localized-field.js';
 import { SideWithoutKing } from './book-format.js';
 
 const gameName = (function () {
@@ -24,7 +25,7 @@ const matchId = (function () {
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(config.model['title-en']);
+    await twu.init(gameTitle(config.model, getLocale()));
 
     document.getElementById('button-cancel').addEventListener('click', () => tRpc.close());
     // Avertissement pendant la saisie. Une position dont un camp n'a pas de

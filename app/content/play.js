@@ -11,7 +11,8 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
-import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
+import { initI18n, t, translateLevelLabel, getLocale } from './tabulon-i18n.js';
+import { gameTitle } from './localized-field.js';
 import { installNativeEngine } from './engine-native.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
@@ -1468,7 +1469,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     store = await Store.load('tabulon.json');
 
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(t('play.title', { game: config.model['title-en'], id: matchId }), '.game-header');
+    await twu.init(t('play.title', { game: gameTitle(config.model, getLocale()), id: matchId }), '.game-header');
 
     levels = config.model.levels || [];
     BuildPlayerSelect('select-player-a', Jocly.PLAYER_A);

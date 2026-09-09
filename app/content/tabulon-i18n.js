@@ -283,7 +283,7 @@ const DICT = {
         'install.releases': 'Télécharger une ludothèque Jocly\u2026',
         'install.extras': 'Télécharger moteurs, réseaux et images\u2026',
         'install.katagoRelease': 'Télécharger KataGo v1.18.1 (Eigen, pour une machine sans carte graphique)\u2026',
-        'install.credits': "Fairy-Stockfish, Scan et KataGo sont des projets distincts, dus à leurs auteurs — les deux premiers sous licence GNU GPL v3, KataGo sous licence MIT. Tabulon se contente d'indiquer où les poser. Leur code source :",
+        'install.credits': "Fairy-Stockfish, Scan et KataGo sont des projets distincts(licence GPL v3 et MIT).Code source :",
         'install.yourSystem': 'Votre système :',
         'install.platform.linux': 'Linux',
         'install.platform.windows': 'Windows',

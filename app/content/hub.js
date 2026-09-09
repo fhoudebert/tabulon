@@ -7,7 +7,7 @@ import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
-import { pickLocalized } from './localized-field.js';
+import { pickLocalized, gameTitle } from './localized-field.js';
 import { Matches } from './text-search.js';
 import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
          IsChuKif, ParseKif, IsShogiKif, ParseShogiKif, IsSgf, ParseSgf,
@@ -140,7 +140,17 @@ async function ListGames() {
     // (qui fait .toLowerCase() dessus) -- manipule alors une vraie chaine.
     const loc = getLocale();
     for (const n of Object.keys(games)) {
-        games[n] = { ...games[n], summary: pickLocalized(games[n].summary, loc) };
+        // Le titre suit le meme chemin que le resume : le catalogue le porte
+        // tel que le manifeste le declare -- chaine ou objet par locale -- et
+        // on le reduit ICI, une fois. Tout ce qui suit (la liste, le tri par
+        // localeCompare, le filtre, les modeles de partie) manipule alors une
+        // vraie chaine, et aucun de ces endroits n'a a connaitre les deux
+        // formes.
+        games[n] = {
+            ...games[n],
+            title:   gameTitle(games[n], loc),
+            summary: pickLocalized(games[n].summary, loc),
+        };
     }
     gamesMap = games;
     allGameList = Object.keys(games)
@@ -191,7 +201,8 @@ async function SelectGame(gameName, opts = {}) {
     document.getElementById('game-detail-empty').style.display = 'none';
     document.getElementById('game-detail-body').style.display  = '';
 
-    document.querySelector('#game-detail .game-title').textContent = config.model['title-en'];
+    document.querySelector('#game-detail .game-title').textContent =
+        gameTitle(config.model, getLocale());
     document.querySelector('#game-detail .game-summary').textContent =
         pickLocalized(config.model.summary, getLocale());
     document.querySelector('#game-detail .game-thumbnail').style.backgroundImage =

@@ -12,7 +12,8 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
-import { initI18n, t } from './tabulon-i18n.js';
+import { initI18n, t, getLocale } from './tabulon-i18n.js';
+import { gameTitle } from './localized-field.js';
 import { ExtractMoves, BookFen, BookLabel, BookGame, IsTsume } from './book-format.js';
 
 // Re-export : tests/test-book.mjs importe ExtractMoves depuis ce module.
@@ -117,7 +118,7 @@ async function OpenBookMatch(match, index, count) {
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(config.model['title-en'] + ' — ' + fileName);
+    await twu.init(gameTitle(config.model, getLocale()) + ' — ' + fileName);
     setTimeout(() => twu.ready(), 0);
 
     try {
