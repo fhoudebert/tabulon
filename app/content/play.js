@@ -316,6 +316,21 @@ function buildPlayerValue(info) {
 let gameResult = null;
 
 // Nom lisible d'un cote, pour les tags [White]/[Black] du PJN.
+/**
+ * Le camp au trait, nomme comme partout ailleurs dans Tabulon : « Joueur A »,
+ * « Joueur B » -- la fenetre des joueurs, l'horloge, les options de vue et le
+ * verdict de fin de partie emploient deja ces deux noms.
+ *
+ * PAS le libelle du niveau (« Humain », « Expert ») : il dit QUI calcule, pas
+ * DE QUEL COTE, et deux niveaux identiques donnaient la meme phrase des deux
+ * cotes. Le niveau reste utile pendant une recherche, ou il repond a une autre
+ * question -- combien de temps cela va durer -- et il y est ajoute entre
+ * parentheses plutot que substitue.
+ */
+function SideName(turn) {
+    return t(turn > 0 ? 'common.playerA' : 'common.playerB');
+}
+
 function PlayerLabel(key) {
     const value = players[key];
     if (!value) return t('common.human');
@@ -371,7 +386,7 @@ async function gameLoop() {
                     // rien ne bouge entre deux coups -- un goban en
                     // particulier -- le seul indice est sinon la couleur du
                     // trait, que jocly n'affiche nulle part.
-                    UpdateFooter(t('play.turnOf', { player: PlayerLabel(turn) }));
+                    UpdateFooter(t(turn > 0 ? 'play.turnA' : 'play.turnB'));
                     const result = await joclyMatch.userTurn();
                     UpdateFooter('');
                     finished = result?.finished || false;
@@ -386,7 +401,8 @@ async function gameLoop() {
                     // recherche KataGo dure des secondes, et la question du
                     // joueur pendant ce temps est de savoir QUI reflechit,
                     // pas que quelqu'un reflechit.
-                    UpdateFooter(t('play.thinkingOf', { player: PlayerLabel(turn) }));
+                    UpdateFooter(t(turn > 0 ? 'play.thinkingA' : 'play.thinkingB',
+                        { level: PlayerLabel(turn) }));
                     const result = await joclyMatch.machineSearch({ level });
                     UpdateFooter('');
 

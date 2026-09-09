@@ -174,3 +174,10 @@ assert(names.join(' ') === tokens.join(' '),
   'la partie rejouée est exactement celle du fichier');
 
 console.log(`\ntest-play-prelude-book : ${passed} assertions OK`);
+// Sans cette sortie explicite le processus ne rend jamais la main : la boucle
+// de jeu attend un userTurn() qui ne se resout pas, et jsdom garde de toute
+// facon des minuteries en vol. Les autres suites a DOM finissent toutes
+// ainsi ; celle-ci l'avait oublie, et comme run-tests.mjs lance chaque suite
+// en spawnSync sans delai maximal, elle bloquait la campagne entiere -- sans
+// qu'aucune assertion ait echoue.
+process.exit(0);

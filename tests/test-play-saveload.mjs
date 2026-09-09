@@ -179,7 +179,9 @@ assert(match.turn === PLAYER_B, 'après 5 coups chargés : trait à Player B');
 // que le vide, qui ne distinguait pas « nettoye » de « muet ».
 {
   const footer = document.getElementById('board-footer-text').textContent;
-  assert(/Human|Humain/.test(footer),
+  // Le camp, pas le niveau : le trait est a B ci-dessus, donc c'est B qui doit
+  // etre nomme. Une phrase qui dirait « Humain » passerait des deux cotes.
+  assert(/Player B|joueur B/.test(footer),
     'footer nettoyé, et annonçant le trait : ' + JSON.stringify(footer));
 }
 
