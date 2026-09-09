@@ -132,6 +132,7 @@ const DICT = {
         // play — dynamiques
         'tip.recordVideo': 'Record video', 'play.videoSaved': 'Video saved: {path}', 'play.videoError': 'Recording failed: {error}', 'play.capture3dOnly': 'Snapshot and video require a 3D skin',
         'play.thinking': 'Thinking...', 'play.draw': 'Draw',
+        'play.thinkingOf': '{player} is thinking…', 'play.turnOf': '{player} to play',
         'play.waitingRemote': 'Waiting for the remote player…',
         'play.fairyFallback': 'The “Expert” engine could not start — you are playing against the native AI ({level}).',
         'play.fairyFallbackIsolate': 'Serve the page cross-origin isolated to enable Fairy-Stockfish.',
@@ -355,6 +356,7 @@ const DICT = {
         'tip.stopRecording': "Arrêter l'enregistrement",
         'tip.recordVideo': 'Enregistrer une vidéo', 'play.videoSaved': 'Vidéo enregistrée : {path}', 'play.videoError': "Échec de l'enregistrement : {error}", 'play.capture3dOnly': 'Capture et vidéo nécessitent un habillage 3D',
         'play.thinking': 'Réflexion...', 'play.draw': 'Partie nulle',
+        'play.thinkingOf': '{player} réfléchit…', 'play.turnOf': 'À {player} de jouer',
         'play.waitingRemote': "En attente du joueur distant…",
         'play.fairyFallback': 'Le moteur « Expert » n’a pas pu démarrer — vous jouez contre l’IA native ({level}).',
         'play.fairyFallbackIsolate': 'Servez la page en cross-origin isolated pour activer Fairy-Stockfish.',

@@ -49,7 +49,13 @@ let detailAvailable = true;
 
 const defaultFavorites = {
     'classic-chess': 100, 'draughts': 90, 'scrum': 80, 'reversi': 70,
-    '9-men-morris': 65, 'fourinarow': 60, 'tafl-hnefatafl': 55,
+    // 'morris9' et non '9-men-morris' : c'est le nom que porte le jeu dans le
+    // dist de jocly (ses voisins '6-men-morris' et '7-men-morris' ont garde
+    // l'ancienne forme, la ligne ci-dessous ne vaut donc que pour celui-ci).
+    // Un nom inconnu n'est pas une erreur -- InitGames() le retire de la liste
+    // -- mais il laissait la page d'accueil avec neuf favoris au lieu de dix,
+    // sans rien dire.
+    'morris9': 65, 'fourinarow': 60, 'tafl-hnefatafl': 55,
     'yohoho': 50, 'margo6': 40, 'pensoc': 30,
 };
 

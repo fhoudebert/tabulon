@@ -367,7 +367,13 @@ async function gameLoop() {
                     // Tour humain.
                     // userTurn() joue le coup en interne (mode proxy iframe)
                     // et retourne {move, finished, winner} directement.
+                    // Qui doit jouer, ecrit noir sur blanc : sur un plateau ou
+                    // rien ne bouge entre deux coups -- un goban en
+                    // particulier -- le seul indice est sinon la couleur du
+                    // trait, que jocly n'affiche nulle part.
+                    UpdateFooter(t('play.turnOf', { player: PlayerLabel(turn) }));
                     const result = await joclyMatch.userTurn();
+                    UpdateFooter('');
                     finished = result?.finished || false;
                     winner   = result?.winner;
                     playedLocally = true;
@@ -376,7 +382,11 @@ async function gameLoop() {
                     // Tour IA.
                     // machineSearch() en mode proxy iframe retourne {move, ...}
                     // mais NE joue PAS le coup -- il faut appeler playMove().
-                    UpdateFooter(t('play.thinking'));
+                    // Le niveau nomme plutot que « Reflexion... » seul : une
+                    // recherche KataGo dure des secondes, et la question du
+                    // joueur pendant ce temps est de savoir QUI reflechit,
+                    // pas que quelqu'un reflechit.
+                    UpdateFooter(t('play.thinkingOf', { player: PlayerLabel(turn) }));
                     const result = await joclyMatch.machineSearch({ level });
                     UpdateFooter('');
 
@@ -434,9 +444,11 @@ async function gameLoop() {
             if (finished) {
                 ClockStop();
                 gameResult = winner === 0 ? '1/2-1/2' : winner > 0 ? '1-0' : '0-1';
-                UpdateFooter(winner === 0 ? t('play.draw')
+                const verdict = winner === 0 ? t('play.draw')
                     : winner > 0 ? t('play.aWins')
-                    : t('play.bWins'));
+                    : t('play.bWins');
+                const margin = await FinalMargin();
+                UpdateFooter(margin ? `${verdict} : ${margin}` : verdict);
                 loopActive = false;
             }
             // Notifier les satellites (history.js) qu'un coup a ete joue
@@ -447,6 +459,26 @@ async function gameLoop() {
         UpdateFooter('');
     }
     console.info('[play] gameLoop ended');
+}
+
+/**
+ * L'ecart final, pour les jeux qui le publient.
+ *
+ * « Le joueur A gagne » ne dit pas de combien, et au go c'est la moitie du
+ * resultat : une partie se gagne de 0.5 comme de 60. jocly ne traduit rien --
+ * la barre de statut du goban ne peut donc afficher qu'une pierre et un
+ * nombre -- mais go-model.js publie les chiffres par getBoardState('score'),
+ * le seul canal que jocly fasse deja traverser l'iframe. La phrase se compose
+ * donc ICI, ou le dictionnaire existe.
+ *
+ * Les autres jeux repondent leur notation de plateau (une CHAINE) ou echouent :
+ * dans les deux cas on affiche le verdict seul, comme avant.
+ */
+async function FinalMargin() {
+    const state = await joclyMatch.getBoardState('score').catch(() => null);
+    if (!state || typeof state !== 'object' || !state.counted) return null;
+    const margin = Math.abs(state.margin);
+    return margin > 0 ? margin : null;   // un jigo n'a pas d'ecart a annoncer
 }
 
 // -- Helpers UI ---------------------------------------------------------------

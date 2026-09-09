@@ -173,7 +173,15 @@ fileElem.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await waitFor(() => match.loadedWith?.playedMoves?.length === 5, 'partie chargée');
 await waitFor(() => match.pendingUserTurn, 'boucle repartie sur la position chargée');
 assert(match.turn === PLAYER_B, 'après 5 coups chargés : trait à Player B');
-assert(document.getElementById('board-footer-text').textContent === '', 'footer nettoyé');
+// Le pied de plateau ne garde rien du chargement -- ni « Réflexion... » ni un
+// message d'erreur -- mais il n'est plus vide pour autant : depuis que le tour
+// humain s'annonce, il nomme le camp au trait. C'est ce qu'on verifie, plutot
+// que le vide, qui ne distinguait pas « nettoye » de « muet ».
+{
+  const footer = document.getElementById('board-footer-text').textContent;
+  assert(/Human|Humain/.test(footer),
+    'footer nettoyé, et annonçant le trait : ' + JSON.stringify(footer));
+}
 
 // On joue 3 coups pour laisser une éventuelle double boucle se manifester
 for (let i = 0; i < 3; i++) { playHumanMove(); await waitFor(() => match.pendingUserTurn, 'coup ' + i); }
