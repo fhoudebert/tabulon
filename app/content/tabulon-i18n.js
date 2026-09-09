@@ -215,6 +215,7 @@ const DICT = {
         // view-options
         'view.skin': 'Skin', 'view.sounds': 'Sounds', 'view.notation': 'Notation',
         'view.showMoves': 'Show moves', 'view.autoComplete': 'Auto-complete moves',
+        'view.showLastMove': 'Mark the last move',
         'view.viewAs': 'View as',
         // save-template
         'template.name': 'Template name',
@@ -442,6 +443,7 @@ const DICT = {
         'tip.resumeFromPosition': 'Reprendre depuis cette position',
         'view.skin': 'Habillage', 'view.sounds': 'Sons', 'view.notation': 'Notation',
         'view.showMoves': 'Montrer les coups', 'view.autoComplete': 'Compléter les coups',
+        'view.showLastMove': 'Marquer le dernier coup',
         'view.viewAs': 'Voir en tant que',
         'template.name': 'Nom du modèle',
         'info.rules': 'Règles', 'info.description': 'Description',
