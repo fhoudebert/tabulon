@@ -10,7 +10,7 @@ import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { pickLocalized } from './localized-field.js';
 import { Matches } from './text-search.js';
 import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
-         IsChuKif, ParseKif, IsShogiKif, ParseShogiKif,
+         IsChuKif, ParseKif, IsShogiKif, ParseShogiKif, IsSgf, ParseSgf,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
@@ -368,6 +368,61 @@ async function FairyMap() {
     return fairyMap;
 }
 
+/**
+ * Ouvre un SGF de go.
+ *
+ * CE QUI EST REFUSE, ET POURQUOI PLUTOT QUE DE CHARGER A MOITIE. Le go de
+ * jocly pose un goban vide et alterne strictement en commencant par Noir. Un
+ * fichier qui commence autrement ne se rejoue pas « presque » : les couleurs
+ * se decalent des le premier coup, les captures ne sont plus les memes, et ce
+ * qui s'affiche est une partie que personne n'a jouee. Un refus nomme vaut
+ * mieux qu'un plateau plausible et faux.
+ *
+ * C'est le cas des parties a handicap, qui posent des pierres avant le premier
+ * coup (AB) et font commencer Blanc -- soit, en pratique, une bonne part des
+ * parties enseignantes et des matchs contre un moteur.
+ *
+ * Les regles, elles, ne bloquent rien : elles ne changent pas le deroulement
+ * d'une partie deja jouee, seulement son comptage final et, a la marge, ce que
+ * le ko autorise. On le signale en console sans refuser le fichier.
+ */
+async function OpenSgf(text, fileName, selected) {
+    const sgf = ParseSgf(text);
+    if (!sgf) return Notify(t('hub.loadFailed'));
+
+    const name = 'go' + sgf.size;
+    if (sgf.height !== sgf.size || !gamesMap[name]) {
+        console.warn('[hub] SGF : goban', sgf.size + 'x' + sgf.height, '— aucun jeu correspondant');
+        return Notify(t('hub.sgfSize', { size: sgf.size + '\u00d7' + sgf.height }));
+    }
+
+    const stones = sgf.setup.black.length + sgf.setup.white.length;
+    if (sgf.handicap || stones || sgf.firstPlayer === 'W' || !sgf.alternates) {
+        console.warn('[hub] SGF : handicap', sgf.handicap, '— pierres posees', stones,
+            '— premier coup', sgf.firstPlayer, '— alternance', sgf.alternates);
+        return Notify(t('hub.sgfHandicap'));
+    }
+    if (!sgf.moves.length) return Notify(t('hub.loadFailed'));
+
+    // Les regles du fichier ne sont pas forcement celles que jocly arbitre.
+    // Elles ne changent pas les coups deja joues, donc la partie se rejoue ;
+    // c'est le score final qui differerait.
+    if (sgf.rules && !/^chinese|^tromp/i.test(sgf.rules))
+        console.info('[hub] SGF : regles', sgf.rules, '— rejouees sous celles du jeu');
+
+    const id = 'sgf-' + Date.now();
+    await store.set('fork:' + id, {
+        book: {
+            moves: sgf.moves,
+            sgf: true,
+            label: sgf.meta.name || sgf.meta.event
+                || (fileName || '').replace(/^.*[/\\]/, '').replace(/\.sgf$/i, '') || 'SGF',
+        },
+    });
+    console.info('[hub] SGF :', sgf.moves.length, 'coups sur', name);
+    return tRpc.call('new_match', name, null, id);
+}
+
 // Choisit le jeu d'un fichier : celui qu'il declare s'il existe dans le
 // catalogue, sinon celui de la fiche affichee. Le fichier fait autorite parce
 // que rejouer sa notation dans un AUTRE jeu ne peut pas marcher -- plateau et
@@ -431,6 +486,11 @@ async function OpenGameFile(text, fileName, hintGame) {
         console.info('[hub] KIF de shogi :', kif.moves.length, 'coups');
         return tRpc.call('new_match', r.game, null, id);
     }
+
+    // 2 quater. SGF : le format des parties de go. Comme les KIF il ne passe
+    //    pas par parse_pjn -- c'est un arbre de noeuds entre parentheses, pas
+    //    du PGN -- et la lecture vit dans book-format.js.
+    if (IsSgf(text)) return OpenSgf(text, fileName, selected);
 
     if (IsChuKif(text)) {
         const kif = ParseKif(text);

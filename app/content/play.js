@@ -1203,6 +1203,26 @@ async function WesternGame() {
 //
 // jocly n'ecrit pas la case de depart sur un coup a deux pas : on compare
 // alors les seules cases qu'il donne, passage puis arrivee.
+/**
+ * Un point de goban ("Q16", "pass") -> le coup legal correspondant, ou null.
+ *
+ * Comparaison EXACTE contre la notation naturelle du jeu : jocly ecrit
+ * exactement ces chaines (go-model.js, PosToString), donc il n'y a rien a
+ * traduire, seulement a verifier. Rendre null quand le point n'est pas jouable
+ * est tout l'interet : c'est ce qui distingue un coup refuse par le superko
+ * d'un coup joue une intersection plus loin.
+ */
+async function MoveFromGoPoint(token) {
+    const want = String(token || '').trim().toUpperCase();
+    if (!/^([A-HJ-Z]\d{1,2}|PASS)$/.test(want)) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    for (let i = 0; i < moves.length; i++)
+        if (String(naturals[i]).trim().toUpperCase() === want) return moves[i];
+    return null;
+}
+
 async function MoveFromSquares(token) {
     // Parachutage : « P@c6 », la piece nommee et la case, sans depart.
     const drop = /^([A-Z+]*)@([a-l]\d{1,2})$/.exec(String(token || '').trim());
@@ -1900,9 +1920,16 @@ async function BookReplay(book) {
             recordedPrelude.push(book.moves.shift());
         await AnswerPrelude(book.moves && book.moves[0], recordedPrelude);
 
-        const format = book.kif ? 'kif' : MoveFormat(book.moves);
+        // Un livre venu d'un SGF porte ses coups en POINTS du goban ("Q16",
+        // "pass") -- la notation que go-model.js ecrit lui-meme. Le hub l'a
+        // dit (`book.sgf`), et la resolution est exacte : « Q16 » et « Q15 »
+        // ne different que d'un caractere, donc la resolution floue jouerait
+        // le point voisin sans le dire, et une partie de go ne pardonne pas
+        // une pierre posee a cote.
+        const format = book.kif ? 'kif' : (book.sgf ? 'sgf' : MoveFormat(book.moves));
         let exact = null;
         if (format === 'kif') exact = MoveFromSquares;
+        else if (format === 'sgf') exact = MoveFromGoPoint;
         else if (format === 'wxf') exact = MoveFromWxf;
         else if (format === 'san') exact = MoveFromSan;
         else if (format === 'usi') exact = MoveFromUSI;
