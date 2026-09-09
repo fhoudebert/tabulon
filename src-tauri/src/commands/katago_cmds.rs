@@ -65,6 +65,42 @@ const SEARCH_GRACE: Duration = Duration::from_secs(30);
 /// Colonnes GTP : l'alphabet SANS le I, convention universelle du go.
 const COLUMNS: &[u8] = b"ABCDEFGHJKLMNOPQRSTUVWXYZ";
 
+/// Regle appliquee quand le front n'en declare aucune.
+///
+/// C'est celle que `go-model.js` arbitre : comptage par aire, superko
+/// POSITIONNEL, suicide interdit -- ce que KataGo appelle `chinese-ogs` et
+/// non `chinese`, dont le preset utilise le ko SIMPLE.
+const KATAGO_RULES_DEFAULT: &str = "chinese-ogs";
+
+/// Les presets acceptes par `kata-set-rules`.
+///
+/// Filtre ici plutot que de laisser passer : un nom inconnu ferait repondre
+/// `?` au moteur, et comme cette commande-la est TOLERANTE a l'echec (voir
+/// `katago_search`) la partie continuerait silencieusement sous la regle du
+/// fichier de configuration -- exactement ce que ce module cherche a ne plus
+/// laisser au hasard. Une faute de frappe doit donc echouer avant le
+/// lancement, comme une taille de goban impossible.
+/// Rang de la reponse a `kata-set-rules` dans le dialogue GTP.
+///
+/// gtp_script la met en tete, et katago_search compte les reponses pour
+/// trouver celle du genmove : la boucle a besoin de ce rang pour tolerer un
+/// echec sur cette commande-la et sur aucune autre. Les deux moities sont
+/// verifiees par les tests de ce module.
+const RULES_CMD_POSITION: usize = 1;
+
+const KATAGO_RULESETS: &[&str] = &[
+    "tromp-taylor",
+    "chinese",
+    "chinese-ogs",
+    "chinese-kgs",
+    "japanese",
+    "korean",
+    "stone-scoring",
+    "aga",
+    "bga",
+    "new-zealand",
+];
+
 /// Chemin du binaire KataGo, ou None s'il n'est pas installe.
 pub fn katago_path() -> Option<PathBuf> {
     binary_path(KATAGO_BIN, "TABULON_KATAGO")
@@ -103,6 +139,13 @@ pub struct KataSearchRequest {
     /// Chemin RELATIF AU BINAIRE, comme l'`evalFile` de Fairy-Stockfish.
     #[serde(default)]
     pub net: Option<String>,
+    /// Les regles sous lesquelles le JEU arbitre, publiees par go-model.js et
+    /// transportees par jocly.kata.js. Absentes -- vieux dist, ou hote qui ne
+    /// les relaie pas -- on retombe sur KATAGO_RULES_DEFAULT plutot que sur le
+    /// fichier de configuration : mieux vaut une regle connue et fausse qu'une
+    /// regle inconnue.
+    #[serde(default)]
+    pub rules: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -171,7 +214,25 @@ pub(crate) fn gtp_script(req: &KataSearchRequest) -> Result<Vec<String>, String>
     if size == 0 || size as usize > COLUMNS.len() {
         return Err(format!("taille de goban non geree : {}", size));
     }
+    let rules = req.rules.as_deref().unwrap_or(KATAGO_RULES_DEFAULT);
+    if !KATAGO_RULESETS.contains(&rules) {
+        return Err(format!("regles KataGo inconnues : {}", rules));
+    }
+    /*
+     * `kata-set-rules` D'ABORD, avant que le moindre coup ne soit rejoue : la
+     * legalite depend de la regle. Le suicide multi-pierres est legal en
+     * tromp-taylor et interdit ici, donc une partie rejouee sous la mauvaise
+     * regle peut se voir refuser un `play` parfaitement valide.
+     *
+     * Sans cette ligne le moteur jouait sous la regle de son katago.cfg, que
+     * Tabulon ne fournit pas et ne lit pas : le gtp_example.cfg de KataGo
+     * porte `rules = tromp-taylor`. Le moteur pouvait donc proposer un coup
+     * que jocly refuse -- cas deja prevu, et journalise, par jocly.kata.js.
+     */
     let mut out = vec![
+        // Position fixee par RULES_CMD_POSITION, dont depend la tolerance de
+        // la boucle de lecture.
+        format!("kata-set-rules {}", rules),
         format!("boardsize {}", size),
         "clear_board".to_string(),
         format!("komi {}", req.komi),
@@ -379,7 +440,31 @@ pub async fn katago_search(
                 }
                 None
             }
-            GtpLine::Error(m) => Some(Err(m)),
+            GtpLine::Error(m) => {
+                seen += 1;
+                /*
+                 * Un echec sur kata-set-rules N'ARRETE PAS la recherche.
+                 *
+                 * La commande est une extension GTP de KataGo : un binaire
+                 * ancien repond `? unknown command`. Traiter cela comme une
+                 * panne rendrait le go injouable pour qui a un vieux moteur,
+                 * alors que le moteur, lui, va tres bien -- et le bandeau
+                 * afficherait « le moteur n'a pas pu demarrer », ce qui serait
+                 * faux. On joue donc sous la regle du katago.cfg, en le
+                 * disant : last_info remonte jusqu'au front.
+                 *
+                 * Toute autre erreur reste fatale : un `play` refuse ou un
+                 * genmove en echec veut dire que la position ou le moteur ne
+                 * sont pas ce qu'on croit.
+                 */
+                if seen == RULES_CMD_POSITION {
+                    log::warn!("kata-set-rules refuse ({}) : le moteur joue sous les regles de {}", m, KATAGO_CFG);
+                    last_info = Some(format!("kata-set-rules refuse : {}", m));
+                    None
+                } else {
+                    Some(Err(m))
+                }
+            }
             GtpLine::Ok(v) => {
                 seen += 1;
                 // La reponse qui compte est celle du genmove, c'est-a-dire la
@@ -439,6 +524,7 @@ mod tests {
             visits: None,
             move_time_ms: None,
             net: None,
+            rules: None,
         }
     }
 
@@ -482,6 +568,7 @@ mod tests {
         assert_eq!(
             s,
             vec![
+                "kata-set-rules chinese-ogs",
                 "boardsize 9",
                 "clear_board",
                 "komi 7.5",
@@ -491,6 +578,48 @@ mod tests {
                 "genmove w",
             ]
         );
+    }
+
+    // Les regles d'abord, et AVANT le moindre `play` : la legalite en depend.
+    // Le suicide multi-pierres est legal en tromp-taylor et interdit sous la
+    // regle que jocly arbitre, donc une partie rejouee sous la mauvaise regle
+    // peut se voir refuser un coup parfaitement valide.
+    #[test]
+    fn rules_are_set_before_any_move() {
+        let s = gtp_script(&req(9, vec![(40, 1)], 2)).unwrap();
+        assert_eq!(s[0], "kata-set-rules chinese-ogs");
+        assert_eq!(
+            RULES_CMD_POSITION, 1,
+            "la boucle de lecture traite cette reponse a part : voir katago_search"
+        );
+    }
+
+    // Sans declaration du front on ne retombe pas sur le katago.cfg -- que
+    // Tabulon ne fournit pas et dont le modele livre par KataGo porte
+    // tromp-taylor -- mais sur la regle que go-model.js arbitre.
+    #[test]
+    fn a_silent_front_still_gets_a_known_ruleset() {
+        let s = gtp_script(&req(9, vec![], 1)).unwrap();
+        assert_eq!(s[0], format!("kata-set-rules {}", KATAGO_RULES_DEFAULT));
+        assert_eq!(KATAGO_RULES_DEFAULT, "chinese-ogs");
+    }
+
+    #[test]
+    fn a_declared_ruleset_is_passed_through() {
+        let mut r = req(9, vec![], 1);
+        r.rules = Some("japanese".to_string());
+        assert_eq!(gtp_script(&r).unwrap()[0], "kata-set-rules japanese");
+    }
+
+    // Un nom inconnu echoue AVANT le lancement. Laisse passer, il ferait
+    // repondre `?` au moteur -- et comme cette reponse-la est toleree, la
+    // partie continuerait sous la regle du fichier de configuration, sans que
+    // personne ne l'apprenne.
+    #[test]
+    fn an_unknown_ruleset_is_refused_up_front() {
+        let mut r = req(9, vec![], 1);
+        r.rules = Some("chinoise".to_string());
+        assert!(gtp_script(&r).is_err());
     }
 
     // Une passe est un coup de la suite, pas une absence de coup : la sauter

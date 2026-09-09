@@ -265,6 +265,7 @@ console.log('Test 10 - KataGo : ce que l\'Init doit retenir');
     w.postMessage({
         type: 'Search',
         moves: [{ loc: 40, col: 1 }], toPlay: 2, komi: 5.5,
+        rules: 'chinese-ogs',
         visits: 64, moveTimeMs: 3000,
     });
     await settle();
@@ -276,6 +277,12 @@ console.log('Test 10 - KataGo : ce que l\'Init doit retenir');
        'la position part telle quelle : une suite de coups, pas un FEN');
     ok(req.toPlay === 2 && req.komi === 5.5, 'le trait et le komi suivent');
     ok(req.visits === 64 && req.moveTimeMs === 3000, 'le budget du niveau suit');
+    // Les regles voyagent avec la position. Sans elles KataGo joue sous celles
+    // de son katago.cfg -- que Tabulon ne fournit pas, et dont le modele livre
+    // par KataGo porte tromp-taylor : le moteur proposerait alors des suicides
+    // multi-pierres que jocly refuse.
+    ok(req.rules === 'chinese-ogs',
+       'les regles arbitrees par le jeu accompagnent la recherche');
     ok(seen.length === 2 && seen[1].type === 'Done' && seen[1].data.bestMove === 40,
        'la reponse porte l\'index de l\'intersection');
 }

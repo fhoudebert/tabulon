@@ -328,6 +328,12 @@ class NativeKataWorker {
             moves:      msg.moves || [],
             toPlay:     msg.toPlay,
             komi:       msg.komi,
+            // Les regles sous lesquelles le JEU arbitre, publiees par
+            // go-model.js. Sans elles KataGo joue sous celles de son
+            // katago.cfg -- que Tabulon ne fournit pas -- et peut proposer un
+            // coup que jocly refuse. Le worker wasm de jocly ignore ce champ,
+            // son ABI n'ayant pas de quoi le transmettre ; le pont natif, si.
+            rules:      msg.rules,
             // Retenus de l'Init : KataGo en a besoin au lancement.
             boardSize:  this._boardSize,
             net:        this._net,
