@@ -122,14 +122,24 @@ console.log('Rejouée dans un vrai go');
 
     const match = await Jocly.createMatch('go' + sgf.size);
 
-    // Le prélude des règles compte pour un coup tant qu'il n'a pas été
-    // répondu : aucun point n'est légal avant. play.js fait la même chose.
-    const prelude = await match.getPossibleMoves();
-    const preludeNames = await match.getMoveString(prelude);
-    if (preludeNames.every(n => /^#\d+$/.test(n))) {
-        await match.playMove(prelude[0]);
-        ok(true, 'le prélude des règles est répondu avant la relecture');
+    /*
+     * Le prélude des règles compte pour des coups tant qu'il n'a pas été
+     * franchi : aucun point n'est légal avant. Il en faut DEUX -- la réponse
+     * ("#0") puis une étape vide ("--") que l'adversaire traverse sans rien
+     * décider, faute de quoi le trait resterait inversé et Blanc poserait la
+     * première pierre. D'où la boucle plutôt qu'un coup unique. play.js fait
+     * la même chose, en s'arrêtant sur le même critère.
+     */
+    let preludePlies = 0;
+    for (;;) {
+        const moves = await match.getPossibleMoves();
+        const names = await match.getMoveString(moves);
+        if (!names.length || !names.every(n => /^(#\d+|--)$/.test(n))) break;
+        await match.playMove(moves[0]);
+        preludePlies++;
     }
+    ok(preludePlies % 2 === 0,
+       `le prélude est franchi en ${preludePlies} demi-coups — un nombre pair, sinon le trait est inversé`);
 
     // Résolution EXACTE, comme play.js pour un livre SGF : pickMove choisit
     // par distance d'édition et ne peut pas échouer, donc « Q16 » manquant se
