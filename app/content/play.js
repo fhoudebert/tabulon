@@ -417,6 +417,8 @@ async function gameLoop() {
                     // qu'il joue contre l'IA native. jocly ne signale QUE le
                     // coup concerne, mais il replie a CHAQUE coup : on
                     // n'avertit donc qu'une fois par partie.
+                    // Pas d'await : le bandeau interroge l'ecran
+                    // d'installation, et le coup n'a pas a attendre apres lui.
                     ShowFairyFallback(result?.fairyFallback);
 
                     if (!result?.move) {
@@ -570,17 +572,63 @@ function HideWarning() {
 // Champ absent d'un dist jocly anterieur au support de fairyFallback : dans
 // ce cas info est undefined et rien ne s'affiche -- pas de regression.
 let fairyFallbackWarned = false;
-function ShowFairyFallback(info) {
+// Le moteur nomme par jocly -> l'entree correspondante de l'ecran
+// d'installation. Les trois moteurs de jocly sont, dans Tabulon, des binaires
+// poses a cote de l'executable (voir engine-native.js) : c'est donc a cet
+// ecran que renvoie le message quand il en manque un.
+const ENGINE_INSTALL_ID = {
+    'fairy-stockfish': 'engine',
+    'scan':            'scan',
+    'kata':            'katago',
+};
+
+/**
+ * Le niveau demande n'a pas pu jouer : on le dit une fois par partie.
+ *
+ * POURQUOI CE MESSAGE EXISTE : sans lui, un niveau adosse a un moteur absent
+ * rendait la main au joueur SANS RIEN DIRE -- il se retrouvait a jouer les
+ * deux couleurs en croyant a un bug de l'interface. C'etait le cas de
+ * « Champion » aux dames internationales tant que jocly.scan.js n'avait pas
+ * de repli.
+ *
+ * DEUX NIVEAUX SONT NOMMES, pas un : celui que le joueur a choisi reste
+ * affiche dans la liste deroulante, donc ne citer que le remplacant laisserait
+ * croire a une erreur d'affichage. jocly transporte les deux (`requested` et
+ * `level`) ; un vieux dist qui ne poserait que le second donne un message
+ * encore juste, sans le nom du niveau demande.
+ *
+ * LE CONSEIL QUI SUIT EST DEDUIT, PAS DEVINE. Un binaire manquant et une page
+ * sans isolation cross-origin demandent deux gestes opposes, et le motif rendu
+ * par le moteur est un texte libre qu'on ne va pas analyser. On demande donc a
+ * l'ecran d'installation si le binaire est la : absent -> il faut l'installer ;
+ * present -> c'est l'environnement qui l'empeche de tourner.
+ */
+async function ShowFairyFallback(info) {
     if (!info || fairyFallbackWarned) return;
     fairyFallbackWarned = true;
-    let msg = t('play.fairyFallback', { level: translateLevelLabel(info.level) || '?' });
-    // Le conseil "servir la page en cross-origin isolated" n'a de sens que
-    // si l'environnement peut effectivement l'obtenir. Sous WebKitGTK le
-    // schema tauri:// n'accorde pas l'isolation : inviter l'utilisateur a
-    // corriger des en-tetes ne l'avancerait a rien.
-    msg += ' ' + (typeof SharedArrayBuffer === 'function'
-        ? t('play.fairyFallbackIsolate')
-        : t('play.fairyFallbackUnsupported'));
+
+    const asked = translateLevelLabel(info.requested);
+    const played = translateLevelLabel(info.level) || '?';
+    let msg = asked
+        ? t('play.engineFallback', { requested: asked, level: played })
+        : t('play.engineFallbackAnon', { level: played });
+
+    const id = ENGINE_INSTALL_ID[info.engine];
+    const status = id ? await tRpc.call('install_status').catch(() => null) : null;
+    const item = status?.items?.find(i => i.id === id);
+
+    if (item && !item.present)
+        msg += ' ' + t('play.engineFallbackInstall', { page: t('install.title') });
+    else if (typeof SharedArrayBuffer === 'function')
+        // L'isolation cross-origin est atteignable ici : la conseiller a un
+        // sens. Sous WebKitGTK le schema tauri:// ne l'accorde pas, et
+        // inviter a corriger des en-tetes n'avancerait a rien.
+        // La phrase ne nomme plus Fairy-Stockfish : les trois moteurs passent
+        // par ce chemin, et le message nomme deja le niveau concerne.
+        msg += ' ' + t('play.engineFallbackIsolate');
+    else
+        msg += ' ' + t('play.engineFallbackUnsupported');
+
     ShowWarning(msg);
 }
 
