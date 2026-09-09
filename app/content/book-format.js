@@ -2087,3 +2087,88 @@ export function ParseSgf(text) {
         },
     };
 }
+
+/**
+ * Un point tel que jocly l'ecrit ("D4") -> la valeur SGF ("dp"), ou null.
+ *
+ * L'inverse exact de SgfPoint, et teste comme tel : les deux systemes se
+ * ressemblent assez pour qu'une erreur de conversion se relise sans broncher
+ * et designe une autre intersection.
+ */
+export function SgfValue(point, size) {
+    const p = String(point == null ? '' : point).trim().toUpperCase();
+    if (!p || p === 'PASS') return '';
+    const col = SGF_COLUMNS.indexOf(p[0]);
+    const line = parseInt(p.slice(1), 10);
+    if (col < 0 || col >= size || !(line >= 1) || line > size) return null;
+    return String.fromCharCode(97 + col) + String.fromCharCode(97 + (size - line));
+}
+
+/**
+ * Ecriture d'une partie de go au format SGF.
+ *
+ * `moves` est la notation naturelle de jocly ("Q16", "pass"), telle que
+ * l'Historique la detient deja. Les jetons de PRELUDE ("#0") sont ecartes :
+ * ils comptent pour un coup chez jocly mais ne posent aucune pierre, et un
+ * lecteur tiers n'en ferait rien.
+ *
+ * LES COULEURS VIENNENT DE LA PARITE, pas du fichier : le go de jocly part
+ * d'un goban vide et alterne strictement en commencant par Noir. C'est aussi
+ * pourquoi l'import refuse les parties a handicap -- les deux moities de ce
+ * module font la meme hypothese, et elle est vraie de tout ce que Tabulon
+ * sait jouer.
+ *
+ * PIEGE DES NOMS. Chez jocly, PLAYER_A joue les pierres NOIRES et ouvre la
+ * partie ; ailleurs dans Tabulon, A est appele « White » parce que c'est vrai
+ * aux echecs. Les proprietes SGF, elles, nomment des couleurs reelles : PB est
+ * le joueur A, PW le joueur B. Le meta demande donc `playerA` et `playerB`,
+ * qui ne peuvent pas etre pris l'un pour l'autre.
+ */
+export function BuildSGF(moves, size, meta = {}) {
+    const esc = (v) => String(v == null ? '' : v).replace(/([\]\\])/g, '\\$1');
+    const prop = (name, value) => (value == null || value === '' ? '' : name + '[' + esc(value) + ']');
+
+    const head = [
+        'GM[1]', 'FF[4]', 'CA[UTF-8]',
+        'SZ[' + size + ']',
+        meta.komi == null ? '' : 'KM[' + meta.komi + ']',
+        prop('RU', SGF_RULE_NAMES[meta.rules] || meta.rules),
+        prop('AP', meta.application),
+        prop('GN', meta.event),
+        prop('PB', meta.playerA),
+        prop('PW', meta.playerB),
+        prop('DT', meta.date),
+        prop('RE', meta.result),
+    ].filter(Boolean).join('');
+
+    let body = '', line = 0;
+    for (const raw of moves || []) {
+        const token = String(raw == null ? '' : raw).trim();
+        if (/^#\d+$/.test(token)) continue;           // reponse de prelude
+        const value = SgfValue(token, size);
+        // Un jeton qu'on ne sait pas ecrire arreterait la partie au mauvais
+        // endroit sans le dire : on refuse le fichier entier.
+        if (value === null) return null;
+        body += ';' + (line % 2 === 0 ? 'B' : 'W') + '[' + value + ']';
+        line++;
+        if (line % 10 === 0) body += '\n';
+    }
+    return '(;' + head + '\n' + body + ')\n';
+}
+
+/**
+ * Le nom SGF d'un jeu de regles de jocly.
+ *
+ * RU est un champ libre, mais ses valeurs usuelles sont connues des lecteurs
+ * et « chinese-ogs » n'en fait pas partie. On ecrit donc ce que les autres
+ * comprennent, en acceptant que « Chinese » soit moins precis que la verite --
+ * la difference tient au ko, que ces parties-ci n'exercent presque jamais, et
+ * un RU inconnu ferait supposer le japonais par defaut, ce qui serait faux
+ * sur le point qui compte vraiment : le comptage.
+ */
+const SGF_RULE_NAMES = {
+    'chinese-ogs': 'Chinese',
+    'chinese-kgs': 'Chinese',
+    'chinese': 'Chinese',
+    'tromp-taylor': 'Tromp-Taylor',
+};

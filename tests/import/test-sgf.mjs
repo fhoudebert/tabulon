@@ -19,7 +19,8 @@ import { createRequire } from 'module';
 import { readdirSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { IsSgf, ParseSgf, SgfPoint, ReplayBookMoves } from '../../app/content/book-format.js';
+import { IsSgf, ParseSgf, SgfPoint, SgfValue, BuildSGF,
+         ReplayBookMoves } from '../../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
 const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
@@ -157,6 +158,52 @@ console.log('Rejouée dans un vrai go');
     const names = await match.getMoveString(record);
     ok(names[names.length - 1] === sgf.moves[sgf.moves.length - 1],
        `le dernier coup joué est celui du fichier (${sgf.moves[sgf.moves.length - 1]})`);
+}
+
+console.log('');
+console.log('Ecriture');
+{
+    // L'inverse exact de la lecture, et teste comme tel : les deux systemes se
+    // ressemblent assez pour qu'une conversion fausse se relise sans broncher
+    // et designe une autre intersection.
+    ok(SgfValue('D4', 19) === 'dp', 'D4 s\'ecrit dp');
+    ok(SgfValue('Q16', 19) === 'pd', 'Q16 s\'ecrit pd');
+    ok(SgfValue('J19', 19) === 'ia', 'la colonne J redevient la 9e lettre');
+    ok(SgfValue('pass', 19) === '', 'une passe est une valeur vide');
+    ok(SgfValue('I5', 19) === null, 'le I, qui n\'existe pas, est refuse');
+    ok(SgfValue('A20', 19) === null, 'et une ligne hors du goban aussi');
+
+    // Le vrai controle : ecrire puis relire doit rendre la partie de depart.
+    const sgf = ParseSgf(readFileSync(path.join(dir, 'selfplay-9x9.sgf'), 'utf-8'));
+    const written = BuildSGF(sgf.moves, 9, {
+        komi: 5.5, rules: 'chinese-ogs', application: 'Tabulon',
+        playerA: 'Noir', playerB: 'Blanc', result: 'B+3.5', date: '2026-09-09',
+    });
+    const back = ParseSgf(written);
+    ok(JSON.stringify(back.moves) === JSON.stringify(sgf.moves),
+       `aller-retour sur ${sgf.moves.length} coups`);
+    ok(back.size === 9 && back.komi === 5.5, 'le goban et le komi survivent');
+    // « chinese-ogs » n'est pas une valeur que les lecteurs connaissent : on
+    // ecrit ce qu'ils comprennent, quitte a etre moins precis sur le ko.
+    ok(back.rules === 'Chinese', 'les regles sont ecrites sous un nom lisible');
+    ok(back.meta.black === 'Noir' && back.meta.white === 'Blanc',
+       'PB est le joueur A, qui pose les pierres noires');
+    ok(back.firstPlayer === 'B' && back.alternates, 'Noir ouvre, et les couleurs alternent');
+
+    // Le jeton de prelude compte pour un coup chez jocly mais ne pose aucune
+    // pierre : l'ecrire donnerait un fichier decale d'un demi-coup.
+    const withPrelude = ParseSgf(BuildSGF(['#1', 'A9', 'B8'], 9, {}));
+    ok(JSON.stringify(withPrelude.moves) === JSON.stringify(['A9', 'B8']),
+       'la reponse du prelude n\'est pas ecrite');
+
+    // Un jeton qu'on ne sait pas convertir arrete tout : un fichier tronque
+    // s'ouvrirait et montrerait une autre partie.
+    ok(BuildSGF(['A9', 'ZZ9'], 9, {}) === null, 'un coup illisible refuse le fichier entier');
+
+    // Les caracteres qui ferment une propriete doivent etre echappes, sinon un
+    // nom de joueur suffit a couper le fichier en deux.
+    const tricky = ParseSgf(BuildSGF(['A9'], 9, { playerA: 'a] b\\ c' }));
+    ok(tricky && tricky.meta.black === 'a] b\\ c', 'un nom a crochet est echappe puis relu');
 }
 
 console.log('');

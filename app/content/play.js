@@ -851,6 +851,14 @@ function initSatelliteListeners() {
         tsume:  tsumeMatch,
         white:  PlayerLabel(Jocly.PLAYER_A),
         black:  PlayerLabel(Jocly.PLAYER_B),
+        // Les MEMES libelles, nommes par le camp et non par la couleur. Au go
+        // c'est PLAYER_A qui joue les pierres noires, donc « white » ci-dessus
+        // designe le joueur NOIR -- un heritage des echecs, ou A est bien
+        // Blanc. Un export SGF nomme des couleurs reelles (PB, PW) et ne peut
+        // pas se servir des deux champs precedents sans les inverser une fois
+        // sur deux ; ceux-ci ne se pretent pas a la confusion.
+        playerA: PlayerLabel(Jocly.PLAYER_A),
+        playerB: PlayerLabel(Jocly.PLAYER_B),
         result: gameResult,
     });
 
@@ -871,9 +879,18 @@ function initSatelliteListeners() {
         // un tag [FEN] a la sauvegarde, sans quoi une partie partie d'un
         // probleme se rechargerait depuis la position initiale du jeu.
         const saved = await SaveMatch();
+        // Komi, regles et ecart : ce qu'un export SGF doit ecrire et que la
+        // liste des coups ne porte pas. Publies par go-model.js sur le canal
+        // getBoardState('score') ; les autres jeux repondent leur notation de
+        // plateau (une chaine) et n'ajoutent donc rien ici.
+        const score = await joclyMatch.getBoardState('score').catch(() => null);
+        const go = score && typeof score === 'object' ? score : null;
         await emit(`play-rep:${matchId}:get-played-moves`, {
             moves: Array.isArray(strings) ? strings : moves.map(() => '?'),
             initialBoard: saved?.initialBoard || null,
+            komi:   go ? go.komi : null,
+            rules:  go ? go.rules : null,
+            margin: go && go.counted ? go.margin : null,
             // Le jeu, pour que la fenetre Historique ecrive le bon tag
             // [JoclyGame] a la sauvegarde. Elle le lit AUSSI dans son URL,
             // mais cette reponse-ci fait autorite : elle vient du match.
