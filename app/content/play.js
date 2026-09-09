@@ -401,9 +401,12 @@ async function gameLoop() {
                     // recherche KataGo dure des secondes, et la question du
                     // joueur pendant ce temps est de savoir QUI reflechit,
                     // pas que quelqu'un reflechit.
-                    UpdateFooter(t(turn > 0 ? 'play.thinkingA' : 'play.thinkingB',
-                        { level: PlayerLabel(turn) }));
-                    const result = await joclyMatch.machineSearch({ level });
+                    const stopClock = StartThinkingClock(
+                        t(turn > 0 ? 'play.thinkingA' : 'play.thinkingB',
+                          { level: PlayerLabel(turn) }));
+                    let result;
+                    try { result = await joclyMatch.machineSearch({ level }); }
+                    finally { stopClock(); }
                     UpdateFooter('');
 
                     // Repli Fairy-Stockfish -> IA native : jocly pose
@@ -495,6 +498,51 @@ async function FinalMargin() {
     if (!state || typeof state !== 'object' || !state.counted) return null;
     const margin = Math.abs(state.margin);
     return margin > 0 ? margin : null;   // un jigo n'a pas d'ecart a annoncer
+}
+
+/**
+ * Un temps de reflexion, ecrit court : « 3.4 s » sous la minute, « 1:05 »
+ * au-dela. Le dixieme compte -- c'est ce qui distingue un moteur qui cherche
+ * d'un moteur qui a fini et n'a pas rendu la main.
+ *
+ * L'unite ne passe pas par le dictionnaire : « s » s'ecrit pareil dans les
+ * deux langues, et un affichage qui se rafraichit dix fois par seconde n'est
+ * pas l'endroit ou faire travailler l'i18n.
+ */
+function FormatElapsed(ms) {
+    const s = ms / 1000;
+    if (s < 60) return s.toFixed(1) + ' s';
+    return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+}
+
+/**
+ * Le chronometre d'un tour de moteur, demarre avant la recherche et arrete
+ * par l'appelant quoi qu'il arrive (d'ou le `finally`).
+ *
+ * POURQUOI : une recherche KataGo dure des secondes, et pendant ce temps rien
+ * ne bouge -- ni le plateau, ni le pied de page. Un texte fixe ne distingue
+ * pas « cela reflechit » de « cela a plante », alors qu'un compteur qui avance
+ * repond a la question sans qu'on ait a ouvrir la console.
+ *
+ * Le compteur n'avance que si la recherche ne tient pas le fil principal.
+ * C'est le cas ici -- jocly fait tourner ses moteurs dans un Worker ou, pour
+ * les moteurs natifs, dans un processus fils cote Rust -- mais un moteur qui
+ * bloquerait la page figerait aussi son chronometre, et l'immobilite serait
+ * alors le bon diagnostic plutot qu'un bug d'affichage.
+ *
+ * @returns {() => number} arret du chronometre ; renvoie la duree ecoulee.
+ */
+function StartThinkingClock(label) {
+    const t0 = Date.now();
+    const tick = () => UpdateFooter(`${label} ${FormatElapsed(Date.now() - t0)}`);
+    tick();
+    const timer = setInterval(tick, 100);
+    return () => {
+        clearInterval(timer);
+        const ms = Date.now() - t0;
+        console.info(`[play] recherche terminee en ${FormatElapsed(ms)}`);
+        return ms;
+    };
 }
 
 // -- Helpers UI ---------------------------------------------------------------

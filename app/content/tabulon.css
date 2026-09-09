@@ -955,6 +955,11 @@ strong { font-weight: 600; }
    (équivalent du .ephemeral-vanish de JoclyBoard) */
 .ephemeral-actions.bar-visible .ephemeral-vanish { display: none; }
 
+/* Le pied de plateau porte un chronomètre de réflexion rafraîchi dix fois par
+   seconde. Des chiffres à chasse fixe évitent que « 9.9 s » puis « 10.0 s »
+   fassent respirer la ligne à chaque dixième. */
+#board-footer-text { font-variant-numeric: tabular-nums; }
+
 /* ── Fenêtre clock.html (affichage de l'horloge, porté de JoclyBoard) ───────── */
 .clock-content { height: 100%; padding: 0; }
 .clock-content .clock {
