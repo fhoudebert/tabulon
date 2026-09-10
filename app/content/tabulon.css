@@ -977,6 +977,29 @@ strong { font-weight: 600; }
    fassent respirer la ligne à chaque dixième. */
 #board-footer-text { font-variant-numeric: tabular-nums; }
 
+/* La pastille de messages non lus, sur le bouton Discussion de la barre de jeu.
+   Elle existe parce que la fenêtre est fermée par défaut : sans elle, un
+   message arrive et personne ne le sait. Le nombre est écrit dans
+   data-unread par play.js et affiché ici — pas d'élément supplémentaire à
+   créer et à détruire au fil des messages. */
+#button-chat { position: relative; }
+#button-chat.has-unread::after {
+  content: attr(data-unread);
+  position: absolute;
+  top: -4px; right: -4px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #d64541;
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  font-weight: 600;
+  text-align: center;
+  /* Le bouton porte déjà l'infobulle ; la pastille ne doit pas la voler. */
+  pointer-events: none;
+}
+
 /* ── Fenêtre chat.html (discussion d'une partie à distance) ────────────────── */
 .chat-pane { display: flex; flex-direction: column; height: 100%; padding: 8px; }
 

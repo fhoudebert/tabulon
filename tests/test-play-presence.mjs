@@ -194,5 +194,45 @@ assert(true, 'le bouton Reprendre annonce le retour');
     assert(pushed.canWrite === true, 'et le droit d’écrire — ici pair-à-pair, rien ne transite par un serveur');
 }
 
+// 6. La pastille de messages non lus.
+//
+//    Elle existe parce que la fenêtre est fermée par défaut : sans elle, un
+//    message arrive et personne ne le sait. Et play.js n'a aucun moyen de
+//    savoir si la fenêtre est ouverte — Tauri ne prévient pas de sa fermeture
+//    — donc c'est la fenêtre qui signale ce qu'elle a affiché. Tant qu'elle se
+//    tait, les messages sont non lus, ce qui est exactement vrai.
+{
+    const btn = document.getElementById('button-chat');
+    const listeners = bus['tabulon-peer://message'] || [];
+    const incoming = (id, body) => listeners.forEach(fn => fn({ payload: JSON.stringify({
+        v: 1, kind: 'chat', side: PLAYER_B, at: Date.now(), id, quick: body }) }));
+
+    incoming('1111111111111111', 'yourTurn');
+    await waitFor(() => btn.classList.contains('has-unread'), 'la pastille s’allume');
+    // UN, pas deux : l'adversaire a aussi envoyé un état de présence plus haut,
+    // et celui-là s'affiche déjà dans le pied de plateau. L'allumer enverrait
+    // ouvrir une fenêtre où il n'y a rien de nouveau à lire.
+    assert(btn.dataset.unread === '1', 'un changement de présence ne compte pas comme un message');
+
+    incoming('2222222222222222', 'wellPlayed');
+    await waitFor(() => btn.dataset.unread === '2', 'deux messages non lus');
+    assert(btn.dataset.unread === '2', 'le compte suit — « 3 » dit s’il faut ouvrir tout de suite');
+
+    // La fenêtre signale ce qu'elle a affiché : la pastille s'éteint.
+    await mockTauri.event.emit('play-req:9:chat-seen', { id: '2222222222222222' });
+    await waitFor(() => !btn.classList.contains('has-unread'), 'la pastille s’éteint');
+    assert(btn.dataset.unread === '', 'et le compte est vidé');
+
+    // Un message de plus après lecture rallume, sans recompter les anciens.
+    incoming('3333333333333333', 'rematch');
+    await waitFor(() => btn.dataset.unread === '1', 'un message de plus rallume');
+    assert(btn.dataset.unread === '1', 'sans recompter ceux déjà lus');
+
+    // NOS propres messages ne comptent pas : ils sont lus par construction.
+    await mockTauri.event.emit('play-req:9:send-chat', { quick: 'yourTurn' });
+    await sleep(60);
+    assert(btn.dataset.unread === '1', 'nos propres messages ne s’ajoutent pas au compte');
+}
+
 console.log(`\n${passed} assertions OK — présence en jeu à distance validée.`);
 process.exit(0);

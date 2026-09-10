@@ -12,6 +12,13 @@
 //   réponse : listen('play-rep:{matchId}:get-chat', {conversation, canWrite, sides})
 //   poussée : listen('play-event:{matchId}:chat', {conversation, canWrite, sides})
 //   envoi   : emit('play-req:{matchId}:send-chat', {kind, body, quick})
+//   lu      : emit('play-req:{matchId}:chat-seen', {id})
+//
+// C'est cette derniere qui eteint la pastille de la barre de jeu. Elle part
+// d'ICI plutot que d'etre deduite la-bas, parce que play.js n'a aucun moyen de
+// savoir si cette fenetre est ouverte : Tauri ne previent pas de sa fermeture,
+// et une fenetre fermee ne dit rien. Tant qu'elle se tait, les messages sont
+// non lus -- ce qui est exactement vrai.
 //
 // UNE FENÊTRE PLUTÔT QU'UN PANNEAU. Un panneau à gauche du plateau prendrait
 // de la place à la seule chose qu'on regarde, et sur un goban 19x19 ou un
@@ -100,11 +107,28 @@ function SetCanWrite(canWrite) {
     if (status) status.textContent = canWrite ? '' : t('chat.noKey');
 }
 
+let conversation = [];
+
+/**
+ * Signale que tout ce qui est affiche a ete vu.
+ *
+ * SEULEMENT SI LA FENETRE EST VISIBLE : reduite ou cachee derriere le plateau,
+ * elle affiche bien mais personne ne lit, et eteindre la pastille ferait
+ * manquer le message. document.hidden couvre les deux cas.
+ */
+function MarkSeen() {
+    if (document.hidden || !conversation.length) return;
+    emit(`play-req:${matchId}:chat-seen`,
+        { id: conversation[conversation.length - 1].id }).catch(() => {});
+}
+
 function Apply(payload) {
     if (!payload) return;
     if (payload.sides) sides = payload.sides;
     SetCanWrite(!!payload.canWrite);
-    Render(payload.conversation || []);
+    conversation = payload.conversation || [];
+    Render(conversation);
+    MarkSeen();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -130,6 +154,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     $('chat-send')?.addEventListener('click', SendTyped);
     input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') SendTyped(); });
+
+    // Revenir sur la fenetre vaut lecture : un message arrive pendant qu'elle
+    // etait cachee doit eteindre la pastille des qu'on la regarde, sans avoir
+    // a cliquer dedans.
+    document.addEventListener('visibilitychange', MarkSeen);
+    window.addEventListener('focus', MarkSeen);
 
     await emit(`play-req:${matchId}:get-chat`, {});
     await twu.ready();

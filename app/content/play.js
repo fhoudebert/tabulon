@@ -241,6 +241,8 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
  */
 let chatChannel  = null;
 let chatSealed   = false;    // la partie a-t-elle une cle ? (texte libre possible)
+let chatSeenId   = null;    // dernier message que la fenetre dit avoir affiche
+let chatUnread   = 0;
 let remotePresence = null;   // dernier etat declare par l'adversaire
 
 /**
@@ -278,7 +280,10 @@ function disposeChatChannel() {
     chatChannel?.stop();
     chatChannel = null;
     chatSealed = false;
+    chatSeenId = null;
+    chatUnread = 0;
     remotePresence = null;
+    UpdateChatBadge();
     const chatBtn = document.getElementById('button-chat');
     if (chatBtn) chatBtn.style.display = 'none';
 }
@@ -298,7 +303,43 @@ function PushChat() {
     }).catch(() => {});
 }
 
+/**
+ * Combien de messages de l'adversaire n'ont pas ete lus.
+ *
+ * Compte a partir du dernier que la fenetre a signale (chat-seen), et
+ * uniquement les siens : les notres sont lus par construction. Un identifiant
+ * inconnu -- fenetre qui parle d'un fil plus ancien, message efface -- fait
+ * tout compter comme non lu, ce qui attire l'attention plutot que de la
+ * detourner.
+ */
+function CountUnread(conversation) {
+    const from = chatSeenId ? conversation.findIndex(m => m.id === chatSeenId) : -1;
+    // Les messages SEULEMENT : un changement de presence s'affiche deja dans
+    // le pied de plateau, et allumer la pastille pour lui enverrait ouvrir une
+    // fenetre ou il n'y a rien de nouveau a lire.
+    return conversation
+        .slice(from + 1)
+        .filter(m => m.side === remoteChannelKey && m.kind === ENVELOPE_KIND.CHAT)
+        .length;
+}
+
+/**
+ * La pastille de la barre de jeu.
+ *
+ * ELLE EST LA PARCE QUE LA FENETRE EST FERMEE PAR DEFAUT : sans elle, un
+ * message arrive et personne ne le sait. Un nombre plutot qu'un point : « 3 »
+ * dit s'il faut ouvrir tout de suite ou finir de reflechir d'abord.
+ */
+function UpdateChatBadge() {
+    const btn = document.getElementById('button-chat');
+    if (!btn) return;
+    btn.classList.toggle('has-unread', chatUnread > 0);
+    btn.dataset.unread = chatUnread > 9 ? '9+' : String(chatUnread || '');
+}
+
 function OnConversation(conversation) {
+    chatUnread = CountUnread(conversation);
+    UpdateChatBadge();
     PushChat();
     const side = remoteChannelKey;
     if (side === null) return;
@@ -881,6 +922,17 @@ function initSatelliteListeners() {
      * partie s'en apercoive, et sans qu'un message se perde.
      */
     listen(prefix + 'get-chat', () => { PushChat(); });
+
+    // La fenetre dit ce qu'elle a affiche. play.js n'a aucun moyen de le
+    // deviner : Tauri ne previent pas de la fermeture d'une fenetre, et une
+    // fenetre fermee ne dit rien -- ce qui est exactement le comportement
+    // voulu, ses messages restant non lus.
+    listen(prefix + 'chat-seen', ({ payload }) => {
+        if (!payload?.id) return;
+        chatSeenId = payload.id;
+        chatUnread = chatChannel ? CountUnread(chatChannel.conversation) : 0;
+        UpdateChatBadge();
+    });
 
     listen(prefix + 'send-chat', async ({ payload }) => {
         if (!chatChannel || !payload) return;
