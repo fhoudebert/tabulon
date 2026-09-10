@@ -212,6 +212,10 @@ const DICT = {
         'tip.saveBook': 'Save book', 'tip.loadBoardState': 'Load board state',
         'tip.displayBoardState': 'Display board state',
         'tip.resumeFromPosition': 'Resume from position',
+        // camera-view
+        'tip.addViewPoint': 'Add view point', 'tip.addSpeed': 'Add speed',
+        'tip.spinCcw': 'Spin counter-clockwise', 'tip.spinCw': 'Spin clockwise',
+        'tip.pauseSpin': 'Pause spin',
         // view-options
         'view.skin': 'Skin', 'view.sounds': 'Sounds', 'view.notation': 'Notation',
         'view.showMoves': 'Show moves', 'view.autoComplete': 'Auto-complete moves',
@@ -441,6 +445,9 @@ const DICT = {
         'tip.saveBook': 'Enregistrer la partie', 'tip.loadBoardState': 'Charger un état du plateau',
         'tip.displayBoardState': "Afficher l'état du plateau",
         'tip.resumeFromPosition': 'Reprendre depuis cette position',
+        'tip.addViewPoint': 'Ajouter un point de vue', 'tip.addSpeed': 'Ajouter une vitesse',
+        'tip.spinCcw': 'Rotation antihoraire', 'tip.spinCw': 'Rotation horaire',
+        'tip.pauseSpin': 'Arrêter la rotation',
         'view.skin': 'Habillage', 'view.sounds': 'Sons', 'view.notation': 'Notation',
         'view.showMoves': 'Montrer les coups', 'view.autoComplete': 'Compléter les coups',
         'view.showLastMove': 'Marquer le dernier coup',
