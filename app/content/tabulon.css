@@ -543,6 +543,16 @@ strong { font-weight: 600; }
   transition: opacity 1.2s ease;
 }
 
+/* Le panneau Affichage : une explication sous la case, en gris, pour dire
+   pourquoi on voudrait éteindre quelque chose qui a l'air décoratif. */
+.display-hint {
+  margin-top: 8px;
+  max-width: 46em;
+  color: #6c6c6c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* Carte d'infos superposée aux visuels */
 .game-detail .info {
   position: absolute;

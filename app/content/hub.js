@@ -42,6 +42,19 @@ let currentGame = null;     // gameName actuellement affiché dans le détail
 // l'ouverture d'un fichier).
 const g = () => currentGame;
 let visualTimer = null;     // interval de rotation des visuels 600x600
+/*
+ * Les visuels de fond sont-ils affiches ?
+ *
+ * Ce sont de grandes images livrees avec la ludotheque, et elles sont souvent
+ * les premieres supprimees quand la place manque. Le fond enchainait alors des
+ * fondus sur RIEN -- un defilement de vide, d'autant plus penible qu'il
+ * continue toutes les cinq secondes sans que rien ne l'explique.
+ *
+ * Le reglage vit dans le hub et non dans la fenetre « Options d'affichage » :
+ * celle-la est ouverte avec un numero de partie et dialogue avec sa fenetre de
+ * jeu (play-req:{id}), que le hub n'a pas.
+ */
+let showVisuals = true;
 // Passe à false si hub.html ne contient pas le panneau de détail (fichier
 // obsolète / cache) : le hub reste alors utilisable en mode dégradé (liste
 // + raccourcis) au lieu de planter avant ListGames().
@@ -163,6 +176,27 @@ async function ListGames() {
 
     await UpdateFavoriteGames();   // alimente favoritesMap pour les étoiles
 
+    /*
+     * Lu AVANT le premier affichage d'un jeu : SetupVisuals consulte
+     * showVisuals, et le lire trop tard ferait defiler une fois les images
+     * que l'on vient d'eteindre.
+     */
+    showVisuals = await store.get('hub-visuals') !== false;
+    const box = document.getElementById('display-visuals');
+    if (box) {
+        box.checked = showVisuals;
+        box.addEventListener('change', async () => {
+            showVisuals = box.checked;
+            await store.set('hub-visuals', showVisuals);
+            // Applique tout de suite, sans attendre le prochain jeu : le
+            // panneau ouvert est justement celui que l'on regarde.
+            if (currentGame) {
+                const cfg = await Jocly.getGameConfig(currentGame).catch(() => null);
+                if (cfg) SetupVisuals(cfg.view);
+            }
+        });
+    }
+
     const navLast = await store.get('nav-last') || 'games-fav';
     document.getElementById('nav-' + navLast)?.click();
 }
@@ -222,6 +256,9 @@ function SetupVisuals(view) {
     const container = document.querySelector('#game-detail .visuals > div');
     container.innerHTML = '';
 
+    // Le minuteur est arrete ET le conteneur vide : eteindre le reglage doit
+    // rendre le fond au calme, pas seulement le rendre transparent.
+    if (!showVisuals) return;
     if (!view.visuals?.['600x600']) return;
     const visuals = [view.visuals['600x600']].flat().map(v => distURL(view.fullPath + '/' + v));
 
@@ -1164,6 +1201,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // courante ne change pas).
     document.getElementById('nav-extensions').addEventListener('click', () => {
         tRpc.call('open_extensions');
+    });
+
+    document.getElementById('nav-display').addEventListener('click', () => {
+        SetNav('display'); document.getElementById('display').style.display = '';
     });
 
     document.getElementById('nav-install').addEventListener('click', () => {

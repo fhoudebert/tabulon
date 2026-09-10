@@ -213,5 +213,45 @@ assert($$('#game-detail .visuals > div > div').length === 0, 'cubic-chess (sans 
 //     (on simule en revérifiant l'état du store)
 assert(storeData.get('last-game') === 'cubic-chess', 'last-game suit la sélection');
 
+/* ── 12. Le réglage d'affichage des visuels ─────────────────────────────────
+ *
+ * Les visuels de fond sont de grandes images livrées avec la ludothèque, et
+ * souvent les premières supprimées quand la place manque. Le fond enchaînait
+ * alors des fondus sur RIEN, toutes les cinq secondes, sans que rien ne
+ * l'explique. D'où l'interrupteur — dans le hub, et pas dans la fenêtre
+ * « Options d'affichage », qui est ouverte avec un numéro de partie et
+ * dialogue avec sa fenêtre de jeu.
+ */
+{
+    const nav = $('#nav-display');
+    assert(!!nav, 'la configuration porte une entrée Affichage');
+    nav.click();
+    await waitFor(() => $('#display').style.display === '', 'le panneau Affichage s\'ouvre');
+    assert(storeData.get('nav-last') === 'display', 'la navigation retient le panneau');
+
+    const box = $('#display-visuals');
+    assert(box && box.checked, 'les visuels sont affichés par défaut');
+
+    // Décoché : le conteneur se VIDE et le minuteur s'arrête. Rendre les
+    // images transparentes ne suffirait pas — le fondu continuerait à tourner
+    // en arrière-plan toutes les cinq secondes.
+    box.checked = false;
+    box.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(() => storeData.get('hub-visuals') === false, 'le choix est persisté');
+
+    liveLi('classic-chess').click();
+    await waitFor(() => $('#game-detail .game-title').textContent.includes('Chess'), 'détail rouvert');
+    assert($$('#game-detail .visuals > div > div').length === 0,
+        'réglage éteint : aucun visuel injecté, même pour un jeu qui en a');
+
+    // Et rallumé, ils reviennent : un interrupteur qui n'a qu'un sens n'en est
+    // pas un.
+    box.checked = true;
+    box.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(() => $$('#game-detail .visuals > div > div').length === 2,
+        'réglage rallumé : les visuels reviennent sans changer de jeu');
+    assert(storeData.get('hub-visuals') === true, 'et le choix inverse est persisté aussi');
+}
+
 console.log(`\n${passed} assertions OK — navigation unifiée du hub validée.`);
 process.exit(0);
