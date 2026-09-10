@@ -18,6 +18,29 @@
 
 export const PROTOCOL_VERSION = 1;
 
+/**
+ * Nature d'une enveloppe.
+ *
+ * POURQUOI CE CHAMP EXISTE MAINTENANT : jusqu'ici une enveloppe ne pouvait
+ * etre qu'un coup, et `hasOpponentMoved` la reconnaissait a son `nbTurns`. Des
+ * qu'un second genre de message circule sur le meme canal -- discussion,
+ * presence (« je fais une pause »), relance -- deviner le genre a la forme
+ * devient un piege : un message sans `nbTurns` serait rejete par
+ * decodeEnvelope, et un message qui en aurait un serait pris pour un coup.
+ *
+ * COMPATIBILITE : une enveloppe ancienne n'a pas de `kind`, et c'est toujours
+ * un coup -- d'ou le defaut a MOVE au decodage. Le champ est donc additif et
+ * PROTOCOL_VERSION ne bouge pas : un client ancien qui recevrait un message de
+ * discussion le refuserait faute de `nbTurns`, ce qui est exactement le
+ * comportement voulu (il l'ignore au lieu de le jouer).
+ */
+export const ENVELOPE_KIND = {
+    MOVE: 'move',
+    CHAT: 'chat',
+    PRESENCE: 'presence',
+    NUDGE: 'nudge',
+};
+
 // Relai HTTP par defaut (etape 1/2 : instance de test jocly-simple-match
 // utilisee pour valider le protocole -- voir DEVELOPMENT.md § Remote
 // play). A rendre choisissable par l'utilisateur dans une
@@ -46,6 +69,7 @@ export function encodeEnvelope({ nbTurns, lastMove = null, state = null }) {
     }
     return JSON.stringify({
         v: PROTOCOL_VERSION,
+        kind: ENVELOPE_KIND.MOVE,
         nbTurns,
         lastMove,
         state,
@@ -69,8 +93,12 @@ export function decodeEnvelope(text) {
         return null;
     }
     if (!data || typeof data !== 'object' || !Number.isInteger(data.nbTurns)) return null;
+    // Une enveloppe sans `kind` vient d'un client anterieur au champ : c'etait
+    // forcement un coup, il n'y avait rien d'autre.
+    if (data.kind !== undefined && data.kind !== ENVELOPE_KIND.MOVE) return null;
     return {
         v: Number.isInteger(data.v) ? data.v : 1,
+        kind: ENVELOPE_KIND.MOVE,
         nbTurns: data.nbTurns,
         lastMove: data.lastMove ?? null,
         state: data.state ?? null,
@@ -85,7 +113,13 @@ export function decodeEnvelope(text) {
  * @param {{nbTurns:number}|null} remoteEnvelope
  */
 export function hasOpponentMoved(localNbTurns, remoteEnvelope) {
-    return !!remoteEnvelope && remoteEnvelope.nbTurns > localNbTurns;
+    if (!remoteEnvelope) return false;
+    // Ceinture et bretelles : decodeEnvelope ne rend deja que des coups, mais
+    // cette fonction est aussi appelee sur des objets venus d'ailleurs (le
+    // rattrapage de PeerChannel, les tests). Un message de discussion pris
+    // pour un coup ferait avancer la partie sur du vide.
+    if (remoteEnvelope.kind !== undefined && remoteEnvelope.kind !== ENVELOPE_KIND.MOVE) return false;
+    return remoteEnvelope.nbTurns > localNbTurns;
 }
 
 /**
