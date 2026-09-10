@@ -141,7 +141,7 @@ export class RelayChatChannel extends ChatChannel {
          * attendre l'aller-retour réseau.
          */
         const next = [...this._mine, msg];
-        const payload = encodeThread(next, { sealer: this._sealer });
+        const payload = await encodeThread(next, { sealer: this._sealer });
         this._mine = next;
         this._publish();
         await this._post(buildSaveBody(this._mineMid, payload));
@@ -172,7 +172,7 @@ export class RelayChatChannel extends ChatChannel {
 
     async _read(mid) {
         const res = await this._post(buildLoadBody(mid));
-        return decodeThread(await res.text(), { sealer: this._sealer });
+        return await decodeThread(await res.text(), { sealer: this._sealer });
     }
 
     async _post(body) {
@@ -232,7 +232,7 @@ export class PeerChatChannel extends ChatChannel {
 
     // -- interne ---------------------------------------------------------------
 
-    _handleLine(line) {
+    async _handleLine(line) {
         let data;
         try { data = JSON.parse(line); } catch { return; }
         // Le canal transporte AUSSI les coups : ils passent par le même
@@ -243,7 +243,7 @@ export class PeerChatChannel extends ChatChannel {
         // Relu par decodeThread pour n'accepter qu'un message bien formé --
         // la même porte que sur le relai, plutôt qu'une seconde validation
         // écrite à part qui divergerait.
-        const [msg] = decodeThread(JSON.stringify({ msgs: [data] }));
+        const [msg] = await decodeThread(JSON.stringify({ msgs: [data] }));
         if (!msg) return;
         // Un message que NOUS avons écrit ne revient pas : le transport est
         // direct, chacun n'entend que l'autre. Le filtre est là par sûreté --

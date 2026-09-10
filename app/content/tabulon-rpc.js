@@ -161,6 +161,9 @@ function buildPayload(method, args) {
     katago_probe:        ([opts])                  => ({ net: (opts && opts.net) || null }),
     katago_search:       ([request])               => ({ request }),
     katago_stop:         ()                        => ({}),
+    // discussion a distance : le scellement vit en Rust, voir seal_cmds.rs
+    seal_text:           ([key, text])             => ({ key, text }),
+    open_text:           ([key, sealed])           => ({ key, sealed }),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),

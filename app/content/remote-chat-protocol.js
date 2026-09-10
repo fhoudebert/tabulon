@@ -154,6 +154,11 @@ export function newMessage({ kind, side, body = null, state = null, at = Date.no
 /**
  * Sérialise le fil d'UN joueur, tel qu'il sera déposé sous sa clé.
  *
+ * ASYNCHRONE, et c'est le scellement qui l'impose : il se fait en Rust (voir
+ * seal_cmds.rs), donc par un appel de commande, donc par une promesse. Un
+ * scelleur synchrone -- ceux des tests -- passe sans changement, `await` sur
+ * une valeur ordinaire etant transparent.
+ *
  * `sealer` est appelé sur chaque corps de texte libre. Sans lui, un message de
  * discussion FAIT ÉCHOUER l'encodage plutôt que de partir en clair : c'est la
  * seule protection possible contre l'oubli, et un relais sans authentification
@@ -163,15 +168,16 @@ export function newMessage({ kind, side, body = null, state = null, at = Date.no
  * @param {Array} messages
  * @param {{seal:Function}} [opts.sealer] - seal(text) -> chaîne opaque
  */
-export function encodeThread(messages, { sealer = null } = {}) {
+export async function encodeThread(messages, { sealer = null } = {}) {
     if (!Array.isArray(messages)) throw new Error('encodeThread: liste attendue');
-    const out = messages.map((m) => {
-        if (!requiresSeal(m.kind)) return m;
+    const out = [];
+    for (const m of messages) {
+        if (!requiresSeal(m.kind)) { out.push(m); continue; }
         if (!sealer)
             throw new Error('encodeThread: un message de discussion ne peut pas partir en clair '
                 + '(aucun sealer fourni) -- voir remote-secret.js');
-        return { ...m, body: sealer.seal(m.body), enc: 1 };
-    });
+        out.push({ ...m, body: await sealer.seal(m.body), enc: 1 });
+    }
     return JSON.stringify({ v: THREAD_VERSION, msgs: out });
 }
 
@@ -185,7 +191,7 @@ export function encodeThread(messages, { sealer = null } = {}) {
  * l'utilisateur voit qu'un message existe et qu'il lui manque la clé, ce qui
  * vaut mieux qu'un trou silencieux dans la conversation.
  */
-export function decodeThread(text, { sealer = null } = {}) {
+export async function decodeThread(text, { sealer = null } = {}) {
     if (typeof text !== 'string' || !text.trim()) return [];
     let data;
     try { data = JSON.parse(text); } catch { return []; }
@@ -214,7 +220,7 @@ export function decodeThread(text, { sealer = null } = {}) {
                 continue;
             }
             let body = null;
-            try { body = sealer ? sealer.open(m.body) : null; } catch { body = null; }
+            try { body = sealer ? await sealer.open(m.body) : null; } catch { body = null; }
             out.push(body === null
                 ? { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id,
                     body: null, locked: true, reason: sealer ? 'badKey' : 'noKey' }

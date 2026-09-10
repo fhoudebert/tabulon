@@ -9,6 +9,7 @@ pub mod match_cmds;
 pub mod peer_cmds;
 pub mod problem_cmds;
 pub mod scan_cmds;
+pub mod seal_cmds;
 pub mod template_cmds;
 pub mod video_cmds;
 pub mod window_cmds;

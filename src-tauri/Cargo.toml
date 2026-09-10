@@ -37,7 +37,12 @@ tokio = { version = "1", features = ["full"] }  # runtime async (notifyUser ones
 # ── Utilitaires ───────────────────────────────────────────────────────────────
 log         = "0.4"       # macros log::info! / log::warn! / log::error!
 urlencoding = "2"         # encode les paramètres d'URL pour les fenêtres
-base64      = "0.22"      # décodage des frames JPEG vidéo
+base64      = "0.22"      # décodage des frames JPEG vidéo, et scellement des discussions
+# XChaCha20-Poly1305 : chiffrement authentifié des messages de discussion à
+# distance (seal_cmds.rs). Pur Rust, aucune dépendance C — donc rien à
+# installer sur les trois plateformes. Le nonce de 192 bits est ce qui permet
+# de le tirer au hasard à chaque message sans compter les collisions.
+chacha20poly1305 = "0.10"
 anyhow      = "1"         # gestion d'erreurs ergonomique
 
 [profile.release]

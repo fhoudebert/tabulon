@@ -116,3 +116,41 @@ export async function rotateSeed(store) {
     await store.set(SEED_KEY, seed);
     return seed;
 }
+
+/**
+ * Le scelleur d'une partie : ce que RelayChatChannel attend pour accepter
+ * d'envoyer du texte libre.
+ *
+ * Deux appels de commande, rien de plus -- tout le travail est en Rust
+ * (src-tauri/src/commands/seal_cmds.rs). Ce module ne connait ni l'algorithme,
+ * ni la taille du nonce, ni le format du sceau : c'est ce qui permettra d'en
+ * changer sans toucher au JS.
+ *
+ * `open` rend `null` plutot que de lever, parce que c'est ce que
+ * decodeThread attend : un message qu'on ne peut pas ouvrir doit s'afficher
+ * verrouille, pas faire disparaitre la conversation. Le Rust, lui, ne dit pas
+ * POURQUOI il a echoue -- base64 abime, message tronque, sceau qui ne
+ * correspond pas donnent la meme erreur -- et c'est voulu : la distinction
+ * n'aiderait que celui qui cherche a deviner la cle.
+ *
+ * @param {string} key - 32 octets hexadecimaux (voir generateChatKey)
+ * @param {Function} [invokeImpl] - injectable pour les tests
+ */
+export function makeSealer(key, invokeImpl = null) {
+    if (!isSeed(key)) throw new Error('makeSealer: cle mal formee');
+    const call = invokeImpl
+        ? (cmd, args) => invokeImpl(cmd, args)
+        : async (cmd, args) => {
+            const { default: tRpc } = await import('./tabulon-rpc.js');
+            return cmd === 'seal_text'
+                ? tRpc.call('seal_text', args.key, args.text)
+                : tRpc.call('open_text', args.key, args.sealed);
+        };
+    return {
+        seal: (text) => call('seal_text', { key, text }),
+        open: async (sealed) => {
+            try { return await call('open_text', { key, sealed }); }
+            catch { return null; }
+        },
+    };
+}

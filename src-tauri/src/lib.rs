@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, seal_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -154,6 +154,12 @@ pub fn run() {
             peer_cmds::peer_last_message,
             peer_cmds::peer_status,
             peer_cmds::peer_stop,
+            // ── Discussion a distance : sceller / ouvrir ──────────────────────
+            // Le chiffrement vit ici et non dans la webview : crypto.subtle
+            // exige un contexte securise, que rien ne garantit pour tauri://
+            // sous WebKitGTK. Voir seal_cmds.rs.
+            seal_cmds::seal_text,
+            seal_cmds::open_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tabulon");
