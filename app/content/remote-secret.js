@@ -74,6 +74,36 @@ export async function getOrCreateSeed(store) {
 }
 
 /**
+ * Une clé de discussion pour UNE partie.
+ *
+ * Même forme que la graine -- 32 octets, hexadécimal -- parce que c'est la
+ * forme que le lien d'invitation transporte (voir isChatKey dans
+ * remote-relay-protocol.js).
+ *
+ * DEUX FAÇONS DE L'OBTENIR, et il faut choisir :
+ *
+ *   a) la tirer au sort ici, et la ranger à côté de la partie. Ne demande
+ *      aucune primitive de dérivation, donc rien côté Rust : getRandomValues
+ *      suffit, et il est disponible partout. En contrepartie, une clé perdue
+ *      est une conversation perdue.
+ *
+ *   b) la dériver de la graine et de l'identifiant de partie. Rien à ranger --
+ *      la clé se recalcule pour n'importe quelle partie, même reprise depuis
+ *      l'historique. Mais la dérivation demande un HMAC, donc crypto.subtle
+ *      (contexte sécurisé non garanti sous tauri://) ou du Rust.
+ *
+ * C'est (a) qui est écrit ici, parce qu'elle ne bloque rien et que la
+ * différence ne se voit que le jour où l'on veut rouvrir la discussion d'une
+ * partie dont on a effacé la trace locale. deriveChatKey() reste à écrire
+ * quand ce jour viendra ; la graine est déjà là pour ça, et le format des
+ * deux est identique, donc passer de l'une à l'autre ne change rien à ce qui
+ * circule.
+ */
+export function generateChatKey() {
+    return generateSeed();
+}
+
+/**
  * Remplace la graine.
  *
  * Le geste « je repars de zéro » : toutes les invitations déjà envoyées

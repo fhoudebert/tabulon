@@ -155,4 +155,46 @@ assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/index.php?
 assert(buildInvitationUrl({ relayUrl: 'pas une url', gameName: 'go', matchId: 'x', player: 'a' }) === null,
     'buildInvitationUrl : relayUrl invalide -> null');
 
+/* ─── La clé de discussion voyage dans le FRAGMENT ────────────────────────── */
+//
+// Le lien d'invitation est une URL de joclymatch, faite pour être ouverte dans
+// un navigateur. Une clé placée dans la requête (`?k=...`) partirait donc au
+// SERVEUR dès le premier clic de l'invité — et la clé censée cacher la
+// conversation à ce serveur lui arriverait par la porte d'entrée. Un fragment
+// n'est jamais transmis : le navigateur le garde, la page de joclymatch
+// l'ignore, Tabulon le lit.
+{
+    const relayUrl = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
+    const key = 'a'.repeat(64);
+    const link = buildInvitationUrl({ relayUrl, gameName: 'go19', matchId: 'xyz-123', player: 'b', chatKey: key });
+
+    assert(link.includes('#k=' + key), 'la clé est dans le fragment');
+    assert(!new URL(link).search.includes(key),
+        'et surtout PAS dans la requête, que le navigateur enverrait au serveur');
+    assert(parseInvitationUrl(link).chatKey === key, 'elle se relit à l’arrivée');
+
+    // Sans clé, le lien est exactement celui d'avant : une partie sans
+    // discussion ne doit rien porter de nouveau.
+    const plain = buildInvitationUrl({ relayUrl, gameName: 'go19', matchId: 'xyz-123', player: 'b' });
+    assert(!plain.includes('#'), 'un lien sans discussion n’a pas de fragment');
+    assert(parseInvitationUrl(plain).chatKey === null, 'et se relit sans clé');
+
+    // Une clé mal formée est REFUSÉE plutôt qu'écrite : un lien annonçant une
+    // discussion protégée qui ne le serait pas est pire qu'un lien sans
+    // discussion.
+    assert(buildInvitationUrl({ relayUrl, gameName: 'go19', matchId: 'x', player: 'a', chatKey: 'trop-court' }) === null,
+        'une clé mal formée fait échouer la construction du lien');
+
+    // À la lecture, en revanche, une clé abîmée est traitée comme une absence :
+    // la partie doit pouvoir démarrer, sans discussion, plutôt qu'échouer.
+    const damaged = 'https://biscandine.fr/variantes/joclymatch/index.php?game=go19&mid=xyz-123&player=b#k=nawak';
+    const r = parseInvitationUrl(damaged);
+    assert(r !== null && r.chatKey === null, 'une clé abîmée n’empêche pas de rejoindre la partie');
+
+    // Un lien d'aujourd'hui, sans fragment, reste lisible : le champ est
+    // additif.
+    const old = 'https://biscandine.fr/variantes/joclymatch/index.php?game=go19&mid=xyz-123&player=a';
+    assert(parseInvitationUrl(old).chatKey === null, 'un lien antérieur au champ se lit toujours');
+}
+
 console.log(`\n${passed} assertions passées.`);

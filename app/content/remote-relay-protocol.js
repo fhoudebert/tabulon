@@ -240,7 +240,38 @@ export function parseInvitationUrl(urlString) {
     if (!gameName || !matchId || (playerParam !== 'a' && playerParam !== 'b')) return null;
     // index.php -> fileio.php, meme dossier (convention jocly-simple-match)
     const relayPath = url.pathname.replace(/[^/]*$/, 'fileio.php');
-    return { gameName, matchId, player: playerParam, relayUrl: url.origin + relayPath };
+    return {
+        gameName, matchId, player: playerParam,
+        relayUrl: url.origin + relayPath,
+        chatKey: chatKeyFromHash(url.hash),
+    };
+}
+
+/**
+ * Clé de discussion transportée par le lien -- DANS LE FRAGMENT, jamais dans
+ * la requête.
+ *
+ * C'EST LE POINT DE TOUTE LA CONSTRUCTION. Le lien d'invitation est une URL de
+ * joclymatch, faite pour être ouverte dans un navigateur ; un `?k=...` serait
+ * donc envoyé au SERVEUR dès que l'invité clique dessus, et la clé censée
+ * cacher la conversation à ce serveur lui arriverait par la porte d'entrée. Un
+ * fragment, lui, n'est jamais transmis : le navigateur le garde, la page de
+ * joclymatch l'ignore, et Tabulon le lit.
+ *
+ * Le lien voyage par un autre canal -- message, courriel -- que celui du
+ * relai. C'est ce qui rend la séparation possible : le relai voit
+ * l'identifiant de partie, il ne voit pas la clé.
+ */
+function chatKeyFromHash(hash) {
+    const raw = String(hash || '').replace(/^#/, '');
+    if (!raw) return null;
+    const key = new URLSearchParams(raw).get('k');
+    return isChatKey(key) ? key : null;
+}
+
+/** Forme attendue d'une clé : 32 octets en hexadécimal, comme la graine. */
+export function isChatKey(value) {
+    return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 }
 
 /**
@@ -250,7 +281,7 @@ export function parseInvitationUrl(urlString) {
  * @param {{relayUrl:string, gameName:string, matchId:string, player:'a'|'b'}} data
  * @returns {string|null} null si relayUrl n'est pas une URL valide
  */
-export function buildInvitationUrl({ relayUrl, gameName, matchId, player }) {
+export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null }) {
     let url;
     try {
         url = new URL(relayUrl);
@@ -259,8 +290,19 @@ export function buildInvitationUrl({ relayUrl, gameName, matchId, player }) {
     }
     url.pathname = url.pathname.replace(/[^/]*$/, 'index.php');
     url.search = '';
+    url.hash = '';
     url.searchParams.set('game', gameName);
     url.searchParams.set('mid', matchId);
     url.searchParams.set('player', player);
+    /*
+     * La clé va dans le FRAGMENT, et une clé mal formée est refusée plutôt
+     * qu'écrite : un lien qui en porterait une inutilisable annoncerait une
+     * discussion protégée qui ne le serait pas. Voir chatKeyFromHash pour
+     * pourquoi le fragment et pas la requête.
+     */
+    if (chatKey !== null) {
+        if (!isChatKey(chatKey)) return null;
+        url.hash = 'k=' + chatKey;
+    }
     return url.toString();
 }

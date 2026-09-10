@@ -23,8 +23,9 @@ import {
     presenceOf, canNudge, requiresSeal,
 } from '../app/content/remote-chat-protocol.js';
 import {
-    SEED_KEY, SEED_BYTES, generateSeed, isSeed, getOrCreateSeed, rotateSeed,
+    SEED_KEY, SEED_BYTES, generateSeed, generateChatKey, isSeed, getOrCreateSeed, rotateSeed,
 } from '../app/content/remote-secret.js';
+import { isChatKey } from '../app/content/remote-relay-protocol.js';
 import { decodeEnvelope, encodeEnvelope, hasOpponentMoved } from '../app/content/remote-relay-protocol.js';
 
 let PASS = 0, FAIL = 0;
@@ -222,6 +223,23 @@ console.log('La graine');
     const rotated = await rotateSeed(store);
     ok(isSeed(rotated) && rotated !== repaired, 'la rotation en produit une autre');
     ok(await getOrCreateSeed(store) === rotated, 'et c’est elle qui sert ensuite');
+}
+
+console.log('');
+console.log('La clé d’une partie');
+{
+    // Elle est tirée au sort et rangée à côté de la partie, plutôt que dérivée
+    // de la graine : la dérivation demanderait un HMAC, donc crypto.subtle
+    // (contexte sécurisé non garanti sous tauri://) ou du Rust — et elle ne
+    // sert que le jour où l'on veut rouvrir la discussion d'une partie dont on
+    // a effacé la trace locale.
+    const k = generateChatKey();
+    ok(generateChatKey() !== generateChatKey(), 'deux parties, deux clés');
+    // Même forme que la graine, et surtout : la forme que le lien
+    // d'invitation sait transporter. Passer un jour à une clé dérivée ne
+    // changera donc rien à ce qui circule.
+    ok(isChatKey(k), 'au format que le lien d’invitation accepte');
+    ok(isSeed(k), 'et identique à celui de la graine');
 }
 
 console.log('');
