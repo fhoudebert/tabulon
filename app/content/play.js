@@ -20,6 +20,9 @@ import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogi
          ParseWxfMove, WxfMatches, ParseSanMove, SanMatches, BuildSanMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
+import { RelayChatChannel, PeerChatChannel } from './remote-chat-channel.js';
+import { ENVELOPE_KIND, PRESENCE, presenceOf } from './remote-chat-protocol.js';
+import { makeSealer } from './remote-secret.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
@@ -195,7 +198,7 @@ function cancelRemoteWait(reason) {
 // currentNbTurns : nombre de coups deja joues localement au moment de la
 // creation (baseline correcte pour une partie deja entamee -- fork, reprise
 // apres fermeture de la fenetre...) ; ignore si le canal existe deja.
-function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer }, currentNbTurns) {
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey }, currentNbTurns) {
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
@@ -221,10 +224,96 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
     remoteChannelKey = playerKey;
     remoteChannel.onRemoteMove(onRemoteMoveReceived);
     remoteChannel.start();
+    // playerKey est le camp DISTANT : le notre est l'autre. C'est lui qui
+    // signe nos messages et qui decide laquelle des deux cles de fil nous
+    // appartient (voir chatMidFor).
+    ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey }, -playerKey);
     return remoteChannel;
 }
 
+/* -- Ce qui n'est pas un coup ---------------------------------------------------
+ *
+ * Presence pour l'instant : « je fais une pause », « je reviens ». Ce sont des
+ * DRAPEAUX, pas des phrases -- ils traversent le reseau comme identifiants et
+ * s'affichent ici dans la langue de chacun, ce qui marche entre deux joueurs
+ * qui n'en partagent aucune. Rien de personnel ne circule, donc ils voyagent
+ * SANS CLE : ils fonctionnent meme quand la partie n'a pas de discussion.
+ */
+let chatChannel  = null;
+let remotePresence = null;   // dernier etat declare par l'adversaire
+
+/**
+ * Ouvre le canal des messages, s'il y a un adversaire distant.
+ *
+ * La cle vient de l'invitation, ou elle a ete rangee par invitation.js. Son
+ * ABSENCE n'empeche rien : le canal s'ouvre quand meme, sans scelleur, et
+ * refusera seulement le texte libre -- la presence, elle, n'en a pas besoin.
+ * C'est le cas d'une invitation d'avant cette version, ou d'un hote qui n'a
+ * pas voulu de discussion.
+ */
+function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey }, localSide) {
+    disposeChatChannel();
+    let sealer = null;
+    if (chatKey) {
+        try { sealer = makeSealer(chatKey); }
+        catch (e) { console.warn('[play] cle de discussion inutilisable :', e.message || e); }
+    }
+    chatChannel = peer
+        ? new PeerChatChannel({ side: localSide })
+        : new RelayChatChannel({
+            relayUrl, matchId: remoteMatchId, side: localSide, sealer,
+        });
+    chatChannel.onConversation(OnConversation);
+    chatChannel.start().catch(e => console.warn('[play] discussion indisponible :', e.message || e));
+    return chatChannel;
+}
+
+function disposeChatChannel() {
+    chatChannel?.stop();
+    chatChannel = null;
+    remotePresence = null;
+}
+
+function OnConversation(conversation) {
+    const side = remoteChannelKey;
+    if (side === null) return;
+    const before = remotePresence?.state ?? null;
+    remotePresence = presenceOf(conversation, side);
+    // Le pied de plateau n'est repeint QUE si l'etat a change : il porte aussi
+    // le chronometre de reflexion, rafraichi dix fois par seconde, et deux
+    // ecrivains qui se marchent dessus font clignoter la ligne.
+    if ((remotePresence?.state ?? null) !== before) ShowRemotePresence();
+}
+
+/**
+ * Affiche l'etat de l'adversaire, avec depuis combien de temps.
+ *
+ * La duree est ce qui rend l'information utile : « en pause » ne dit pas s'il
+ * faut attendre ou fermer la fenetre, « en pause depuis 12 min » si.
+ */
+function ShowRemotePresence() {
+    if (!remotePresence) return;
+    const minutes = Math.max(0, Math.round((Date.now() - remotePresence.at) / 60000));
+    const key = remotePresence.state === PRESENCE.PAUSED ? 'play.opponentPaused'
+        : remotePresence.state === PRESENCE.LEAVING ? 'play.opponentLeaving'
+        : 'play.opponentBack';
+    UpdateFooter(t(key, { player: SideName(remoteChannelKey), minutes }));
+}
+
+/**
+ * Declare notre propre etat, si quelqu'un est la pour l'entendre.
+ *
+ * Silencieux quand il n'y a pas d'adversaire distant : le bouton Pause sert
+ * aussi en partie locale, ou il n'y a personne a prevenir.
+ */
+function DeclarePresence(state) {
+    if (!chatChannel) return;
+    chatChannel.send({ kind: ENVELOPE_KIND.PRESENCE, state })
+        .catch(e => console.warn('[play] presence non transmise :', e.message || e));
+}
+
 function disposeRemoteChannel() {
+    disposeChatChannel();
     remoteChannel?.stop();
     remoteChannel = null;
     remoteChannelKey = null;
@@ -1573,11 +1662,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         joclyMatch?.abortUserTurn().catch(() => {});
         joclyMatch?.abortMachineSearch().catch(() => {});
         UpdatePause();
+        // Le bouton Pause EST « je fais une pause » : plutot qu'un second
+        // bouton a cote qui dirait la meme chose, on previent l'adversaire
+        // distant avec celui-ci. En partie locale, il n'y a personne a
+        // prevenir et DeclarePresence ne fait rien.
+        DeclarePresence(PRESENCE.PAUSED);
     });
 
     btn('button-resume', () => {
         paused = false;
         UpdatePause();
+        DeclarePresence(PRESENCE.BACK);
     });
 
     btn('button-replay', async () => {
@@ -2091,9 +2186,11 @@ async function BookReplay(book) {
                 // donc enveloppe 'tabulon' -- pas de codec jocly-simple-match.
                 remote: true, peer: true, matchId: invite.matchId,
                 gameName: invite.gameName || gameName,
+                chatKey: invite.chatKey || null,
             } : {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
+                chatKey: invite.chatKey || null,
             });
             syncFooterSelect(localSide);
             console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);
