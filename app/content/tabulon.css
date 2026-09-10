@@ -229,6 +229,10 @@ html, body {
 .icon-info::before          { content: '\e81e'; }
 .icon-plus::before          { content: '\e816'; }
 .icon-box::before           { content: '\e852'; }  /* Extensions (glyphe 'box', vérifié dans la cmap photon-entypo) */
+/* « Choisir un fichier… » (hub.html) : la classe etait employee sans etre
+   definie ici, donc le bouton n'affichait aucune icone. Point de code releve
+   dans la cmap de la police, comme pour icon-box. */
+.icon-folder::before        { content: '\e850'; }
 
 /* ── Formulaires ────────────────────────────────────────────────────────────── */
 .form-group {
