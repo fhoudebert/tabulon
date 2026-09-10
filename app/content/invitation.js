@@ -20,6 +20,7 @@ import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, httpFetch } from './tauri-bridge.js';
 import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
+import { generateChatKey } from './remote-secret.js';
 import { hostPeerMatch, joinPeerMatch } from './remote-peer-channel.js';
 
 const selectedGame = new URLSearchParams(window.location.search).get('game') || null;
@@ -49,9 +50,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     // A appeler une fois qu'on a {gameName, matchId, relayUrl, player} valides,
     // qu'ils viennent d'un lien collé (Join) ou d'une partie qu'on vient de
     // créer ici (Create + Start).
-    async function startMatch({ gameName, matchId, relayUrl, player, creator, peer }) {
+    async function startMatch({ gameName, matchId, relayUrl, player, creator, peer, chatKey = null }) {
         const inviteId = 'inv-' + Date.now();
-        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: !!creator, peer: !!peer });
+        /*
+         * La cle de discussion est rangee AVEC l'invitation, et nulle part
+         * ailleurs : elle est propre a cette partie, elle arrive par le lien
+         * ou le code, et c'est play.js qui la reprendra pour ouvrir le canal.
+         *
+         * Absente = pas de discussion pour cette partie. C'est un etat normal,
+         * pas une panne : une invitation d'avant cette version, ou un hote qui
+         * n'en a pas voulu.
+         */
+        await store.set('invite:' + inviteId, {
+            matchId, relayUrl, gameName, player,
+            creator: !!creator, peer: !!peer, chatKey: chatKey || null,
+        });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
         tRpc.close();
     }
@@ -74,9 +87,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!selectedGame) { setStatus(createStatus, t('invitation.invalidLink'), 'fail'); return; }
         const relayUrl = relayInput?.value.trim() || DEFAULT_RELAY_URL;
         const matchId = generateMatchId();
-        const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b' });
+        /*
+         * Une cle par partie, tiree au sort ici et transportee par le lien --
+         * dans son FRAGMENT, que le navigateur n'envoie jamais au serveur
+         * (voir buildInvitationUrl). C'est ce qui fait que le relai stocke la
+         * conversation sans pouvoir la lire.
+         *
+         * Si le tirage echoue -- pas de source d'alea sure -- on cree la
+         * partie SANS discussion plutot qu'avec une cle devinable : une
+         * protection qui n'en est pas une serait pire que pas de protection.
+         */
+        let chatKey = null;
+        try { chatKey = generateChatKey(); }
+        catch (e) { console.warn('[invitation] pas de cle de discussion :', e.message || e); }
+        const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b', chatKey });
         if (!link) { setStatus(createStatus, t('players.testFail'), 'fail'); return; }
-        created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true };
+        created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true, chatKey };
         if (linkInput) linkInput.value = link;
         if (linkRow) linkRow.style.display = '';
         if (startBtn) startBtn.disabled = false;
@@ -169,11 +195,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const extraAddresses = (document.getElementById('peer-extra-addr')?.value || '')
             .split(',').map(a => a.trim()).filter(Boolean);
+        let chatKey = null;
+        try { chatKey = generateChatKey(); }
+        catch (e) { console.warn('[invitation] pas de cle de discussion :', e.message || e); }
         try {
-            const { code, token } = await hostPeerMatch(selectedGame, { port, extraAddresses });
+            const { code, token } = await hostPeerMatch(selectedGame, { port, extraAddresses, chatKey });
             peerHosting = {
                 gameName: selectedGame, matchId: 'p2p:' + token.slice(0, 12),
-                player: 'a', peer: true, creator: true,
+                player: 'a', peer: true, creator: true, chatKey,
             };
             if (peerCode) peerCode.value = code;
             if (peerCodeRow) peerCodeRow.style.display = '';
@@ -202,12 +231,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!raw.trim()) { setStatus(peerJoinStatus, t('invitation.peerInvalidCode'), 'fail'); return; }
         setStatus(peerJoinStatus, t('invitation.peerConnecting'), '');
         try {
-            const { gameName, token } = await joinPeerMatch(raw);
+            const { gameName, token, chatKey } = await joinPeerMatch(raw);
             if (selectedGame && gameName !== selectedGame)
                 setStatus(peerJoinStatus, t('invitation.gameMismatch', { game: gameName }), 'warn');
             await startMatch({
                 gameName, matchId: 'p2p:' + token.slice(0, 12),
-                player: 'b', peer: true,
+                player: 'b', peer: true, chatKey,
             });
         } catch (e) {
             console.warn('[invitation] peer join failed:', e.message || e);

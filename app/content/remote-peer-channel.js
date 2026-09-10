@@ -129,14 +129,14 @@ export class PeerChannel extends RemoteChannel {
  *   connexion). Les adresses locales restent dans le code, en secours.
  * @returns {Promise<{code:string, token:string, port:number}>}
  */
-export async function hostPeerMatch(gameName, { port = null, extraAddresses = [], invokeImpl = tauriInvoke } = {}) {
+export async function hostPeerMatch(gameName, { port = null, extraAddresses = [], chatKey = null, invokeImpl = tauriInvoke } = {}) {
     const token = generatePeerToken();
     const info = await invokeImpl('peer_host_start', { token, port });
     const extras = (extraAddresses || []).map(a => String(a).trim()).filter(Boolean);
     const ips = [...extras, ...info.ips.filter(a => !extras.includes(a))];
-    const code = encodePeerCode({ gameName, ips, port: info.port, token });
+    const code = encodePeerCode({ gameName, ips, port: info.port, token, chatKey });
     if (!code) throw new Error('code d\'invitation impossible a construire');
-    return { code, token, port: info.port };
+    return { code, token, port: info.port, chatKey };
 }
 
 /**
@@ -149,5 +149,8 @@ export async function joinPeerMatch(code, { invokeImpl = tauriInvoke } = {}) {
     const parsed = decodePeerCode(code);
     if (!parsed) throw new Error('code d\'invitation invalide');
     await invokeImpl('peer_connect', { addrs: parsed.ips, port: parsed.port, token: parsed.token });
-    return { gameName: parsed.gameName, token: parsed.token };
+    // La cle de discussion voyage avec le code : elle est nulle si l'hote n'en
+    // a pas propose, ou si celle du code etait abimee (decodePeerCode traite
+    // les deux pareil -- la partie doit pouvoir demarrer sans discussion).
+    return { gameName: parsed.gameName, token: parsed.token, chatKey: parsed.chatKey };
 }

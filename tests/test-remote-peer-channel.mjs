@@ -48,7 +48,7 @@ function bridge(a, b) { a.peer = b; b.peer = a; }
 // paresseux), il suffit que l'objet existe.
 globalThis.window = { __TAURI__: {} };
 
-const { PeerChannel, hostPeerMatch } = await import('../app/content/remote-peer-channel.js');
+const { PeerChannel, hostPeerMatch, joinPeerMatch } = await import('../app/content/remote-peer-channel.js');
 const { decodePeerCode } = await import('../app/content/remote-peer-protocol.js');
 const { RemoteChannel } = await import('../app/content/remote-channel.js');
 const { encodeEnvelope } = await import('../app/content/remote-relay-protocol.js');
@@ -204,6 +204,29 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     assert(ips.filter(a => a === '192.168.1.42').length === 1,
         'une adresse saisie qui doublonne une locale n\'apparaît qu\'une fois');
     assert(ips.includes('127.0.0.1'), 'les adresses locales restent dans le code, en secours');
+}
+
+// ── 8. La clé de discussion voyage avec le code ─────────────────────────────
+//
+// Contrairement au lien du relai, il n'y a aucun serveur à qui la cacher : le
+// code est copié-collé d'un joueur à l'autre et le flux est direct.
+{
+    const invokeImpl = async (cmd, args) => {
+        if (cmd === 'peer_host_start') return { port: args.port ?? 40123, ips: ['10.0.0.1'] };
+        if (cmd === 'peer_connect') return null;
+        throw new Error('commande inattendue: ' + cmd);
+    };
+    const key = 'c'.repeat(64);
+    const hosted = await hostPeerMatch('go19', { chatKey: key, invokeImpl });
+    assert(decodePeerCode(hosted.code).chatKey === key, 'la clé est dans le code de l’hôte');
+    const joined = await joinPeerMatch(hosted.code, { invokeImpl });
+    assert(joined.chatKey === key, 'et l’invité la retrouve en rejoignant');
+
+    // Une partie sans discussion : le code est celui d'avant, et l'invité
+    // reçoit null — un état normal, pas une panne.
+    const plain = await hostPeerMatch('go19', { invokeImpl });
+    assert((await joinPeerMatch(plain.code, { invokeImpl })).chatKey === null,
+        'sans clé proposée, l’invité en reçoit aucune');
 }
 
 console.log(`\ntest-remote-peer-channel: ${passed} assertions OK`);
