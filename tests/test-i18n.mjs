@@ -173,5 +173,39 @@ assert(marker && $('.window-content [data-tab="rules"]').innerHTML.includes(mark
   assert(out === "en | Favorites", "environnement nu : locale par défaut 'en', t() fonctionnel (" + out + ")");
 }
 
+/* ─── Le titre de la barre du systeme, pas seulement celui de la page ──── */
+//
+// Les fenetres satellites sont creees cote Rust (window_cmds.rs) avec un titre
+// ecrit en dur -- « Players #3 », « History #3 » -- et, contrairement a un
+// onglet de navigateur, un document.title change dans la webview NE REMONTE
+// PAS a la decoration de la fenetre. Le titre traduit s'affichait donc a
+// l'interieur pendant que l'anglais restait autour, dans la barre des taches
+// et le gestionnaire de fenetres.
+//
+// Trois choses doivent tenir ensemble, et l'absence de l'une ne fait aucun
+// bruit : les scripts passent un titre traduit, winutils renomme la fenetre,
+// et Tauri l'y autorise.
+{
+  const readContent = (f) => readFileSync('./app/content/' + f, 'utf-8');
+
+  for (const win of ['players.js', 'view-options.js', 'history.js', 'clock.js']) {
+    const src = readContent(win);
+    const call = /twu\.init\(([^;]*)\)/.exec(src);
+    assert(!!call && /\bt\(/.test(call[1]),
+      win + " passe un titre traduit a twu.init : " + (call ? call[1].trim() : 'aucun appel'));
+  }
+
+  const winutils = readContent('tabulon-winutils.js');
+  assert(/setTitle\(/.test(winutils),
+    'twu.init renomme aussi la fenetre du systeme');
+
+  // Sans la permission, l'appel est rejete par Tauri a l'execution et le titre
+  // natif reste celui que Rust a ecrit : un echec silencieux, attrape par le
+  // catch de winutils, qui ne se verrait qu'a l'oeil sur la barre de titre.
+  const caps = JSON.parse(readFileSync('./src-tauri/capabilities/default.json', 'utf-8'));
+  assert(caps.permissions.includes('core:window:allow-set-title'),
+    'et la capacite Tauri l\'y autorise');
+}
+
 console.log(`\n${passed} assertions OK — i18n fr/en validée.`);
 process.exit(0);
