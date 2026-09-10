@@ -86,7 +86,7 @@ console.log('');
 console.log('Le texte libre ne part pas en clair');
 {
     const chat = newMessage({ kind: ENVELOPE_KIND.CHAT, side: A, body: 'bien joué', at: 1000, rand });
-    ok(requiresSeal(chat.kind), 'un message de discussion doit être scellé');
+    ok(requiresSeal(chat), 'un message de discussion doit être scellé');
 
     // LE point de ce module : sans scelleur, l’encodage ÉCHOUE. Un envoi en
     // clair ne se verrait pas, et le relai garde ce qu’on lui donne.
@@ -127,10 +127,39 @@ console.log('Le texte libre ne part pas en clair');
 }
 
 console.log('');
+console.log('Les messages rapides');
+{
+    /*
+     * « Bien joué », « à toi », « je reviens » : ils voyagent comme
+     * IDENTIFIANT et se traduisent chez celui qui les lit. Deux joueurs sans
+     * langue commune se comprennent donc, et rien de personnel ne transite --
+     * ce qui les rend utilisables dans une partie SANS clé, contrairement au
+     * texte libre.
+     */
+    const quick = newMessage({ kind: ENVELOPE_KIND.CHAT, side: A, quick: 'wellPlayed', at: 5, rand });
+    ok(!requiresSeal(quick), 'un message rapide n’a rien à sceller');
+    ok(quick.body === undefined, 'il ne porte pas de texte');
+    const wire = await encodeThread([quick]);          // sans scelleur : doit passer
+    ok((await decodeThread(wire))[0].quick === 'wellPlayed', 'et voyage sans clé');
+
+    // Un identifiant est un nom, pas une phrase : ce qui arrivera dans un
+    // t('chat.' + quick) doit rester une clé de dictionnaire.
+    throws(() => newMessage({ kind: ENVELOPE_KIND.CHAT, side: A, quick: 'oops; DROP', rand }),
+        'un identifiant fantaisiste est refusé à l’émission');
+    ok((await decodeThread(JSON.stringify({ v: 1, msgs: [{ ...quick, quick: 'a b c' }] }))).length === 0,
+       'et ignoré à la réception');
+
+    // Un message de discussion doit dire quelque chose : ni texte ni
+    // identifiant, il n’a rien à afficher.
+    throws(() => newMessage({ kind: ENVELOPE_KIND.CHAT, side: A, rand }),
+        'un message vide est refusé');
+}
+
+console.log('');
 console.log('La présence n’a rien à chiffrer');
 {
     const pause = newMessage({ kind: ENVELOPE_KIND.PRESENCE, side: B, state: PRESENCE.PAUSED, at: 2000, rand });
-    ok(!requiresSeal(pause.kind), 'un état de présence n’est pas du texte');
+    ok(!requiresSeal(pause), 'un état de présence n’est pas du texte');
     // Il passe donc SANS scelleur : c’est ce qui permet de dire « je fais une
     // pause » même quand la discussion est désactivée.
     const wire = await encodeThread([pause]);

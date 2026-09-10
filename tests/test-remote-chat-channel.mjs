@@ -233,5 +233,22 @@ console.log('Pas de réveil pour rien');
     quiet.stop();
 }
 
+// ── 6. Un message rapide traverse le canal sans clé ─────────────────────────
+{
+    // Il voyage comme identifiant : rien de personnel ne transite, donc rien à
+    // sceller — et il fonctionne dans une partie qui n'a pas de clé, là où le
+    // texte libre est refusé.
+    const nokey = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: 'rapide-0001', side: A,
+        pollIntervalMs: 20,          // aucun sealer
+    });
+    await nokey.start();
+    await nokey.send({ kind: ENVELOPE_KIND.CHAT, quick: 'wellPlayed' });
+    const stored = JSON.parse(store.get(chatMidFor('rapide-0001', A)));
+    assert(stored.msgs[0].quick === 'wellPlayed', 'un message rapide passe sans scelleur');
+    assert(!('body' in stored.msgs[0]), 'et ne dépose aucun texte');
+    nokey.stop();
+}
+
 console.log(`\n${passed} assertions OK — transport de la discussion validé.`);
 process.exit(0);

@@ -83,6 +83,13 @@
 							<button id="button-history" class="btn btn-default" title="History" data-i18n-title="tip.history">
 								<span class="icon icon-list"></span>
 							</button>
+							<!-- Cache tant qu'il n'y a pas d'adversaire distant : en
+							     partie locale il n'y a personne a qui ecrire, et un
+							     bouton qui ouvre une fenetre vide est une promesse non
+							     tenue. play.js le montre quand le canal s'ouvre. -->
+							<button id="button-chat" class="btn btn-default" title="Chat" data-i18n-title="tip.chat" style="display:none">
+								<span class="icon icon-chat"></span>
+							</button>
 							<button id="button-clock" class="btn btn-default" title="Clock" data-i18n-title="tip.clock">
 								<span class="icon icon-clock"></span>
 							</button>

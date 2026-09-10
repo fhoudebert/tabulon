@@ -126,8 +126,8 @@ export class RelayChatChannel extends ChatChannel {
         if (this._timer) { clearTimeout(this._timer); this._timer = null; }
     }
 
-    async send({ kind, body = null, state = null }) {
-        const msg = newMessage({ kind, side: this._side, body, state });
+    async send({ kind, body = null, quick = null, state = null }) {
+        const msg = newMessage({ kind, side: this._side, body, quick, state });
         /*
          * ENCODER D'ABORD, RETENIR ENSUITE.
          *
@@ -220,8 +220,8 @@ export class PeerChatChannel extends ChatChannel {
          */
     }
 
-    async send({ kind, body = null, state = null }) {
-        const msg = newMessage({ kind, side: this._side, body, state });
+    async send({ kind, body = null, quick = null, state = null }) {
+        const msg = newMessage({ kind, side: this._side, body, quick, state });
         this._mine = [...this._mine, msg];
         this._publish();
         // Un message par ligne, comme les coups : le transport Rust relaie des

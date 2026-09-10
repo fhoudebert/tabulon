@@ -162,6 +162,7 @@ function buildPayload(method, args) {
     katago_search:       ([request])               => ({ request }),
     katago_stop:         ()                        => ({}),
     // discussion a distance : le scellement vit en Rust, voir seal_cmds.rs
+    open_chat:           ([matchId])               => ({ matchId }),
     seal_text:           ([key, text])             => ({ key, text }),
     open_text:           ([key, sealed])           => ({ key, sealed }),
     // fs

@@ -96,6 +96,7 @@ pub fn run() {
             // ── Fenêtres secondaires ──────────────────────────────────────────
             window_cmds::open_history,
             window_cmds::open_clock,
+            window_cmds::open_chat,
             window_cmds::open_clock_setup,
             window_cmds::open_players,
             window_cmds::open_view_options,

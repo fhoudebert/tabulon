@@ -167,5 +167,32 @@ assert(true, 'le bouton Reprendre annonce le retour');
         'un coup reçu ne change pas l’affichage de présence');
 }
 
+// 5. La fenêtre de discussion : le bouton n'apparaît qu'avec un adversaire
+//    distant, et l'envoi passe par le canal.
+{
+    const btn = document.getElementById('button-chat');
+    assert(btn && btn.style.display !== 'none',
+        'le bouton Discussion apparaît quand le canal distant est ouvert');
+
+    // Un message RAPIDE part comme identifiant, pas comme texte : c'est ce qui
+    // permet à l'autre de le lire dans sa langue, et rien de personnel ne
+    // transite — donc rien à sceller.
+    await mockTauri.event.emit(`play-req:9:send-chat`, { quick: 'wellPlayed' });
+    await waitFor(() => sentLines().some(m => m.kind === 'chat' && m.quick === 'wellPlayed'),
+        'un message rapide part sur la session');
+    const quick = sentLines().find(m => m.kind === 'chat');
+    assert(quick.quick === 'wellPlayed', 'il voyage comme identifiant');
+    assert(!('body' in quick), 'et ne transporte aucun texte');
+
+    // Et la fenêtre reçoit l'état du fil, avec de quoi savoir si le texte
+    // libre est possible.
+    let pushed = null;
+    (bus['play-event:9:chat'] ??= []).push(({ payload }) => { pushed = payload; });
+    await mockTauri.event.emit(`play-req:9:get-chat`, {});
+    await waitFor(() => pushed !== null, 'la fenêtre reçoit la conversation');
+    assert(Array.isArray(pushed.conversation), 'avec le fil');
+    assert(pushed.canWrite === true, 'et le droit d’écrire — ici pair-à-pair, rien ne transite par un serveur');
+}
+
 console.log(`\n${passed} assertions OK — présence en jeu à distance validée.`);
 process.exit(0);

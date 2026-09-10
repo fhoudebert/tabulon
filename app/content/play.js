@@ -240,6 +240,7 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
  * SANS CLE : ils fonctionnent meme quand la partie n'a pas de discussion.
  */
 let chatChannel  = null;
+let chatSealed   = false;    // la partie a-t-elle une cle ? (texte libre possible)
 let remotePresence = null;   // dernier etat declare par l'adversaire
 
 /**
@@ -263,18 +264,42 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey }, 
         : new RelayChatChannel({
             relayUrl, matchId: remoteMatchId, side: localSide, sealer,
         });
+    chatSealed = !!sealer || !!peer;   // en pair-a-pair, rien ne transite par un serveur
     chatChannel.onConversation(OnConversation);
     chatChannel.start().catch(e => console.warn('[play] discussion indisponible :', e.message || e));
+    // Le bouton n'apparait qu'ici : en partie locale il n'y a personne a qui
+    // ecrire, et une fenetre vide est une promesse non tenue.
+    const chatBtn = document.getElementById('button-chat');
+    if (chatBtn) chatBtn.style.display = '';
     return chatChannel;
 }
 
 function disposeChatChannel() {
     chatChannel?.stop();
     chatChannel = null;
+    chatSealed = false;
     remotePresence = null;
+    const chatBtn = document.getElementById('button-chat');
+    if (chatBtn) chatBtn.style.display = 'none';
+}
+
+/**
+ * Envoie l'etat de la conversation a la fenetre, si elle est ouverte.
+ *
+ * `canWrite` dit si le texte libre est possible : sans cle, le canal le
+ * refuserait, et laisser taper pour echouer ensuite serait pire que de fermer
+ * le champ en disant pourquoi. Les messages rapides, eux, restent disponibles.
+ */
+function PushChat() {
+    emit(`play-event:${matchId}:chat`, {
+        conversation: chatChannel ? chatChannel.conversation : [],
+        canWrite: !!chatSealed,
+        sides: { 1: SideName(Jocly.PLAYER_A), '-1': SideName(Jocly.PLAYER_B) },
+    }).catch(() => {});
 }
 
 function OnConversation(conversation) {
+    PushChat();
     const side = remoteChannelKey;
     if (side === null) return;
     const before = remotePresence?.state ?? null;
@@ -846,6 +871,32 @@ function syncFooterSelect(key) {
 //   play.html -> satellite : emit('play-rep:{matchId}:{action}', result)
 function initSatelliteListeners() {
     const prefix = `play-req:${matchId}:`;
+
+    /*
+     * get-chat / send-chat : la fenetre de discussion.
+     *
+     * Le fil vit ICI, comme l'horloge : c'est play.js qui tient le canal, qui
+     * a la cle et qui sait s'il y a un adversaire distant. La fenetre n'affiche
+     * et ne demande -- elle peut donc etre fermee et rouverte sans que la
+     * partie s'en apercoive, et sans qu'un message se perde.
+     */
+    listen(prefix + 'get-chat', () => { PushChat(); });
+
+    listen(prefix + 'send-chat', async ({ payload }) => {
+        if (!chatChannel || !payload) return;
+        /*
+         * Un message rapide voyage comme IDENTIFIANT, pas comme texte : c'est
+         * ce qui permet a l'autre de le lire dans SA langue, et rien de
+         * personnel ne transite -- donc rien a sceller. Seul le texte libre est
+         * du texte, et c'est le seul qui exige une cle.
+         */
+        const msg = payload.quick
+            ? { kind: ENVELOPE_KIND.CHAT, quick: String(payload.quick) }
+            : { kind: ENVELOPE_KIND.CHAT, body: String(payload.body || '') };
+        await chatChannel.send(msg).catch(e => {
+            console.warn('[play] message non transmis :', e.message || e);
+        });
+    });
 
     // get-view-options : retourne viewOptions actuelles + config vue
     listen(prefix + 'get-view-options', async () => {
@@ -1593,6 +1644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     btn('button-history',  () => tRpc.call('open_history', matchId, gameName));
+    btn('button-chat',     () => tRpc.call('open_chat', matchId));
     btn('button-clock',    () => tRpc.call('open_clock', matchId));
     btn('button-players',  () => tRpc.call('open_players', matchId));
     btn('button-options',  () => tRpc.call('open_view_options', matchId));

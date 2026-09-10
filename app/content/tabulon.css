@@ -208,6 +208,9 @@ html, body {
 .icon-eye::before           { content: '\e826'; }
 .icon-list::before          { content: '\e8a5'; }
 .icon-clock::before         { content: '\e862'; }
+/* Discussion a distance. Point de code releve dans la cmap de la police,
+   comme icon-box et icon-folder. */
+.icon-chat::before          { content: '\e83c'; }
 .icon-level-down::before    { content: '\e892'; }
 .icon-resize-full::before   { content: '\e869'; }
 .icon-download::before      { content: '\e82d'; }
@@ -973,6 +976,38 @@ strong { font-weight: 600; }
    seconde. Des chiffres à chasse fixe évitent que « 9.9 s » puis « 10.0 s »
    fassent respirer la ligne à chaque dixième. */
 #board-footer-text { font-variant-numeric: tabular-nums; }
+
+/* ── Fenêtre chat.html (discussion d'une partie à distance) ────────────────── */
+.chat-pane { display: flex; flex-direction: column; height: 100%; padding: 8px; }
+
+/* Le fil prend toute la hauteur disponible : c'est lui qu'on lit, le reste est
+   de la commande. */
+.chat-thread {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  border: 1px solid #d8d8d8;
+  border-radius: 3px;
+  padding: 6px 8px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.chat-line { display: flex; gap: 6px; align-items: baseline; }
+.chat-who  { flex: 0 0 auto; font-weight: 600; color: #6c6c6c; }
+.chat-text { flex: 1 1 auto; word-break: break-word; }
+/* L'heure ne doit pas attirer l'oeil : elle sert à situer, pas à être lue. */
+.chat-when { flex: 0 0 auto; color: #a0a0a0; font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Un message qu'on ne peut pas ouvrir reste visible, en retrait : un trou
+   silencieux dans une conversation est pire qu'un cadenas. */
+.chat-line.locked .chat-text { color: #a0a0a0; font-style: italic; }
+
+.chat-quick { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 0; }
+.chat-quick .btn { font-size: 11px; padding: 3px 6px; }
+
+.chat-compose { display: flex; gap: 6px; margin-top: 8px; }
+.chat-compose input { flex: 1 1 auto; }
+
+.chat-status { margin: 6px 0 0; color: #6c6c6c; font-size: 11px; line-height: 1.4; }
 
 /* ── Fenêtre clock.html (affichage de l'horloge, porté de JoclyBoard) ───────── */
 .clock-content { height: 100%; padding: 0; }

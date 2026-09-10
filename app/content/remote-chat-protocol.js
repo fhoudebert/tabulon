@@ -66,9 +66,18 @@ export const PRESENCE = {
 
 const PRESENCE_VALUES = Object.values(PRESENCE);
 
-/** Les genres qui transportent du texte libre, donc qui doivent être scellés. */
-export function requiresSeal(kind) {
-    return kind === ENVELOPE_KIND.CHAT;
+/**
+ * Ce message transporte-t-il du texte libre, donc doit-il être scellé ?
+ *
+ * La question porte sur le MESSAGE et non sur son genre, parce qu'un message
+ * de discussion n'est pas forcément du texte : un message rapide (« bien
+ * joué », « à toi ») voyage comme IDENTIFIANT, se traduit chez celui qui le
+ * lit, et ne contient donc rien de personnel. Il n'a rien à sceller, ce qui
+ * lui permet de circuler dans une partie sans clé — exactement comme la
+ * présence.
+ */
+export function requiresSeal(message) {
+    return !!message && message.kind === ENVELOPE_KIND.CHAT && typeof message.body === 'string';
 }
 
 // ── Identifiants de fil ──────────────────────────────────────────────────────
@@ -134,17 +143,20 @@ function defaultRand(bytes) {
  * @param {number} [m.at]    - horodatage, injectable pour les tests
  * @param {Function} [m.rand]
  */
-export function newMessage({ kind, side, body = null, state = null, at = Date.now(), rand = defaultRand }) {
+export function newMessage({ kind, side, body = null, quick = null, state = null, at = Date.now(), rand = defaultRand }) {
     if (![ENVELOPE_KIND.CHAT, ENVELOPE_KIND.PRESENCE, ENVELOPE_KIND.NUDGE].includes(kind))
         throw new Error('newMessage: genre inattendu : ' + kind);
     if (side !== 1 && side !== -1) throw new Error('newMessage: side doit être 1 ou -1');
-    if (kind === ENVELOPE_KIND.CHAT && !String(body ?? '').trim())
+    if (kind === ENVELOPE_KIND.CHAT && !String(body ?? '').trim() && !quick)
         throw new Error('newMessage: un message de discussion sans texte n’a rien à dire');
+    if (quick !== null && !/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(String(quick)))
+        throw new Error('newMessage: identifiant de message rapide inattendu : ' + quick);
     if (kind === ENVELOPE_KIND.PRESENCE && !PRESENCE_VALUES.includes(state))
         throw new Error('newMessage: état de présence inconnu : ' + state);
 
     const msg = { v: THREAD_VERSION, kind, side, at, id: messageId(rand) };
-    if (kind === ENVELOPE_KIND.CHAT) msg.body = String(body);
+    if (kind === ENVELOPE_KIND.CHAT && quick) msg.quick = String(quick);
+    else if (kind === ENVELOPE_KIND.CHAT) msg.body = String(body);
     if (kind === ENVELOPE_KIND.PRESENCE) msg.state = state;
     return msg;
 }
@@ -172,7 +184,7 @@ export async function encodeThread(messages, { sealer = null } = {}) {
     if (!Array.isArray(messages)) throw new Error('encodeThread: liste attendue');
     const out = [];
     for (const m of messages) {
-        if (!requiresSeal(m.kind)) { out.push(m); continue; }
+        if (!requiresSeal(m)) { out.push(m); continue; }
         if (!sealer)
             throw new Error('encodeThread: un message de discussion ne peut pas partir en clair '
                 + '(aucun sealer fourni) -- voir remote-secret.js');
@@ -209,6 +221,13 @@ export async function decodeThread(text, { sealer = null } = {}) {
         } else if (m.kind === ENVELOPE_KIND.NUDGE) {
             out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id });
         } else if (m.kind === ENVELOPE_KIND.CHAT) {
+            // Message rapide : un identifiant, traduit chez le lecteur. Rien à
+            // ouvrir, rien à sceller -- il passe dans une partie sans clé.
+            if (typeof m.quick === 'string') {
+                if (!/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(m.quick)) continue;
+                out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, quick: m.quick });
+                continue;
+            }
             if (typeof m.body !== 'string') continue;
             if (!m.enc) {
                 // En clair alors que le genre exige un scellement : on le
