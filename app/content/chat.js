@@ -105,6 +105,10 @@ function SetCanWrite(canWrite) {
     if (input) input.disabled = !canWrite;
     if (send) send.disabled = !canWrite;
     if (status) status.textContent = canWrite ? '' : t('chat.noKey');
+    // La ligne de cle n'apparait que quand elle manque : une fois la partie
+    // protegee, elle n'aurait plus qu'un usage, la casser.
+    const row = $('chat-key-row');
+    if (row) row.style.display = canWrite ? 'none' : '';
 }
 
 let conversation = [];
@@ -154,6 +158,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     $('chat-send')?.addEventListener('click', SendTyped);
     input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') SendTyped(); });
+
+    /*
+     * Ajouter une cle a une partie qui n'en a pas.
+     *
+     * « Generer » l'affiche pour qu'on la COPIE et qu'on l'envoie a l'autre
+     * joueur par le canal de son choix -- message, courriel, telephone. Elle
+     * ne doit surtout pas passer par le relai : il l'aurait, et le
+     * chiffrement ne servirait plus a rien. C'est le meme raisonnement que le
+     * fragment du lien d'invitation, en manuel.
+     *
+     * L'autre joueur colle la meme et clique « Utiliser ». Les deux cotes ont
+     * alors la meme cle, sans que le serveur l'ait vue passer.
+     */
+    $('chat-key-new')?.addEventListener('click', async () => {
+        const { generateChatKey } = await import('./remote-secret.js');
+        const field = $('chat-key-input');
+        if (!field) return;
+        try { field.value = generateChatKey(); } catch (e) {
+            console.warn('[chat] pas de cle :', e.message || e);
+            return;
+        }
+        field.select();
+        // Pas appliquee tout de suite : tant que l'autre ne l'a pas, l'appliquer
+        // rendrait nos messages illisibles pour lui sans rien dire.
+        const status = $('chat-status');
+        if (status) status.textContent = t('chat.keyShare');
+    });
+
+    $('chat-key-apply')?.addEventListener('click', () => {
+        const key = ($('chat-key-input')?.value || '').trim().toLowerCase();
+        emit(`play-req:${matchId}:set-chat-key`, { key }).catch(() => {});
+    });
 
     // Revenir sur la fenetre vaut lecture : un message arrive pendant qu'elle
     // etait cachee doit eteindre la pastille des qu'on la regarde, sans avoir

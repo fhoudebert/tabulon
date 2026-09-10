@@ -1030,6 +1030,9 @@ strong { font-weight: 600; }
 .chat-compose { display: flex; gap: 6px; margin-top: 8px; }
 .chat-compose input { flex: 1 1 auto; }
 
+.chat-key { display: flex; gap: 6px; margin-top: 6px; }
+.chat-key input { flex: 1 1 auto; font-family: monospace; font-size: 11px; }
+
 .chat-status { margin: 6px 0 0; color: #6c6c6c; font-size: 11px; line-height: 1.4; }
 
 /* ── Fenêtre clock.html (affichage de l'horloge, porté de JoclyBoard) ───────── */

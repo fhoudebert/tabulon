@@ -234,5 +234,26 @@ assert(true, 'le bouton Reprendre annonce le retour');
     assert(btn.dataset.unread === '1', 'nos propres messages ne s’ajoutent pas au compte');
 }
 
+// 7. Ajouter une clé à une partie qui n'en avait pas.
+//
+//    Elle ne peut pas s'inventer d'un seul côté : les deux joueurs doivent
+//    avoir LA MÊME, et elle ne doit pas passer par le relai — sinon il
+//    l'aurait, et le chiffrement ne servirait plus à rien. Elle se transmet
+//    donc de la main à la main, et chacun la colle chez soi ; play.js la range
+//    avec l'invitation, seule copie qui existe.
+{
+    const key = 'e'.repeat(64);
+    await mockTauri.event.emit('play-req:9:set-chat-key', { key });
+    await waitFor(() => storeData.get('invite:' + INVITE)?.chatKey === key,
+        'la clé est rangée avec l’invitation');
+    assert(storeData.get('invite:' + INVITE).chatKey === key, 'et c’est bien celle qu’on a collée');
+
+    // Un format inattendu est refusé plutôt que rangé : une clé à moitié valide
+    // ne protège rien et donnerait l'apparence du contraire.
+    await mockTauri.event.emit('play-req:9:set-chat-key', { key: 'trop court' });
+    await sleep(60);
+    assert(storeData.get('invite:' + INVITE).chatKey === key, 'une clé mal formée ne remplace pas la bonne');
+}
+
 console.log(`\n${passed} assertions OK — présence en jeu à distance validée.`);
 process.exit(0);

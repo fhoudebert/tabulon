@@ -23,6 +23,7 @@ import { PeerChannel } from './remote-peer-channel.js';
 import { RelayChatChannel, PeerChatChannel } from './remote-chat-channel.js';
 import { ENVELOPE_KIND, PRESENCE, presenceOf } from './remote-chat-protocol.js';
 import { makeSealer } from './remote-secret.js';
+import { isChatKey } from './remote-relay-protocol.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
@@ -254,8 +255,11 @@ let remotePresence = null;   // dernier etat declare par l'adversaire
  * C'est le cas d'une invitation d'avant cette version, ou d'un hote qui n'a
  * pas voulu de discussion.
  */
+let chatConfig = null;      // la derniere configuration, pour rouvrir le canal
+
 function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey }, localSide) {
     disposeChatChannel();
+    chatConfig = { matchId: remoteMatchId, relayUrl, peer, chatKey };
     let sealer = null;
     if (chatKey) {
         try { sealer = makeSealer(chatKey); }
@@ -927,6 +931,37 @@ function initSatelliteListeners() {
     // deviner : Tauri ne previent pas de la fermeture d'une fenetre, et une
     // fenetre fermee ne dit rien -- ce qui est exactement le comportement
     // voulu, ses messages restant non lus.
+    /*
+     * Ajouter une cle a une partie qui n'en avait pas.
+     *
+     * Elle ne peut pas s'inventer d'un seul cote : les deux joueurs doivent
+     * avoir LA MEME, et elle ne doit pas passer par le relai -- sinon il
+     * l'aurait. Elle se transmet donc de la main a la main, comme le lien
+     * d'invitation, et chacun la colle chez soi.
+     *
+     * Rangee AVEC l'invitation : c'est de la qu'elle sera relue si la fenetre
+     * de jeu est fermee puis rouverte, et c'est la seule copie -- personne
+     * d'autre ne l'a.
+     */
+    listen(prefix + 'set-chat-key', async ({ payload }) => {
+        const key = String(payload?.key || '').trim().toLowerCase();
+        if (!isChatKey(key)) {
+            console.warn('[play] cle de discussion refusee : format inattendu');
+            PushChat();
+            return;
+        }
+        if (inviteId) {
+            const invite = await store?.get('invite:' + inviteId).catch(() => null);
+            if (invite) await store?.set('invite:' + inviteId, { ...invite, chatKey: key });
+        }
+        // Le canal est reconstruit avec le scelleur : le fil deja depose reste
+        // en clair et le restera -- on ne rechiffre pas le passe, et le dire
+        // vaut mieux que de le faire croire.
+        if (remoteChannel && remoteChannelKey !== null)
+            ensureChatChannel({ ...chatConfig, chatKey: key }, -remoteChannelKey);
+        PushChat();
+    });
+
     listen(prefix + 'chat-seen', ({ payload }) => {
         if (!payload?.id) return;
         chatSeenId = payload.id;

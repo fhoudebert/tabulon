@@ -39,6 +39,18 @@
 				     le texte libre, et un champ grisé sans explication est une
 				     énigme. -->
 				<p id="chat-status" class="chat-status"></p>
+
+				<!-- Ajouter une cle a une partie qui n'en a pas.
+				     Elle ne peut pas s'inventer d'un seul cote : les deux
+				     joueurs doivent avoir LA MEME, et elle ne doit pas passer
+				     par le relai -- sinon il l'aurait, et tout le chiffrement
+				     ne servirait a rien. Elle se transmet donc par un autre
+				     canal, comme le lien d'invitation. -->
+				<div id="chat-key-row" class="chat-key" style="display:none">
+					<input type="text" id="chat-key-input" class="form-control" data-i18n-placeholder="chat.keyPlaceholder" placeholder="Paste a shared key…" spellcheck="false">
+					<button id="chat-key-apply" class="btn btn-default" data-i18n="chat.keyApply">Use</button>
+					<button id="chat-key-new" class="btn btn-default" data-i18n="chat.keyNew">Generate</button>
+				</div>
 			</div>
 		</div>
 	</div>
