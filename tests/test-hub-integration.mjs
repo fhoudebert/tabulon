@@ -307,5 +307,30 @@ assert(storeData.get('last-game') === 'cubic-chess', 'last-game suit la sélecti
     assert(storeData.get('community-keys')[0].name === 'Club du mardi', 'et laisse les autres');
 }
 
+/* ── 14. Le chemin de ffmpeg ────────────────────────────────────────────────
+ *
+ * L'enregistrement vidéo appelle un binaire qui n'est pas livré avec Tabulon.
+ * Sous Linux il coexiste souvent en plusieurs exemplaires, et celui du PATH
+ * n'est pas toujours celui qui sait encoder en H.264 — d'où un réglage, seul
+ * moyen d'en désigner un autre sans toucher au système.
+ */
+{
+    const field = $('#prefs-ffmpeg-path');
+    assert(!!field, 'l’écran Préférences porte un champ pour ffmpeg');
+    assert(field.value === '', 'vide par défaut : on emploie celui du système');
+
+    field.value = '/opt/ffmpeg-7/bin/ffmpeg';
+    $('#prefs-ffmpeg-save').click();
+    await waitFor(() => storeData.get('ffmpeg-path') === '/opt/ffmpeg-7/bin/ffmpeg',
+        'le chemin est enregistré');
+
+    // Vider le champ revient à reprendre celui du PATH : c'est un état normal,
+    // pas un effacement de réglage.
+    field.value = '   ';
+    $('#prefs-ffmpeg-save').click();
+    await waitFor(() => storeData.get('ffmpeg-path') === '', 'un champ vide rend la main au système');
+    assert(storeData.get('ffmpeg-path') === '', 'sans laisser d’espaces derrière');
+}
+
 console.log(`\n${passed} assertions OK — navigation unifiée du hub validée.`);
 process.exit(0);

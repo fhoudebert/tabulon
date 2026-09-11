@@ -230,6 +230,14 @@
 						</div>
 						<p class="display-hint" data-i18n="display.visualsHint">The images ship with the game library. If they have been removed to save space, the background cycles through nothing at all — turn this off to leave it plain.</p>
 
+						<h4 class="prefs-section" data-i18n="prefs.video">Video recording</h4>
+						<p class="display-hint" data-i18n="prefs.videoWhat">Recording a game calls ffmpeg, which is not shipped with Tabulon. Leave this empty to use the one found on the system; fill it in to point at another — several versions often coexist, and the one on the PATH is not always the one that can encode H.264.</p>
+						<div class="chat-key">
+							<input type="text" id="prefs-ffmpeg-path" class="form-control" data-i18n-placeholder="prefs.videoPlaceholder" placeholder="ffmpeg" spellcheck="false">
+							<button id="prefs-ffmpeg-save" class="btn btn-default" data-i18n="prefs.keySave">Save</button>
+						</div>
+						<p id="prefs-ffmpeg-status" class="display-hint"></p>
+
 						<h4 class="prefs-section" data-i18n="prefs.chat">Conversations</h4>
 						<p class="display-hint" data-i18n="prefs.chatWhat">Messages exchanged during a remote game go through a relay that has no accounts and no passwords: whoever runs it can read what is left there. A shared key makes that content unreadable to the relay — and only to those who hold the key.</p>
 						<p class="display-hint" data-i18n="prefs.chatHow">Generate one below, then send it ONCE to the people you play with, by any channel except the relay itself — a message, an e-mail. They paste it into the same field. From then on your games with them are protected without any further step.</p>

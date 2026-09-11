@@ -18,8 +18,16 @@
 // Commande ffmpeg utilisée :
 //   ffmpeg -f mjpeg -r 30 -i pipe:0 -vcodec libx264 -pix_fmt yuv420p <output.mp4>
 //
-// Prérequis : ffmpeg doit être dans le PATH (ou configuré dans tauri.conf.json
-// comme external binary via tauri-plugin-shell sidecar).
+// Prérequis : ffmpeg doit être dans le PATH, ou son chemin complet indiqué
+// dans les préférences (clé `ffmpeg-path`).
+//
+// CE QUE CE CHANGEMENT D'ARCHITECTURE A COÛTÉ. JoclyBoard n'avait aucun
+// prérequis : mp4-mjpeg était un muxeur MP4 écrit en JavaScript, embarqué avec
+// l'application. Passer à ffmpeg apporte un vrai encodeur H.264 mais introduit
+// une dépendance qui peut être absente, être une autre compilation, ou refuser
+// les options qu'on lui donne — trois pannes que l'ancienne version ne pouvait
+// pas avoir. D'où le soin particulier apporté ici aux messages d'erreur : le
+// seul recours de l'utilisateur est de comprendre ce que ffmpeg lui reproche.
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::collections::HashMap;
@@ -97,10 +105,25 @@ pub async fn start_recording(
     // appliquées côté play.js, qui possède la pompe à frames — ffmpeg ne
     // reçoit que le flux JPEG final.
 
+    // Le binaire : celui des préférences, ou « ffmpeg » dans le PATH.
+    //
+    // Un chemin réglable n'est pas un confort : sous Linux, ffmpeg est souvent
+    // installé en plusieurs exemplaires (distribution, snap, flatpak, build
+    // maison), et celui du PATH n'est pas forcément celui qui sait encoder en
+    // H.264. Pouvoir en désigner un autre est le seul moyen de s'en sortir
+    // sans toucher au système.
+    let ffmpeg_bin: String = app
+        .store("tabulon.json")
+        .ok()
+        .and_then(|s| s.get("ffmpeg-path"))
+        .and_then(|v| v.as_str().map(|s| s.trim().to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "ffmpeg".to_string());
+
     // Lancer ffmpeg
     // Entrée : flux JPEG bruts sur stdin (format mjpeg)
     // Sortie : fichier MP4 H.264
-    let mut child = Command::new("ffmpeg")
+    let mut child = Command::new(&ffmpeg_bin)
         .args([
             "-y",                    // écraser sans demander
             // -loglevel error : indispensable avec stderr pipé — le flux de
@@ -120,7 +143,9 @@ pub async fn start_recording(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())   // -loglevel error : seules les erreurs y passent
         .spawn()
-        .map_err(|e| format!("Cannot start ffmpeg: {e}. Is ffmpeg installed?"))?;
+        .map_err(|e| format!(
+            "ffmpeg n'a pas pu demarrer ({ffmpeg_bin}) : {e}. \
+             Verifiez qu'il est installe, ou indiquez son chemin dans les Preferences."))?;
 
     let stdin = child.stdin.take()
         .ok_or("Cannot get ffmpeg stdin")?;
@@ -155,10 +180,59 @@ pub fn record_frame(
 
     // Écrire les bytes JPEG bruts sur stdin de ffmpeg
     // ffmpeg en mode mjpeg reconnaît la délimitation des frames par les marqueurs SOI/EOI
-    rec.stdin.write_all(&bytes)
-        .map_err(|e| format!("record_frame: write to ffmpeg stdin failed: {e}"))?;
+    if let Err(e) = rec.stdin.write_all(&bytes) {
+        /*
+         * « Relais brisé (pipe) » NE VEUT RIEN DIRE POUR L'UTILISATEUR.
+         *
+         * EPIPE signifie seulement que ffmpeg n'est plus là pour lire. Il a
+         * donc demarre -- sinon la commande precedente aurait echoue -- puis
+         * il est mort, et la RAISON est dans son stderr : « Unknown encoder
+         * 'libx264' » pour une compilation sans H.264, un refus d'ecriture
+         * pour un chemin interdit, une option non reconnue pour une version
+         * plus ancienne.
+         *
+         * Ce stderr etait bien capte, mais lu SEULEMENT a l'arret normal --
+         * c'est-a-dire exactement dans le cas ou il n'y a rien a dire. On le
+         * lit donc ici, ou il porte la seule information utile.
+         */
+        let rec = recordings.remove(&match_id).expect("present juste au-dessus");
+        return Err(format!("ffmpeg s'est arrete : {}", ffmpeg_reason(rec, e)));
+    }
 
     Ok(())
+}
+
+/// Pourquoi ffmpeg s'est arrêté, en une ligne lisible.
+///
+/// On ferme stdin et on l'attend : il est deja mort, donc l'attente est
+/// immediate, et c'est ce qui permet de recuperer son stderr en entier plutot
+/// qu'un fragment.
+fn ffmpeg_reason(mut rec: Recording, io_err: std::io::Error) -> String {
+    drop(rec.stdin);
+    let mut err_out = String::new();
+    if let Some(mut se) = rec.process.stderr.take() {
+        use std::io::Read;
+        let _ = se.read_to_string(&mut err_out);
+    }
+    let _ = rec.process.wait();
+    // Les dernieres lignes : ffmpeg met la cause a la fin, apres son
+    // en-tete de version.
+    let tail: String = err_out
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .rev()
+        .take(3)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if tail.is_empty() {
+        // Rien sur stderr : au moins ne pas mentir sur ce qu'on sait.
+        format!("{io_err} (aucun message de ffmpeg)")
+    } else {
+        tail
+    }
 }
 
 /// Finalise l'enregistrement d'un match : ferme stdin → ffmpeg écrit l'atome

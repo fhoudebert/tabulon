@@ -297,6 +297,28 @@ async function ListGames() {
         });
     }
 
+    /*
+     * Le chemin de ffmpeg. Vide = celui du PATH.
+     *
+     * Sous Linux, ffmpeg coexiste souvent en plusieurs exemplaires
+     * (distribution, snap, flatpak, compilation maison), et celui du PATH
+     * n'est pas forcement celui qui sait encoder en H.264. Pouvoir en designer
+     * un autre est le seul moyen de s'en sortir sans toucher au systeme.
+     */
+    {
+        const field = document.getElementById('prefs-ffmpeg-path');
+        const status = document.getElementById('prefs-ffmpeg-status');
+        if (field) field.value = await store.get('ffmpeg-path') || '';
+        document.getElementById('prefs-ffmpeg-save')?.addEventListener('click', async () => {
+            await store.set('ffmpeg-path', (field?.value || '').trim());
+            // Pas de verification ici : lancer ffmpeg pour voir demanderait de
+            // reproduire les options de l'enregistrement, et c'est la
+            // premiere capture qui dira la verite -- avec, desormais, le
+            // message de ffmpeg lui-meme.
+            if (status) status.textContent = t('prefs.videoSaved');
+        });
+    }
+
     const navLast = await store.get('nav-last') || 'games-fav';
     document.getElementById('nav-' + navLast)?.click();
 }
