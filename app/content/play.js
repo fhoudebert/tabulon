@@ -973,7 +973,10 @@ function hasRemoteSide() {
 // (l'infobulle explique pourquoi), et les handlers gardent une garde de
 // fond. Ils redeviennent actifs des que plus aucun cote n'est distant
 // (partie rapide, chronometree, locale...).
-const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart', 'quick-takeback', 'quick-restart'];
+// Les doublons quick-* ont disparu avec la barre repliable : les deux boutons
+// du pied portent maintenant les identifiants principaux, et une seule entree
+// suffit ici comme ailleurs.
+const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart'];
 
 function updateRemoteRestrictedButtons() {
     const remote = hasRemoteSide();
@@ -1863,16 +1866,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('play-warning-close')?.addEventListener('click', HideWarning);
 
-    // Bouton '…' : montre/masque la barre de boutons (état persisté).
-    // Remplace le survol .ephemeral-actions:hover de JoclyBoard, inutilisable
-    // sur tablette.
-    const ephemeralActions = document.querySelector('.ephemeral-actions');
-    if (await store.get('play-footer-bar').catch(() => false))
-        ephemeralActions?.classList.add('bar-visible');
-    btn('button-toggle-bar', () => {
-        const visible = ephemeralActions?.classList.toggle('bar-visible');
-        store?.set('play-footer-bar', !!visible);
-    });
+    /*
+     * Plus de bouton « … » ni d'etat replie : les boutons vivent desormais
+     * dans la barre laterale, toujours ouverte (voir play.html). La preference
+     * play-footer-bar n'a plus d'objet -- une valeur qui traine dans le
+     * magasin ne gene personne, la relire ne servirait qu'a la reecrire.
+     */
 
     btn('button-history',  () => tRpc.call('open_history', matchId, gameName));
     btn('button-chat',     () => tRpc.call('open_chat', matchId));
@@ -2104,8 +2103,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Actions rapides du footer (barre masquée) : proxys vers les boutons
     // de la barre — un seul handler par action, zéro duplication de logique.
-    btn('quick-takeback', () => document.getElementById('button-takeback')?.click());
-    btn('quick-restart',  () => document.getElementById('button-restart')?.click());
 
     // Bascule : démarrer si à l'arrêt, arrêter si en cours (demande UX)
     btn('button-video',      () => videoRecording ? StopRecording() : StartRecording());
@@ -2168,9 +2165,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // se rabat sur son IA native et le bandeau #play-warning s'affiche.
     installNativeEngine(gameArea, tRpc);
 
-    // Sélecteur de skin (2D/3D) du footer, à côté des joueurs A/B — visible
-    // seulement quand la barre de boutons est masquée (classe
-    // player-select-wrap, exclusion gérée en CSS par .bar-visible).
+    // Sélecteur de skin (2D/3D) du pied de page, à côté des joueurs A/B. Il y
+    // est désormais visible EN PERMANENCE : la barre repliable qui le masquait
+    // a laissé place à la barre latérale.
     // Capture d'écran / vidéo : disponibles uniquement en 3D (limitation
     // Jocly : viewControl('takeSnapshot') rejette "Snapshot only available
     // on 3D views" en 2D — c'est le rendu WebGL qui est capturé). On grise

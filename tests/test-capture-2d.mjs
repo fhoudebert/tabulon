@@ -100,17 +100,27 @@ skinSel().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await waitFor(() => snap().disabled, 'retour 2D → regrisés');
 assert(video().disabled, 'garde suivie sur chaque changement de skin');
 
-// 4. Boutons rapides à côté des skins (masqués avec la barre, comme les selects)
+/*
+ * 4. Reprendre un coup et recommencer, dans le pied de page.
+ *
+ * Ils y étaient déjà, en DOUBLE : la barre repliable les cachait quand elle
+ * s'ouvrait, d'où une paire quick-* pour garder l'action accessible. La barre
+ * latérale a supprimé l'exclusion, donc le doublon : ce sont désormais les
+ * boutons du pied qui portent les identifiants principaux, et il n'y en a
+ * plus qu'un de chaque.
+ */
 const wrap = document.getElementById('quick-actions-wrap');
 assert(wrap && wrap.classList.contains('player-select-wrap'),
-  'actions rapides dans un player-select-wrap (exclusion barre/footer héritée)');
-document.getElementById('quick-restart').click();
+  'les deux actions restent groupées dans le pied de page');
+assert(!document.getElementById('quick-restart') && !document.getElementById('quick-takeback'),
+  'et les doublons de la barre ont disparu avec elle');
+document.getElementById('button-restart').click();
 await waitFor(() => match.rollbacks.includes(0), 'restart');
-assert(match.rollbacks.at(-1) === 0, 'quick Restart → rollback(0) via le handler de la barre');
+assert(match.rollbacks.at(-1) === 0, 'Recommencer → rollback(0)');
 match.playedMoves = ['a', 'b'];
-document.getElementById('quick-takeback').click();
+document.getElementById('button-takeback').click();
 await waitFor(() => match.rollbacks.length >= 2, 'takeback');
-assert(match.rollbacks.at(-1) === 1, 'quick Take back → rollback (reprise du dernier coup)');
+assert(match.rollbacks.at(-1) === 1, 'Reprendre un coup → rollback (dernier coup)');
 
 console.log(`\n${passed} assertions OK — garde 2D + actions rapides validées.`);
 process.exit(0);

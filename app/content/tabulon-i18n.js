@@ -250,6 +250,11 @@ const DICT = {
         'tip.saveBook': 'Save book', 'tip.loadBoardState': 'Load board state',
         'tip.displayBoardState': 'Display board state',
         'tip.resumeFromPosition': 'Resume from position',
+        // Titres de la barre latérale. Ils suivent l'usage et non la
+        // technique : on règle l'affichage ET les joueurs ensemble parce que
+        // c'est ce qu'on enregistre comme modèle.
+        'sidebar.setup': 'Setup', 'sidebar.game': 'Game',
+        'sidebar.around': 'Around the game', 'sidebar.capture': 'Capture',
         // camera-view
         'tip.addViewPoint': 'Add view point', 'tip.addSpeed': 'Add speed',
         'tip.spinCcw': 'Spin counter-clockwise', 'tip.spinCw': 'Spin clockwise',
@@ -521,6 +526,8 @@ const DICT = {
         'tip.saveBook': 'Enregistrer la partie', 'tip.loadBoardState': 'Charger un état du plateau',
         'tip.displayBoardState': "Afficher l'état du plateau",
         'tip.resumeFromPosition': 'Reprendre depuis cette position',
+        'sidebar.setup': 'Réglages', 'sidebar.game': 'Partie',
+        'sidebar.around': 'Autour de la partie', 'sidebar.capture': 'Capture',
         'tip.addViewPoint': 'Ajouter un point de vue', 'tip.addSpeed': 'Ajouter une vitesse',
         'tip.spinCcw': 'Rotation antihoraire', 'tip.spinCw': 'Rotation horaire',
         'tip.pauseSpin': 'Arrêter la rotation',
