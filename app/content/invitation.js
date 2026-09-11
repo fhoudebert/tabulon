@@ -39,7 +39,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     const linkInput     = document.getElementById('invitation-link');
     const startBtn      = document.getElementById('button-start');
 
-    if (relayInput) relayInput.value = DEFAULT_RELAY_URL;
+    /*
+     * LES DERNIERS REGLAGES QUI ONT MARCHE.
+     *
+     * Le relai, le port et l'adresse publique sont des valeurs qu'on retape a
+     * l'identique a chaque partie -- une IP publique ou un nom DynDNS ne
+     * s'invente pas, et se retenir de tete un numero de port ouvert dans sa
+     * box est exactement le genre de corvee qu'un logiciel doit s'epargner.
+     *
+     * Enregistres SEULEMENT quand ils ont servi : proposer de nouveau une
+     * adresse qui a echoue serait pire que de ne rien proposer, puisque le
+     * joueur croirait retrouver un reglage eprouve.
+     */
+    const prefs = (await store?.get('invitation-last').catch(() => null)) || {};
+    if (relayInput) relayInput.value = prefs.relayUrl || DEFAULT_RELAY_URL;
+    const portField  = document.getElementById('peer-port');
+    const extraField = document.getElementById('peer-extra-addr');
+    if (portField && prefs.port) portField.value = prefs.port;
+    if (extraField && prefs.extraAddresses) extraField.value = prefs.extraAddresses;
+
+    // Fusionne plutot que remplace : le relai et le pair-a-pair s'enregistrent
+    // separement, et retenir l'un ne doit pas effacer l'autre.
+    const remember = async (values) => {
+        try { await store?.set('invitation-last', { ...prefs, ...values }); }
+        catch (e) { console.warn('[invitation] reglages non retenus :', e.message || e); }
+    };
 
     const setStatus = (el, text, cls) => {
         if (!el) return;
@@ -196,6 +220,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             chatKey: derived ? null : chatKey, chatKeyId: derived ? kid : null });
         if (!link) { setStatus(createStatus, t('players.testFail'), 'fail'); return; }
         created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true, chatKey };
+        // Le lien s'est construit, donc l'adresse du relai est au moins bien
+        // formee. On la retient pour la prochaine partie.
+        await remember({ relayUrl });
         if (linkInput) linkInput.value = link;
         if (linkRow) linkRow.style.display = '';
         if (startBtn) startBtn.disabled = false;
@@ -277,7 +304,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         //   - adresse(s) publique(s) : IP publique ou nom d'hote (DynDNS),
         //     plusieurs possibles separees par des virgules -- mises en
         //     tete du code, essayees en premier par l'invite.
-        const portRaw = document.getElementById('peer-port')?.value.trim() || '';
+        const portRaw = portField?.value.trim() || '';
         let port = null;
         if (portRaw) {
             port = Number(portRaw);
@@ -286,8 +313,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
         }
-        const extraAddresses = (document.getElementById('peer-extra-addr')?.value || '')
-            .split(',').map(a => a.trim()).filter(Boolean);
+        const extraRaw = extraField?.value || '';
+        const extraAddresses = extraRaw.split(',').map(a => a.trim()).filter(Boolean);
         /*
          * PAS DE DERIVATION EN PAIR-A-PAIR, et ce n'est pas un oubli.
          *
@@ -310,6 +337,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (peerCode) peerCode.value = code;
             if (peerCodeRow) peerCodeRow.style.display = '';
             setStatus(peerHostStatus, t('invitation.peerWaiting'), '');
+            // ICI et pas avant : l'hebergement a demarre, donc le port etait
+            // libre et les adresses acceptables. C'est ce qui distingue un
+            // reglage eprouve d'un reglage simplement saisi.
+            await remember({ port: portRaw, extraAddresses: extraRaw.trim() });
         } catch (e) {
             console.warn('[invitation] peer host failed:', e.message || e);
             setStatus(peerHostStatus, t('invitation.peerHostFail', { error: String(e.message || e) }), 'fail');
