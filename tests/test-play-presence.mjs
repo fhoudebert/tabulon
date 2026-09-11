@@ -253,6 +253,21 @@ assert(true, 'le bouton Reprendre annonce le retour');
     await mockTauri.event.emit('play-req:9:set-chat-key', { key: 'trop court' });
     await sleep(60);
     assert(storeData.get('invite:' + INVITE).chatKey === key, 'une clé mal formée ne remplace pas la bonne');
+
+    /*
+     * ET LA CLE REDESCEND VERS LA FENETRE.
+     *
+     * Sans cela, celui qui CREE la partie n'avait aucun moyen de la relire :
+     * elle est tirée au tirage de l'invitation et ne vit que dans le fragment
+     * du lien. Si l'autre ne l'avait pas reçue — lien tronqué à la copie —
+     * personne ne pouvait la lui redonner, et la ligne de saisie
+     * n'apparaissait que chez celui qui en manquait.
+     */
+    let pushed = null;
+    (bus['play-event:9:chat'] ??= []).push(({ payload }) => { pushed = payload; });
+    await mockTauri.event.emit('play-req:9:get-chat', {});
+    await waitFor(() => pushed !== null, 'la fenêtre reçoit l’état du fil');
+    assert(pushed.chatKey === key, 'avec la clé, pour pouvoir l’afficher et la redonner');
 }
 
 console.log(`\n${passed} assertions OK — présence en jeu à distance validée.`);

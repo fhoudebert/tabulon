@@ -9,8 +9,8 @@
 // rouverte sans que la partie s'en aperçoive.
 //
 //   requête : emit('play-req:{matchId}:get-chat')
-//   réponse : listen('play-rep:{matchId}:get-chat', {conversation, canWrite, sides})
-//   poussée : listen('play-event:{matchId}:chat', {conversation, canWrite, sides})
+//   réponse : listen('play-rep:{matchId}:get-chat', {conversation, canWrite, sides, chatKey})
+//   poussée : listen('play-event:{matchId}:chat', {conversation, canWrite, sides, chatKey})
 //   envoi   : emit('play-req:{matchId}:send-chat', {kind, body, quick})
 //   lu      : emit('play-req:{matchId}:chat-seen', {id})
 //
@@ -100,15 +100,32 @@ function Render(conversation) {
  * laisser taper pour échouer ensuite serait pire. Les messages rapides, eux,
  * restent disponibles — ils ne transportent aucun texte, donc rien à sceller.
  */
-function SetCanWrite(canWrite) {
+/**
+ * Ouvre ou ferme la saisie libre, et montre la cle de la partie.
+ *
+ * LA LIGNE DE CLE EST TOUJOURS LA, et c'est un changement : elle
+ * n'apparaissait qu'a celui qui n'avait PAS de cle. Celui qui cree la partie
+ * en a une -- tiree au tirage de l'invitation, vivant seulement dans le
+ * fragment du lien -- et n'avait donc aucun moyen de la relire ni de la
+ * redonner si l'autre ne l'avait pas recue. Les deux joueurs voient desormais
+ * la meme chose : la cle si elle existe, de quoi en poser une sinon.
+ *
+ * L'afficher ne coute rien : elle est deja sur cette machine. Ce qui compte
+ * est qu'elle ne parte jamais vers le relai.
+ */
+function SetCanWrite(canWrite, chatKey) {
     const input = $('chat-input'), send = $('chat-send'), status = $('chat-status');
     if (input) input.disabled = !canWrite;
     if (send) send.disabled = !canWrite;
     if (status) status.textContent = canWrite ? '' : t('chat.noKey');
-    // La ligne de cle n'apparait que quand elle manque : une fois la partie
-    // protegee, elle n'aurait plus qu'un usage, la casser.
-    const row = $('chat-key-row');
-    if (row) row.style.display = canWrite ? 'none' : '';
+
+    const field = $('chat-key-input');
+    // Pas pendant qu'on la modifie : ecraser une cle a moitie collee serait
+    // le plus sur moyen de rendre le champ inutilisable.
+    if (field && chatKey && document.activeElement !== field && field.value !== chatKey)
+        field.value = chatKey;
+    const hint = $('chat-key-hint');
+    if (hint) hint.textContent = chatKey ? t('chat.keyMine') : t('chat.keyNone');
 }
 
 let conversation = [];
@@ -129,7 +146,7 @@ function MarkSeen() {
 function Apply(payload) {
     if (!payload) return;
     if (payload.sides) sides = payload.sides;
-    SetCanWrite(!!payload.canWrite);
+    SetCanWrite(!!payload.canWrite, payload.chatKey || null);
     conversation = payload.conversation || [];
     Render(conversation);
     MarkSeen();

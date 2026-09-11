@@ -316,6 +316,21 @@ function PushChat() {
     emit(`play-event:${matchId}:chat`, {
         conversation: chatChannel ? chatChannel.conversation : [],
         canWrite: !!chatSealed,
+        /*
+         * LA CLE ELLE-MEME, pour que la fenetre puisse l'AFFICHER.
+         *
+         * Sans cela, celui qui cree la partie n'avait aucun moyen de retrouver
+         * sa cle : elle est tiree au tirage de l'invitation et ne vit que dans
+         * le fragment du lien. Si l'autre joueur ne l'a pas recue -- lien
+         * tronque a la copie, invitation transmise autrement -- personne ne
+         * pouvait la lui redonner, et la ligne de saisie n'apparaissait que
+         * chez celui qui en manquait.
+         *
+         * La montrer ne coute rien : elle est deja sur cette machine, et c'est
+         * le seul endroit ou la relire. Elle ne part JAMAIS vers le relai,
+         * c'est tout ce qui compte.
+         */
+        chatKey: chatConfig?.chatKey || null,
         sides: { 1: SideName(Jocly.PLAYER_A), '-1': SideName(Jocly.PLAYER_B) },
     }).catch(() => {});
 }
