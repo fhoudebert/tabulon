@@ -235,9 +235,25 @@ async function SavePJN() {
             NoteInTitle(t('history.noPgn'));
             return;
         }
+        /*
+         * LA BALISE [Variant], et c'est elle qui decide si le fichier sera
+         * relisible ailleurs.
+         *
+         * Le nom Jocly n'a de sens que pour Tabulon : « horde-chess » la ou un
+         * lecteur attend « horde ». play.js repond desormais avec le nom que
+         * declare le niveau Expert du jeu -- celui de Fairy-Stockfish -- et
+         * c'est celui-la qu'on ecrit.
+         *
+         * Faute de mieux on garde le nom Jocly et on le DIT : le fichier reste
+         * juste, ses coups sont bons, il faudra seulement corriger la balise a
+         * la main pour l'ouvrir ailleurs. Le refuser priverait d'export des
+         * parties qui n'ont rien de fautif.
+         */
+        const variant = gameName === 'chu-shogi' ? 'chu' : (data.variant || gameName);
+        if (!data.variant && gameName !== 'chu-shogi')
+            NoteInTitle(t('history.pgnVariant', { variant }));
         const pgn = BuildPGN(data.moves, data.sfen, {
-            event, white, black, result, tsume,
-            variant: gameName === 'chu-shogi' ? 'chu' : gameName,
+            event, white, black, result, tsume, variant,
         });
         await tRpc.call('save_text_file', path, pgn)
             .catch(e => console.warn('[history] save book (pgn) failed:', e));

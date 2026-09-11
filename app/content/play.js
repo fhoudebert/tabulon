@@ -1282,7 +1282,8 @@ function initSatelliteListeners() {
         let data = null;
         try { data = await WesternGame(); }
         catch (e) { console.warn('[play] export occidental:', e.message || e); }
-        await emit(`play-rep:${matchId}:get-western-moves`, data || { moves: null, sfen: null });
+        await emit(`play-rep:${matchId}:get-western-moves`,
+            data || { moves: null, sfen: null, variant: null });
     });
 
     // rollback-to : annuler jusqu'a l'index demande
@@ -1487,9 +1488,42 @@ function UsiToJocly(square, files) {
 // Renvoie null si le jeu ne sait pas ecrire l'USI (pas de sfen-model.js) :
 // l'appelant retombe alors sur le PJN, plutot que d'ecrire un fichier
 // bancal dans un format qu'il annonce.
+/**
+ * Le nom que Fairy-Stockfish donne a ce jeu, ou null.
+ *
+ * POURQUOI IL COMPTE : c'est ce qu'attend la balise [Variant] d'un PGN. Sans
+ * lui, le fichier annonce le nom Jocly -- « horde-chess » la ou un lecteur
+ * attend « horde » -- et personne ne le relit, alors que les coups eux-memes
+ * sont bons.
+ *
+ * L'information existe deja : chaque jeu qui a un niveau Expert declare la
+ * variante correspondante. Sous deux formes, selon que le jeu a un prelude ou
+ * non :
+ *
+ *   - `variant` : un seul nom (horde, 3check, patchanka) ;
+ *   - `variants` : un nom PAR ARRANGEMENT, car le prelude change les regles.
+ *     Capablanca et Timurid sont dans ce cas, et leur couverture est
+ *     PARTIELLE -- Capablanca declare les arrangements 0, 1 et 4, pas les
+ *     autres. Un arrangement sans variante rend donc null, ce qui est la
+ *     verite et non une panne.
+ *
+ * @param {Array} played - les coups joues, ou se trouve la reponse au prelude
+ */
+function FairyVariantName(played) {
+    const level = (levels || []).find(l => l && l.ai === 'fairy-stockfish');
+    if (!level) return null;
+    if (level.variant) return level.variant;
+    if (!Array.isArray(level.variants)) return null;
+    const answer = (played || []).find(m => m && m.setup !== undefined);
+    if (!answer) return null;
+    const match = level.variants.find(v => v && v.setup === answer.setup);
+    return (match && match.variant) || null;
+}
+
 async function WesternGame() {
     const played = await joclyMatch.getPlayedMoves().catch(() => []);
-    if (!played || !played.length) return { moves: [], sfen: null };
+    if (!played || !played.length) return { moves: [], sfen: null, variant: null };
+    const variant = FairyVariantName(played);
     // La position de depart est FACULTATIVE : ChuShogiLite n'ecrit [FEN] que
     // pour une position non standard, et une partie jouee depuis le debut n'en
     // a pas besoin. La refuser faute de SFEN privait d'export toutes les
@@ -1521,6 +1555,20 @@ async function WesternGame() {
         const first = await joclyMatch.getBoardState('sfen').catch(() => null);
         const start = (sfenOk && first && first.trim().split(/\s+/).length <= 4) ? first : null;
         for (let ply = 0; ply < here; ply++) {
+            /*
+             * La reponse au prelude n'est pas un coup : elle choisit
+             * l'arrangement des pieces avant que la partie commence. L'ecrire
+             * donnerait un PGN decale d'un demi-coup, et « #0 » n'est traduisible
+             * dans aucune notation -- c'est ce jeton qui faisait refuser
+             * l'export entier pour Timurid et Capablanca.
+             *
+             * Ce qu'il dit est deja dans la balise [Variant], calculee
+             * au-dessus : rien ne se perd a l'ecarter d'ici.
+             */
+            if (played[ply] && played[ply].setup !== undefined) {
+                await joclyMatch.rollback(ply + 1);
+                continue;
+            }
             const legal = await joclyMatch.getPossibleMoves();
             const naturals = await joclyMatch.getMoveString(legal);
             const letterAt = BoardLetters(await joclyMatch.getBoardState(),
@@ -1577,7 +1625,7 @@ async function WesternGame() {
             out.push(token || '?');
             await joclyMatch.rollback(ply + 1);
         }
-        return { moves: out, sfen: start };
+        return { moves: out, sfen: start, variant };
     } finally {
         // Quoi qu'il arrive, l'utilisateur retrouve la position qu'il avait.
         await joclyMatch.rollback(here).catch(() => {});
