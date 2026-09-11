@@ -687,6 +687,7 @@ async function OpenGameFile(text, fileName, hintGame) {
     //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers,
     //    [Variant] par Fairy-Stockfish et les serveurs d'echecs).
     let declared = null;
+    let preludeSetup = null;
     try {
         const matches = await tRpc.call('parse_pjn', text);
         const tags = matches?.[0]?.tags;
@@ -703,11 +704,16 @@ async function OpenGameFile(text, fileName, hintGame) {
             // et le chu shogi n'est joue par aucune variante du moteur.
             const direct = VariantGame(raw);
             const variant = FairyVariantAlias(raw);
-            const mapped = (direct && gamesMap[direct]) ? direct
-                         : variant ? (await FairyMap())[variant] : null;
+            const hit = variant ? (await FairyMap())[variant] : null;
+            const mapped = (direct && gamesMap[direct]) ? direct : (hit?.game || null);
             if (mapped) {
-                console.info('[hub]', raw, '→ jeu Jocly :', mapped);
+                console.info('[hub]', raw, '→ jeu Jocly :', mapped
+                    + (Number.isInteger(hit?.setup) ? ' (arrangement ' + hit.setup + ')' : ''));
                 declared = mapped;
+                // L'arrangement, quand la variante en designe un : c'est la
+                // reponse au prelude, et sans elle la partie se rouvrirait sur
+                // le premier arrangement -- juste de jeu, fausse de regles.
+                preludeSetup = Number.isInteger(hit?.setup) ? hit.setup : null;
             }
         }
     } catch (e) { console.warn('[hub] parse_pjn:', e.message || e); }
@@ -715,7 +721,7 @@ async function OpenGameFile(text, fileName, hintGame) {
     const r = ResolveGame(declared, selected);
     if (!r.game) return Notify(r.unknown ? t('hub.loadUnknownGame') : t('hub.loadNoGame'));
     if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
-    await store.set('book:' + r.game, { fileName, data: text });
+    await store.set('book:' + r.game, { fileName, data: text, preludeSetup });
     tRpc.call('open_book', r.game, fileName, '');
 }
 
@@ -735,7 +741,7 @@ async function OpenVariantsIni(text, fileName) {
     const playable = variants.filter(v => map[v.name.toLowerCase()]);
     console.info('[hub] variants.ini :', variants.length, 'variantes,',
         playable.length, 'jouables par un jeu du catalogue :',
-        playable.map(v => v.name + ' -> ' + map[v.name.toLowerCase()]).join(', '));
+        playable.map(v => v.name + ' -> ' + map[v.name.toLowerCase()].game).join(', '));
 
     SetNav('loadgame');
     document.getElementById('loadgame-pane').style.display = '';
@@ -749,8 +755,11 @@ async function OpenVariantsIni(text, fileName) {
     // Les positions de depart des variantes reconnues deviennent des
     // vignettes lancables, au meme titre que les exemples livres.
     document.getElementById('loadgame-tabs').innerHTML = '';
+    // L'index rend { game, setup } : on ouvre une POSITION, pas une partie,
+    // donc seul le jeu importe ici -- l'arrangement ne sert qu'a rejouer un
+    // fichier de coups.
     RenderSamples(playable.slice(0, 12).map(v => ({
-        game: map[v.name.toLowerCase()],
+        game: map[v.name.toLowerCase()].game,
         kind: 'position',
         fileName: v.name + '.pjn',
         text: '[JoclyGame "' + map[v.name.toLowerCase()] + '"]\n[Event "' + v.name + '"]\n'

@@ -1778,13 +1778,32 @@ export function FairyVariantAlias(name) {
  */
 export function FairyGameIndex(configs) {
     const index = {};
+    const add = (variant, entry) => {
+        if (typeof variant !== 'string' || !variant) return;
+        const key = variant.toLowerCase();
+        if (!index[key]) index[key] = entry;
+    };
     for (const [name, cfg] of Object.entries(configs || {})) {
         for (const lvl of cfg?.model?.levels || []) {
             if (lvl?.ai !== 'fairy-stockfish') continue;
-            const declared = [lvl.variant, ...(lvl.variants || []).map(v => v?.variant)];
-            for (const v of declared)
-                if (typeof v === 'string' && v && !index[v.toLowerCase()])
-                    index[v.toLowerCase()] = name;
+            add(lvl.variant, { game: name, setup: null });
+            /*
+             * L'ARRANGEMENT, ET PAS SEULEMENT LE JEU.
+             *
+             * Un jeu a prelude declare une variante PAR arrangement :
+             * timurid-xsx, timurid-huh... L'index ne retenait que le nom du
+             * jeu, donc un fichier « mirza » rouvrait bien Timurid -- mais au
+             * premier arrangement, Herat. Le fichier etait juste, la partie
+             * relue etait une autre.
+             *
+             * On garde donc le numero du setup, qui est exactement la reponse
+             * au prelude (« #4 ») : AnswerPrelude sait deja la suivre quand un
+             * fichier la porte. Le PGN, lui, n'a pas a la porter -- il la dit
+             * deja dans [Variant], et un coup de prelude n'est pas un coup
+             * d'echecs.
+             */
+            for (const v of lvl.variants || [])
+                add(v?.variant, { game: name, setup: Number.isInteger(v?.setup) ? v.setup : null });
         }
     }
     return index;

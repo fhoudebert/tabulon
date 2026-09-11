@@ -1510,20 +1510,54 @@ function UsiToJocly(square, files) {
  * @param {Array} played - les coups joues, ou se trouve la reponse au prelude
  */
 function FairyVariantName(played) {
+    return FairyProfile(played).variant;
+}
+
+/**
+ * Ce que le jeu declare a Fairy-Stockfish : le nom de la variante, et la
+ * correspondance des lettres de pieces.
+ *
+ * `pieceMap` n'est pas un detail : jocly et Fairy-Stockfish ne nomment pas
+ * toujours les memes pieces de la meme facon. Capablanca ecrit « M » pour le
+ * chancelier la ou le moteur attend « C » -- et le manifeste porte deja
+ * `pieceMap: { M: 'C' }` pour que le moteur puisse JOUER. La meme
+ * correspondance vaut pour ECRIRE : un PGN qui annonce [Variant "capablanca"]
+ * et parle de « Mf3 » n'est pas du Fairy-Stockfish, c'est du jocly deguise.
+ */
+function FairyProfile(played) {
+    const empty = { variant: null, pieceMap: null };
     const level = (levels || []).find(l => l && l.ai === 'fairy-stockfish');
-    if (!level) return null;
-    if (level.variant) return level.variant;
-    if (!Array.isArray(level.variants)) return null;
+    if (!level) return empty;
+    if (level.variant) return { variant: level.variant, pieceMap: level.pieceMap || null };
+    if (!Array.isArray(level.variants)) return empty;
     const answer = (played || []).find(m => m && m.setup !== undefined);
-    if (!answer) return null;
+    if (!answer) return empty;
     const match = level.variants.find(v => v && v.setup === answer.setup);
-    return (match && match.variant) || null;
+    if (!match || !match.variant) return empty;
+    return { variant: match.variant, pieceMap: match.pieceMap || level.pieceMap || null };
+}
+
+/**
+ * Traduit la lettre d'une piece dans l'alphabet de Fairy-Stockfish.
+ *
+ * La correspondance du manifeste est ecrite en majuscules (« M » -> « C ») ;
+ * le plateau, lui, distingue les camps par la casse. On traduit donc sur la
+ * majuscule et on rend une majuscule, qui est ce qu'attend une notation SAN.
+ */
+function FairyLetters(letterAt, pieceMap) {
+    if (!letterAt || !pieceMap) return letterAt;
+    return (square) => {
+        const raw = letterAt(square);
+        if (!raw) return raw;
+        const up = raw.toUpperCase();
+        return pieceMap[up] || up;
+    };
 }
 
 async function WesternGame() {
     const played = await joclyMatch.getPlayedMoves().catch(() => []);
     if (!played || !played.length) return { moves: [], sfen: null, variant: null };
-    const variant = FairyVariantName(played);
+    const { variant, pieceMap } = FairyProfile(played);
     // La position de depart est FACULTATIVE : ChuShogiLite n'ecrit [FEN] que
     // pour une position non standard, et une partie jouee depuis le debut n'en
     // a pas besoin. La refuser faute de SFEN privait d'export toutes les
@@ -1565,7 +1599,22 @@ async function WesternGame() {
              * Ce qu'il dit est deja dans la balise [Variant], calculee
              * au-dessus : rien ne se perd a l'ecarter d'ici.
              */
-            if (played[ply] && played[ply].setup !== undefined) {
+            /*
+             * DEUX demi-coups, pas un : le prelude choisit l'arrangement
+             * (« #0 ») PUIS fait passer le trait a l'adversaire par une etape
+             * vide (« -- »), sans quoi le mauvais camp ouvrirait la partie.
+             *
+             * Le premier porte `setup`, le second ne porte RIEN -- c'est un
+             * objet vide. Ne sauter que le premier laissait le second dans la
+             * boucle, ou il ne correspondait a aucun coup legal : l'export
+             * rendait « ? » et refusait la partie entiere. C'est ce qui
+             * arrivait encore a Timurid et Capablanca apres le premier
+             * correctif.
+             *
+             * Le critere est donc « ce coup ne bouge aucune piece » : un vrai
+             * coup de plateau a toujours une case de depart.
+             */
+            if (played[ply] && (played[ply].setup !== undefined || played[ply].f === undefined)) {
                 await joclyMatch.rollback(ply + 1);
                 continue;
             }
@@ -1611,7 +1660,10 @@ async function WesternGame() {
             } else {
                 const usiMove = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
                 token = BuildSanMove(naturals[index], rivals, gameName, {
-                    letterAt: reliableLetters ? letterAt : undefined,
+                    // Les lettres de Fairy-Stockfish, pas celles de jocly :
+                    // c'est ce qui distingue un PGN relisible par le moteur
+                    // d'un fichier qui lui ressemble.
+                    letterAt: reliableLetters ? FairyLetters(letterAt, pieceMap) : undefined,
                     // Le xiangqi numerote ses rangees a partir de 0 et n'ecrit
                     // ni separateur ni prise : l'appelant fournit les deux.
                     rankOffset: zeroBasedRanks ? 1 : 0,
@@ -2359,6 +2411,16 @@ async function BookReplay(book) {
         const recordedPrelude = [];
         while (book.moves && book.moves.length && PRELUDE_MOVE.test(book.moves[0]))
             recordedPrelude.push(book.moves.shift());
+        /*
+         * Un PGN ne porte PAS la reponse au prelude : « #4 » n'est pas un coup
+         * d'echecs, et l'export l'ecarte a juste titre. Elle est dans la balise
+         * [Variant], que le hub a su ramener a un arrangement -- c'est ce qu'on
+         * recoit ici. Sans elle, AnswerPrelude en serait reduit a deviner, et
+         * deviner ne marche pas : les arrangements d'un meme jeu acceptent
+         * souvent le meme premier coup, donc le premier essai gagne toujours.
+         */
+        if (!recordedPrelude.length && Array.isArray(book.prelude))
+            recordedPrelude.push(...book.prelude);
         await AnswerPrelude(book.moves && book.moves[0], recordedPrelude);
 
         // Un livre venu d'un SGF porte ses coups en POINTS du goban ("Q16",

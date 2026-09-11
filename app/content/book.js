@@ -89,6 +89,21 @@ async function OpenBookMatch(match, index, count) {
     const id = 'book-' + Date.now();
     const game = await MatchGame(match);
     const store = await Store.load('tabulon.json');
+    /*
+     * L'ARRANGEMENT du prelude, quand le hub a su le deduire de [Variant].
+     *
+     * Un jeu a prelude declare une variante Fairy-Stockfish PAR arrangement --
+     * timurid-xsx pour Mirza, timurid-huh pour Wild Mirza. Le PGN ne porte pas
+     * la reponse au prelude (« #4 » n'est pas un coup d'echecs), il la dit
+     * dans [Variant] ; c'est donc au chargement qu'on la reconstitue.
+     *
+     * Sans elle, le fichier rouvrait le bon JEU au premier ARRANGEMENT : une
+     * partie de Mirza relue en Herat. Les coups passaient parfois -- les
+     * pieces de depart different peu -- ce qui est le pire des cas : une
+     * partie fausse et silencieuse.
+     */
+    const source = await store.get('book:' + gameName).catch(() => null);
+    const setup = Number.isInteger(source?.preludeSetup) ? source.preludeSetup : null;
     await store.set('fork:' + id, {
         book: {
             moves,
@@ -109,6 +124,10 @@ async function OpenBookMatch(match, index, count) {
             // cette option jocly tient sa position pour perdue d'avance --
             // aucun coup legal, rien a rejouer ni a parcourir.
             tsume: IsTsume(match.text, match.tags),
+            // Ecrit comme un coup de prelude, parce que c'est ce que
+            // AnswerPrelude sait deja suivre : un fichier de Tabulon porte
+            // « 1. #4 -- » en tete, et la lecture emprunte le meme chemin.
+            prelude: setup === null ? null : ['#' + setup],
         },
     });
     tRpc.call('new_match', game, null, id);

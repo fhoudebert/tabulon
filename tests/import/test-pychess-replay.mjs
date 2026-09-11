@@ -94,7 +94,7 @@ for (const [name, expected] of GAMES) {
         if (m) tags[m[1]] = m[2].replace(/^"|"$/g, '');
     }
     const variant = BookVariant(tags);
-    const game = VariantGame(variant) || fairy[FairyVariantAlias(variant)];
+    const game = VariantGame(variant) || fairy[FairyVariantAlias(variant)]?.game;
     if (!game) { ok(false, `${name} : [Variant "${variant}"] ne designe aucun jeu`); continue; }
 
     const tokens = ExtractMoves(text);
