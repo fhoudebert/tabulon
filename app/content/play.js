@@ -162,9 +162,22 @@ let remoteChannel      = null;
 let remoteChannelKey   = null;   // Jocly.PLAYER_A/B associe au canal actif
 let remoteMoveBuffer   = null;   // {nbTurns, lastMove} recu avant d'etre attendu
 let remoteMoveWaiters  = [];     // [{expectedNbTurns, resolve, reject}]
+/*
+ * La derniere enveloppe recue, gardee de cote.
+ *
+ * Elle porte `state`, l'etat complet de la partie -- indispensable au codec
+ * jocly-simple-match, ou un vrai client fait match.load(matchdata). Le chemin
+ * nominal ne s'en sert pas : il joue le seul `lastMove`, et c'est tres bien
+ * ainsi. Elle ne sert QUE si ce coup se revele injouable ici, auquel cas elle
+ * est la seule source de verite partagee pour remettre les deux plateaux
+ * d'accord. Rangee a part plutot que passee au tour, pour ne rien changer au
+ * cas qui marche.
+ */
+let remoteLastEnvelope = null;
 
 function onRemoteMoveReceived(payload) {
     remoteMoveBuffer = payload;
+    remoteLastEnvelope = payload;
     remoteMoveWaiters = remoteMoveWaiters.filter(w => {
         if (payload.nbTurns !== w.expectedNbTurns) return true;
         remoteMoveBuffer = null;
@@ -534,7 +547,44 @@ async function gameLoop() {
                     UpdateFooter(t('play.waitingRemote'));
                     const move = await waitForRemoteMove(moves.length + 1);
                     UpdateFooter('');
-                    const playResult = await joclyMatch.playMove(move);
+                    let playResult;
+                    try {
+                        playResult = await joclyMatch.playMove(move);
+                    } catch (e) {
+                        /*
+                         * LE COUP RECU NE VA PAS SUR NOTRE PLATEAU.
+                         *
+                         * Ce n'est pas cense arriver entre deux Tabulon a jour
+                         * -- c'est arrive entre deux ludotheques jocly
+                         * differentes, dont une seule connaissait l'etape vide
+                         * du prelude du go. Mais la FACON dont ca se
+                         * manifestait etait le vrai defaut : l'exception
+                         * remontait au catch du tour, qui journalisait « turn
+                         * aborted » et rebouclait -- sur la meme attente, avec
+                         * le meme coup en tampon. Les deux joueurs restaient en
+                         * attente l'un de l'autre, sans rien a l'ecran.
+                         *
+                         * On se resynchronise donc sur l'etat complet quand il
+                         * accompagne le coup, et on le DIT sinon. Le chemin
+                         * nominal, lui, n'a pas change d'une ligne : ce bloc ne
+                         * s'execute que sur une exception qui, jusqu'ici,
+                         * menait droit au blocage.
+                         */
+                        console.warn('[play] coup distant inapplicable :', e.message || e);
+                        const state = remoteLastEnvelope?.state;
+                        if (state) {
+                            console.info('[play] resynchronisation sur l’etat distant');
+                            await joclyMatch.load(state).catch(
+                                e2 => console.warn('[play] resynchronisation impossible :', e2.message || e2));
+                            await resyncRemoteChannelBaseline();
+                            UpdateFooter(t('play.remoteResync'));
+                            continue;
+                        }
+                        // Sans etat, rien a rattraper : on le dit, plutot que
+                        // de reboucler en silence.
+                        UpdateFooter(t('play.remoteDesync'));
+                        throw e;
+                    }
                     finished = playResult?.finished || false;
                     winner   = playResult?.winner;
 
