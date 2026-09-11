@@ -22,7 +22,7 @@ import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
 import { RelayChatChannel, PeerChatChannel } from './remote-chat-channel.js';
 import { ENVELOPE_KIND, PRESENCE, presenceOf } from './remote-chat-protocol.js';
-import { makeSealer } from './remote-secret.js';
+import { makeSealer, deriveChatKey, chatKeyId } from './remote-secret.js';
 import { isChatKey } from './remote-relay-protocol.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
@@ -212,7 +212,7 @@ function cancelRemoteWait(reason) {
 // currentNbTurns : nombre de coups deja joues localement au moment de la
 // creation (baseline correcte pour une partie deja entamee -- fork, reprise
 // apres fermeture de la fenetre...) ; ignore si le canal existe deja.
-function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey }, currentNbTurns) {
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey, chatKeyId: chatKid }, currentNbTurns) {
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
@@ -241,7 +241,7 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
     // playerKey est le camp DISTANT : le notre est l'autre. C'est lui qui
     // signe nos messages et qui decide laquelle des deux cles de fil nous
     // appartient (voir chatMidFor).
-    ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey }, -playerKey);
+    ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: chatKid }, -playerKey);
     return remoteChannel;
 }
 
@@ -269,10 +269,13 @@ let remotePresence = null;   // dernier etat declare par l'adversaire
  * pas voulu de discussion.
  */
 let chatConfig = null;      // la derniere configuration, pour rouvrir le canal
+let chatKeyring = [];       // [{id, name}] -- les cles de communaute, SANS les cles
+let chatKeyringId = null;   // celle qui sert a cette partie, si on la reconnait
 
-function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey }, localSide) {
+function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: kid = null }, localSide) {
     disposeChatChannel();
-    chatConfig = { matchId: remoteMatchId, relayUrl, peer, chatKey };
+    chatConfig = { matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: kid };
+    RefreshChatKeyring().then(PushChat).catch(() => {});
     let sealer = null;
     if (chatKey) {
         try { sealer = makeSealer(chatKey); }
@@ -331,8 +334,42 @@ function PushChat() {
          * c'est tout ce qui compte.
          */
         chatKey: chatConfig?.chatKey || null,
+        /*
+         * LE TROUSSEAU, pour que la fenetre propose de CHANGER de cle.
+         *
+         * C'est la manoeuvre courante quand on ne se lit pas : les deux
+         * joueurs n'emploient pas la meme cle de communaute. Sans la liste ici,
+         * le seul recours etait de coller une cle a la main -- alors que la
+         * bonne est deja sur la machine, sous un autre nom.
+         *
+         * Seuls le NOM et l'empreinte voyagent : la cle elle-meme reste dans
+         * les preferences, la fenetre n'en a pas besoin pour en demander une.
+         */
+        keyring: chatKeyring,
+        keyringId: chatKeyringId,
         sides: { 1: SideName(Jocly.PLAYER_A), '-1': SideName(Jocly.PLAYER_B) },
     }).catch(() => {});
+}
+
+/**
+ * Relit le trousseau et repere laquelle de ses cles sert a cette partie.
+ *
+ * L'empreinte est calculee depuis la cle elle-meme (chat_key_id), donc elle
+ * designe la meme entree des deux cotes quel que soit le nom que chacun lui a
+ * donne -- c'est ce qui permet a la fenetre de preselectionner la bonne ligne
+ * sans rien demander a personne.
+ */
+async function RefreshChatKeyring() {
+    chatKeyring = [];
+    chatKeyringId = null;
+    const keys = (await store?.get('community-keys').catch(() => null)) || [];
+    for (const entry of keys) {
+        if (!entry?.key) continue;
+        const id = await chatKeyId(entry.key).catch(() => null);
+        if (!id) continue;
+        chatKeyring.push({ id, name: entry.name || '' });
+        if (chatConfig?.chatKeyId && id === chatConfig.chatKeyId) chatKeyringId = id;
+    }
 }
 
 /**
@@ -990,7 +1027,12 @@ function initSatelliteListeners() {
      * et ne demande -- elle peut donc etre fermee et rouverte sans que la
      * partie s'en apercoive, et sans qu'un message se perde.
      */
-    listen(prefix + 'get-chat', () => { PushChat(); });
+    // Le trousseau est relu a chaque demande : le joueur a pu ajouter une cle
+    // dans les Preferences depuis que la partie a commence, et lui demander de
+    // rouvrir la partie pour la voir apparaitre serait absurde.
+    listen(prefix + 'get-chat', () => {
+        RefreshChatKeyring().then(PushChat).catch(() => PushChat());
+    });
 
     // La fenetre dit ce qu'elle a affiche. play.js n'a aucun moyen de le
     // deviner : Tauri ne previent pas de la fermeture d'une fenetre, et une
@@ -1024,6 +1066,43 @@ function initSatelliteListeners() {
         // vaut mieux que de le faire croire.
         if (remoteChannel && remoteChannelKey !== null)
             ensureChatChannel({ ...chatConfig, chatKey: key }, -remoteChannelKey);
+        PushChat();
+    });
+
+    /*
+     * CHANGER DE CLE DE COMMUNAUTE pour cette partie.
+     *
+     * La manoeuvre courante quand on ne se lit pas : les deux joueurs
+     * n'emploient pas la meme cle. La bonne est souvent deja sur la machine,
+     * sous un autre nom -- il suffit de la designer.
+     *
+     * La cle de la partie en est DERIVEE (cle de communaute + identifiant de
+     * partie) : rien ne transite, et l'autre joueur qui choisit la meme
+     * communaute obtient exactement la meme cle de son cote.
+     */
+    listen(prefix + 'set-chat-keyring', async ({ payload }) => {
+        const wanted = String(payload?.id || '');
+        const keys = (await store?.get('community-keys').catch(() => null)) || [];
+        let master = null;
+        for (const entry of keys) {
+            if (!entry?.key) continue;
+            if (await chatKeyId(entry.key).catch(() => null) === wanted) { master = entry.key; break; }
+        }
+        if (!master) { console.warn('[play] cle de communaute introuvable'); PushChat(); return; }
+
+        const derived = await deriveChatKey(master, chatConfig?.matchId || matchId).catch(e => {
+            console.warn('[play] derivation impossible :', e.message || e);
+            return null;
+        });
+        if (!derived) { PushChat(); return; }
+
+        if (inviteId) {
+            const invite = await store?.get('invite:' + inviteId).catch(() => null);
+            if (invite) await store?.set('invite:' + inviteId,
+                { ...invite, chatKey: derived, chatKeyId: wanted });
+        }
+        if (remoteChannel && remoteChannelKey !== null)
+            ensureChatChannel({ ...chatConfig, chatKey: derived, chatKeyId: wanted }, -remoteChannelKey);
         PushChat();
     });
 
@@ -2391,10 +2470,12 @@ async function BookReplay(book) {
                 remote: true, peer: true, matchId: invite.matchId,
                 gameName: invite.gameName || gameName,
                 chatKey: invite.chatKey || null,
+                chatKeyId: invite.chatKeyId || null,
             } : {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
                 chatKey: invite.chatKey || null,
+                chatKeyId: invite.chatKeyId || null,
             });
             syncFooterSelect(localSide);
             console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);

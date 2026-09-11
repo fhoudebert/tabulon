@@ -27,6 +27,11 @@
 					<button class="btn btn-default" data-quick="yourTurn" data-i18n="chat.yourTurn">Your turn</button>
 					<button class="btn btn-default" data-quick="backSoon" data-i18n="chat.backSoon">Back in a few minutes</button>
 					<button class="btn btn-default" data-quick="rematch" data-i18n="chat.rematch">Another game?</button>
+					<!-- Celui-ci a une raison d'etre particuliere : un message
+					     rapide voyage comme IDENTIFIANT, donc il se lit meme
+					     quand les deux cles ne s'accordent pas. C'est le seul
+					     moyen de DIRE a l'autre qu'on ne le lit pas. -->
+					<button class="btn btn-default" data-quick="unreadable" data-i18n="chat.unreadable">Unreadable — change key!</button>
 				</div>
 
 				<div class="chat-compose">
@@ -46,6 +51,13 @@
 				     par le relai -- sinon il l'aurait, et tout le chiffrement
 				     ne servirait a rien. Elle se transmet donc par un autre
 				     canal, comme le lien d'invitation. -->
+				<!-- Choisir laquelle des cles de communaute sert a cette
+				     partie. C'est la manoeuvre courante quand on ne se lit
+				     pas : la bonne cle est souvent deja sur la machine, sous
+				     un autre nom. Cachee tant qu'aucune n'est enregistree. -->
+				<div id="chat-keyring-row" class="chat-key" style="display:none">
+					<select id="chat-keyring" class="form-control"></select>
+				</div>
 				<p id="chat-key-hint" class="chat-status"></p>
 				<div id="chat-key-row" class="chat-key">
 					<input type="text" id="chat-key-input" class="form-control" data-i18n-placeholder="chat.keyPlaceholder" placeholder="Paste a shared key…" spellcheck="false">

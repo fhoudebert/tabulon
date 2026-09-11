@@ -113,11 +113,60 @@ function Render(conversation) {
  * L'afficher ne coute rien : elle est deja sur cette machine. Ce qui compte
  * est qu'elle ne parte jamais vers le relai.
  */
+/**
+ * La liste des cles de communaute, et celle qui sert a cette partie.
+ *
+ * Elle repond a la question qu'on se pose vraiment quand on ne lit pas son
+ * adversaire : « laquelle de mes cles emploie-t-il ? ». La reponse est presque
+ * toujours « une que j'ai deja », sous un autre nom -- d'ou une liste plutot
+ * qu'un champ a coller.
+ *
+ * Seuls les noms et les empreintes arrivent ici : les cles restent dans les
+ * preferences, la fenetre n'en a pas besoin pour en designer une.
+ */
+function SetKeyring(keyring, current) {
+    const row = $('chat-keyring-row');
+    const select = $('chat-keyring');
+    if (!row || !select) return;
+    row.style.display = keyring.length ? '' : 'none';
+    // Pas reconstruite pendant qu'on la deroule : la liste se refermerait
+    // sous le curseur a chaque rafraichissement du fil.
+    if (document.activeElement === select) return;
+    const stamp = keyring.map(k => k.id).join(',') + '|' + (current || '');
+    if (stamp === select.dataset.stamp) return;
+    select.dataset.stamp = stamp;
+    select.innerHTML = '';
+    if (!current) {
+        // Aucune reconnue : on le dit dans la liste elle-meme, sinon la
+        // premiere ligne aurait l'air d'etre celle qui sert.
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = t('chat.keyringNone');
+        select.appendChild(none);
+    }
+    for (const entry of keyring) {
+        const opt = document.createElement('option');
+        opt.value = entry.id;
+        // Une cle sans nom reste designable : son empreinte en tient lieu.
+        opt.textContent = entry.name || entry.id;
+        if (entry.id === current) opt.selected = true;
+        select.appendChild(opt);
+    }
+}
+
 function SetCanWrite(canWrite, chatKey) {
     const input = $('chat-input'), send = $('chat-send'), status = $('chat-status');
     if (input) input.disabled = !canWrite;
     if (send) send.disabled = !canWrite;
     if (status) status.textContent = canWrite ? '' : t('chat.noKey');
+
+    // Les deux boutons ne servent que faute de mieux : quand aucune cle de
+    // communaute n'est enregistree, il ne reste qu'a en fabriquer une et a la
+    // transmettre a la main. Des qu'un trousseau existe, la liste au-dessus
+    // fait le travail, et deux boutons de plus ne feraient qu'inviter a
+    // casser ce qui marche.
+    const manual = $('chat-key-row');
+    if (manual) manual.style.display = ($('chat-keyring')?.options.length ? 'none' : '');
 
     const field = $('chat-key-input');
     // Pas pendant qu'on la modifie : ecraser une cle a moitie collee serait
@@ -125,7 +174,8 @@ function SetCanWrite(canWrite, chatKey) {
     if (field && chatKey && document.activeElement !== field && field.value !== chatKey)
         field.value = chatKey;
     const hint = $('chat-key-hint');
-    if (hint) hint.textContent = chatKey ? t('chat.keyMine') : t('chat.keyNone');
+    if (hint) hint.textContent = $('chat-keyring')?.options.length ? t('chat.keyringHint')
+        : chatKey ? t('chat.keyMine') : t('chat.keyNone');
 }
 
 let conversation = [];
@@ -146,6 +196,7 @@ function MarkSeen() {
 function Apply(payload) {
     if (!payload) return;
     if (payload.sides) sides = payload.sides;
+    SetKeyring(payload.keyring || [], payload.keyringId || null);
     SetCanWrite(!!payload.canWrite, payload.chatKey || null);
     conversation = payload.conversation || [];
     Render(conversation);
@@ -190,7 +241,15 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     $('chat-key-new')?.addEventListener('click', async () => {
         const { generateChatKey } = await import('./remote-secret.js');
-        const field = $('chat-key-input');
+        // Les deux boutons ne servent que faute de mieux : quand aucune cle de
+    // communaute n'est enregistree, il ne reste qu'a en fabriquer une et a la
+    // transmettre a la main. Des qu'un trousseau existe, la liste au-dessus
+    // fait le travail, et deux boutons de plus ne feraient qu'inviter a
+    // casser ce qui marche.
+    const manual = $('chat-key-row');
+    if (manual) manual.style.display = ($('chat-keyring')?.options.length ? 'none' : '');
+
+    const field = $('chat-key-input');
         if (!field) return;
         try { field.value = generateChatKey(); } catch (e) {
             console.warn('[chat] pas de cle :', e.message || e);
@@ -201,6 +260,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // rendrait nos messages illisibles pour lui sans rien dire.
         const status = $('chat-status');
         if (status) status.textContent = t('chat.keyShare');
+    });
+
+    $('chat-keyring')?.addEventListener('change', (e) => {
+        if (!e.target.value) return;
+        emit(`play-req:${matchId}:set-chat-keyring`, { id: e.target.value }).catch(() => {});
     });
 
     $('chat-key-apply')?.addEventListener('click', () => {

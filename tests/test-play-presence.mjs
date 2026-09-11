@@ -41,6 +41,14 @@ const mockTauri = {
         if (cmd === 'is_favorite') return false;
         if (cmd === 'peer_status') return { connected: true };
         if (cmd === 'peer_last_message') return null;
+        /*
+         * L'empreinte et la derivation vivent en Rust (seal_cmds.rs) : ici on
+         * imite leur CONTRAT, pas leur cryptographie. Ce qui compte pour ce
+         * test est qu'une empreinte designe toujours la meme cle, et qu'une
+         * derivation depende de la partie.
+         */
+        if (cmd === 'chat_key_id') return 'id-' + String(args.master).slice(0, 8);
+        if (cmd === 'derive_chat_key') return String(args.master).slice(0, 32) + String(args.info).padEnd(32, '0').slice(0, 32);
         return null;
     } },
     event: {
@@ -268,6 +276,37 @@ assert(true, 'le bouton Reprendre annonce le retour');
     await mockTauri.event.emit('play-req:9:get-chat', {});
     await waitFor(() => pushed !== null, 'la fenêtre reçoit l’état du fil');
     assert(pushed.chatKey === key, 'avec la clé, pour pouvoir l’afficher et la redonner');
+}
+
+// 9. Le trousseau descend vers la fenêtre, et en choisir une entrée change la
+//    clé de la partie.
+//
+//    C'est la manœuvre courante quand on ne se lit pas : les deux joueurs
+//    n'emploient pas la même clé de communauté. La bonne est presque toujours
+//    déjà sur la machine, sous un autre nom — d'où une liste plutôt qu'un
+//    champ à coller. Seuls les NOMS et les empreintes voyagent jusqu'à la
+//    fenêtre : les clés restent dans les préférences.
+{
+    const master = 'f'.repeat(64);
+    storeData.set('community-keys', [{ id: 'x', name: 'Famille', key: master }]);
+
+    let pushed = null;
+    (bus['play-event:9:chat'] ??= []).push(({ payload }) => { pushed = payload; });
+    await mockTauri.event.emit('play-req:9:get-chat', {});
+    await waitFor(() => pushed !== null, 'la fenêtre reçoit l’état du fil');
+    assert(Array.isArray(pushed.keyring), 'avec le trousseau');
+    assert(pushed.keyring.every(k => !('key' in k)),
+        'mais sans les clés elles-mêmes : la fenêtre n’en a pas besoin pour en désigner une');
+    assert(pushed.keyring[0]?.name === 'Famille', 'et avec leur nom, seul repère lisible');
+
+    // Choisir une entrée DÉRIVE la clé de la partie : rien ne transite, et
+    // l'autre joueur qui choisit la même communauté obtient la même clé.
+    const before = storeData.get('invite:' + INVITE).chatKey;
+    await mockTauri.event.emit('play-req:9:set-chat-keyring', { id: pushed.keyring[0].id });
+    await waitFor(() => storeData.get('invite:' + INVITE).chatKey !== before,
+        'la clé de la partie change');
+    assert(storeData.get('invite:' + INVITE).chatKeyId === pushed.keyring[0].id,
+        'et l’empreinte est retenue, pour reconnaître l’entrée la prochaine fois');
 }
 
 console.log(`\n${passed} assertions OK — présence en jeu à distance validée.`);
