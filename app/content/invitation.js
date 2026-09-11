@@ -20,7 +20,7 @@ import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, httpFetch } from './tauri-bridge.js';
 import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
-import { generateChatKey } from './remote-secret.js';
+import { generateChatKey, deriveChatKey, chatKeyId } from './remote-secret.js';
 import { hostPeerMatch, joinPeerMatch } from './remote-peer-channel.js';
 
 const selectedGame = new URLSearchParams(window.location.search).get('game') || null;
@@ -66,14 +66,78 @@ document.addEventListener('DOMContentLoaded', async () => {
      * Et si le tirage lui-meme echoue, pas de cle du tout plutot qu'une cle
      * devinable : une protection qui n'en est pas une est pire que rien.
      */
-    async function inviteChatKey() {
-        const shared = await store?.get('community-key').catch(() => null);
-        if (shared) return shared;
-        try { return generateChatKey(); }
+    /** La cle de communaute selectionnee, ou null. */
+    async function selectedCommunityKey() {
+        const keys = await store?.get('community-keys').catch(() => null);
+        const id = await store?.get('community-key-current').catch(() => null);
+        if (!Array.isArray(keys) || !keys.length) return null;
+        return keys.find(k => k.id === id) || keys[0] || null;
+    }
+
+    /**
+     * La cle a donner a une nouvelle partie, et ce que le lien doit en dire.
+     *
+     * AVEC UNE CLE DE COMMUNAUTE : on DERIVE celle de la partie, et le lien ne
+     * transporte que l'EMPREINTE du trousseau employe. Rien de secret ne
+     * circule, il n'y a rien a perdre a la copie, et l'invite -- qui a la meme
+     * cle -- recalcule exactement la meme chose de son cote.
+     *
+     * SANS : une cle tiree au hasard, transportee par le fragment du lien
+     * comme avant. C'est le bon comportement face a un adversaire inconnu, qui
+     * n'a aucune cle en commun avec nous.
+     *
+     * Et si le tirage lui-meme echoue, pas de cle du tout plutot qu'une cle
+     * devinable : une protection qui n'en est pas une est pire que rien.
+     */
+    async function inviteChatKey(matchId) {
+        const community = await selectedCommunityKey();
+        if (community?.key) {
+            try {
+                return {
+                    chatKey: await deriveChatKey(community.key, matchId),
+                    chatKeyId: await chatKeyId(community.key),
+                    derived: true,
+                };
+            } catch (e) {
+                console.warn('[invitation] derivation impossible :', e.message || e);
+            }
+        }
+        try { return { chatKey: generateChatKey(), chatKeyId: null, derived: false }; }
         catch (e) {
             console.warn('[invitation] pas de cle de discussion :', e.message || e);
-            return null;
+            return { chatKey: null, chatKeyId: null, derived: false };
         }
+    }
+
+    /**
+     * La cle de discussion d'une partie qu'on rejoint.
+     *
+     * Le lien porte SOIT une cle (adversaire inconnu), SOIT l'empreinte du
+     * trousseau a employer (adversaire de la meme communaute). Dans le second
+     * cas on cherche parmi nos cles celle qui porte cette empreinte -- le nom
+     * qu'on lui a donne n'a aucune importance, c'est la cle elle-meme qui la
+     * produit -- et on en derive celle de la partie.
+     *
+     * Empreinte inconnue : on ne connait pas ce groupe. La partie demarre SANS
+     * discussion, ce qui est un etat normal ; la fenetre de discussion permet
+     * de coller une cle a la main si besoin.
+     */
+    async function joinChatKey(parsed) {
+        if (parsed.chatKey) return parsed.chatKey;
+        if (!parsed.chatKeyId) return null;
+        const keys = await store?.get('community-keys').catch(() => null);
+        if (!Array.isArray(keys)) return null;
+        for (const entry of keys) {
+            if (!entry?.key) continue;
+            try {
+                if (await chatKeyId(entry.key) !== parsed.chatKeyId) continue;
+                return await deriveChatKey(entry.key, parsed.matchId);
+            } catch (e) {
+                console.warn('[invitation] trousseau illisible :', e.message || e);
+            }
+        }
+        console.info('[invitation] aucune cle de communaute ne correspond a cette invitation');
+        return null;
     }
 
     async function startMatch({ gameName, matchId, relayUrl, player, creator, peer, chatKey = null }) {
@@ -103,7 +167,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!parsed) { setStatus(status, t('invitation.invalidLink'), 'fail'); return; }
         if (selectedGame && parsed.gameName !== selectedGame)
             setStatus(status, t('invitation.gameMismatch', { game: parsed.gameName }), 'warn');
-        await startMatch(parsed);
+        await startMatch({ ...parsed, chatKey: await joinChatKey(parsed) });
     });
 
     // -- Create + Start -------------------------------------------------------------
@@ -123,8 +187,11 @@ document.addEventListener('DOMContentLoaded', async () => {
          * partie SANS discussion plutot qu'avec une cle devinable : une
          * protection qui n'en est pas une serait pire que pas de protection.
          */
-        const chatKey = await inviteChatKey();
-        const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b', chatKey });
+        const { chatKey, chatKeyId: kid, derived } = await inviteChatKey(matchId);
+        // Une cle derivee ne voyage PAS : le lien ne porte que l'empreinte du
+        // trousseau, et l'invite en deduit la meme cle.
+        const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b',
+            chatKey: derived ? null : chatKey, chatKeyId: derived ? kid : null });
         if (!link) { setStatus(createStatus, t('players.testFail'), 'fail'); return; }
         created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true, chatKey };
         if (linkInput) linkInput.value = link;
@@ -219,7 +286,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const extraAddresses = (document.getElementById('peer-extra-addr')?.value || '')
             .split(',').map(a => a.trim()).filter(Boolean);
-        const chatKey = await inviteChatKey();
+        /*
+         * PAS DE DERIVATION EN PAIR-A-PAIR, et ce n'est pas un oubli.
+         *
+         * La derivation sert a ne rien faire circuler la ou un relai pourrait
+         * l'intercepter. Ici le code est copie-colle d'un joueur a l'autre et
+         * le flux est direct : il n'y a aucun serveur a qui cacher la cle, et
+         * une cle tiree au hasard dans le code ne coute rien. Elle evite meme
+         * de faire dependre la discussion d'un trousseau partage, la ou deux
+         * joueurs sur le meme reseau n'en ont peut-etre aucun.
+         */
+        let chatKey = null;
+        try { chatKey = generateChatKey(); }
+        catch (e) { console.warn('[invitation] pas de cle de discussion :', e.message || e); }
         try {
             const { code, token } = await hostPeerMatch(selectedGame, { port, extraAddresses, chatKey });
             peerHosting = {

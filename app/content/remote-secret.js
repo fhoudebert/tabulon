@@ -154,3 +154,43 @@ export function makeSealer(key, invokeImpl = null) {
         },
     };
 }
+
+/**
+ * La cle d'une partie, derivee de la cle de communaute.
+ *
+ * RIEN NE CIRCULE : les deux joueurs la recalculent chacun de leur cote a
+ * partir de ce qu'ils ont deja -- la cle partagee une fois -- et de
+ * l'identifiant de partie, que le relai connait de toute facon puisque c'est sa
+ * cle de stockage. Il n'y a donc rien a perdre a la copie d'un lien, et rien
+ * qu'un membre de la communaute puisse intercepter en chemin.
+ *
+ * Le calcul est en Rust (seal_cmds.rs) : crypto.subtle exige un contexte
+ * securise, que rien ne garantit pour tauri:// sous WebKitGTK.
+ */
+export async function deriveChatKey(master, matchId, invokeImpl = null) {
+    if (!isSeed(master)) throw new Error('deriveChatKey: cle de communaute mal formee');
+    if (invokeImpl) return invokeImpl('derive_chat_key', { master, info: String(matchId) });
+    const { default: tRpc } = await import('./tabulon-rpc.js');
+    return tRpc.call('derive_chat_key', master, String(matchId));
+}
+
+/**
+ * L'empreinte publique d'une cle de communaute.
+ *
+ * Elle DESIGNE une cle sans la donner : avec plusieurs cles -- un club, une
+ * famille, une competition -- l'invitation doit dire laquelle employer. Le nom
+ * ne convient pas, chacun nommant les siennes comme il veut ; l'empreinte se
+ * calcule depuis la cle elle-meme, donc les deux bouts trouvent la meme quel
+ * que soit le nom donne de part et d'autre.
+ */
+export async function chatKeyId(master, invokeImpl = null) {
+    if (!isSeed(master)) throw new Error('chatKeyId: cle de communaute mal formee');
+    if (invokeImpl) return invokeImpl('chat_key_id', { master });
+    const { default: tRpc } = await import('./tabulon-rpc.js');
+    return tRpc.call('chat_key_id', master);
+}
+
+/** Forme d'une empreinte : 8 octets en hexadecimal. */
+export function isChatKeyId(value) {
+    return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value);
+}

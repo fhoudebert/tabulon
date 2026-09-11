@@ -240,10 +240,22 @@ export function parseInvitationUrl(urlString) {
     if (!gameName || !matchId || (playerParam !== 'a' && playerParam !== 'b')) return null;
     // index.php -> fileio.php, meme dossier (convention jocly-simple-match)
     const relayPath = url.pathname.replace(/[^/]*$/, 'fileio.php');
+    const hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
+    const keyId = hash.get('kid');
     return {
         gameName, matchId, player: playerParam,
         relayUrl: url.origin + relayPath,
         chatKey: chatKeyFromHash(url.hash),
+        /*
+         * L'empreinte de la cle de communaute a employer, quand il y en a une.
+         *
+         * Elle DESIGNE une cle sans la donner : l'invite cherche parmi les
+         * siennes celle qui porte cette empreinte, et en derive la cle de la
+         * partie. Rien de secret ne voyage donc -- mais elle reste dans le
+         * fragment avec le reste, parce qu'elle dit a quel groupe la partie
+         * appartient, et que le relai n'a pas a l'apprendre.
+         */
+        chatKeyId: /^[0-9a-f]{16}$/.test(keyId || '') ? keyId : null,
     };
 }
 
@@ -281,7 +293,7 @@ export function isChatKey(value) {
  * @param {{relayUrl:string, gameName:string, matchId:string, player:'a'|'b'}} data
  * @returns {string|null} null si relayUrl n'est pas une URL valide
  */
-export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null }) {
+export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null, chatKeyId = null }) {
     let url;
     try {
         url = new URL(relayUrl);
@@ -303,6 +315,12 @@ export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKe
     if (chatKey !== null) {
         if (!isChatKey(chatKey)) return null;
         url.hash = 'k=' + chatKey;
+    } else if (chatKeyId !== null) {
+        // Une EMPREINTE plutot qu'une cle : les deux joueurs partagent deja la
+        // cle de communaute, le lien n'a donc qu'a dire laquelle employer. Rien
+        // de secret ne circule, et il n'y a rien a perdre a la copie.
+        if (!/^[0-9a-f]{16}$/.test(chatKeyId)) return null;
+        url.hash = 'kid=' + chatKeyId;
     }
     return url.toString();
 }

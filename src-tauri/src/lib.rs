@@ -161,6 +161,8 @@ pub fn run() {
             // sous WebKitGTK. Voir seal_cmds.rs.
             seal_cmds::seal_text,
             seal_cmds::open_text,
+            seal_cmds::derive_chat_key,
+            seal_cmds::chat_key_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tabulon");

@@ -198,26 +198,79 @@ async function ListGames() {
     }
 
     /*
-     * La cle de communaute : le secret partage une fois avec les personnes
-     * avec qui on joue, et qui protege ensuite toutes les parties.
+     * Les trousseaux de communaute : les secrets partages une fois avec les
+     * personnes avec qui on joue, et qui protegent ensuite toutes les parties.
      *
-     * Elle vit ici plutot que dans chaque partie parce que c'est le seul
-     * endroit ou l'echange manuel n'a lieu qu'UNE fois. Elle ne part jamais
-     * vers un relai -- c'est toute sa raison d'etre.
+     * PLUSIEURS plutot qu'un seul, parce qu'une cle unique est partagee avec
+     * tout le monde : un club, une famille et une competition n'ont pas a
+     * pouvoir se lire les uns les autres. Celui qui est selectionne sert aux
+     * nouvelles invitations ; l'invite retrouve le bon par son EMPREINTE,
+     * calculee depuis la cle, donc independante du nom que chacun lui donne.
+     *
+     * Aucun ne part jamais vers un relai -- c'est toute leur raison d'etre.
      */
     {
-        const field = document.getElementById('prefs-community-key');
+        const list = document.getElementById('prefs-key-list');
+        const nameField = document.getElementById('prefs-key-name');
+        const keyField = document.getElementById('prefs-community-key');
         const status = document.getElementById('prefs-key-status');
-        const say = (key) => { if (status) status.textContent = t(key); };
-        if (field) field.value = await store.get('community-key') || '';
+        const say = (key) => { if (status) status.textContent = key ? t(key) : ''; };
+
+        let keys = await store.get('community-keys') || [];
+        let current = await store.get('community-key-current') || (keys[0]?.id ?? null);
+
+        const selected = () => keys.find(k => k.id === current) || null;
+
+        function Refresh() {
+            if (!list) return;
+            list.innerHTML = '';
+            for (const k of keys) {
+                const opt = document.createElement('option');
+                opt.value = k.id;
+                opt.textContent = k.name || t('prefs.keyUnnamed');
+                list.appendChild(opt);
+            }
+            if (current) list.value = current;
+            const k = selected();
+            if (nameField) nameField.value = k?.name || '';
+            if (keyField) keyField.value = k?.key || '';
+        }
+        Refresh();
+
+        list?.addEventListener('change', async () => {
+            current = list.value;
+            await store.set('community-key-current', current);
+            say(null);
+            Refresh();
+        });
+
+        document.getElementById('prefs-key-add')?.addEventListener('click', async () => {
+            current = 'k-' + Date.now();
+            keys = [...keys, { id: current, name: '', key: '' }];
+            await store.set('community-keys', keys);
+            await store.set('community-key-current', current);
+            Refresh();
+            nameField?.focus();
+        });
+
+        document.getElementById('prefs-key-del')?.addEventListener('click', async () => {
+            if (!current) return;
+            keys = keys.filter(k => k.id !== current);
+            current = keys[0]?.id ?? null;
+            await store.set('community-keys', keys);
+            await store.set('community-key-current', current);
+            Refresh();
+            say('prefs.keyCleared');
+        });
 
         document.getElementById('prefs-key-new')?.addEventListener('click', async () => {
             const { generateChatKey } = await import('./remote-secret.js');
-            try { field.value = generateChatKey(); } catch (e) {
+            if (!keyField) return;
+            try { keyField.value = generateChatKey(); } catch (e) {
                 console.warn('[hub] pas de cle :', e.message || e);
                 return;
             }
-            field.select();
+            keyField.select();
             // PAS enregistree tout de suite : tant qu'on ne l'a pas transmise,
             // l'enregistrer rendrait nos messages illisibles pour les autres
             // sans rien dire. C'est « Enregistrer » qui engage.
@@ -226,14 +279,21 @@ async function ListGames() {
 
         document.getElementById('prefs-key-save')?.addEventListener('click', async () => {
             const { isChatKey } = await import('./remote-relay-protocol.js');
-            const key = (field?.value || '').trim().toLowerCase();
-            if (!key) { await store.set('community-key', ''); say('prefs.keyCleared'); return; }
+            const key = (keyField?.value || '').trim().toLowerCase();
             // Un format inattendu est refuse plutot qu'enregistre : une cle a
             // moitie valide ne protege rien et en donne l'apparence.
-            if (!isChatKey(key)) { say('prefs.keyBad'); return; }
-            if (field) field.value = key;
-            await store.set('community-key', key);
-            say('prefs.keySaved');
+            if (key && !isChatKey(key)) { say('prefs.keyBad'); return; }
+            if (!current) {
+                current = 'k-' + Date.now();
+                keys = [...keys, { id: current, name: '', key: '' }];
+            }
+            keys = keys.map(k => k.id === current
+                ? { ...k, name: (nameField?.value || '').trim(), key }
+                : k);
+            await store.set('community-keys', keys);
+            await store.set('community-key-current', current);
+            Refresh();
+            say(key ? 'prefs.keySaved' : 'prefs.keyCleared');
         });
     }
 

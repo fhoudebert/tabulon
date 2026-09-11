@@ -43,6 +43,12 @@ base64      = "0.22"      # décodage des frames JPEG vidéo, et scellement des 
 # installer sur les trois plateformes. Le nonce de 192 bits est ce qui permet
 # de le tirer au hasard à chaque message sans compter les collisions.
 chacha20poly1305 = "0.10"
+# HMAC-SHA256 : dérivation de la clé d'une partie à partir de la clé de
+# communauté (seal_cmds.rs). Dériver plutôt qu'envoyer évite de faire circuler
+# quoi que ce soit — les deux joueurs recalculent la même clé chacun de leur
+# côté. Pur Rust, comme le chiffrement au-dessus.
+hmac        = "0.12"
+sha2        = "0.10"
 anyhow      = "1"         # gestion d'erreurs ergonomique
 
 [profile.release]

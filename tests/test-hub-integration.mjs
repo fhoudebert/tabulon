@@ -253,43 +253,58 @@ assert(storeData.get('last-game') === 'cubic-chess', 'last-game suit la sélecti
     assert(storeData.get('hub-visuals') === true, 'et le choix inverse est persisté aussi');
 }
 
-/* ── 13. La clé de communauté ───────────────────────────────────────────────
+/* ── 13. Les trousseaux de communauté ───────────────────────────────────────
  *
- * Le secret partagé UNE FOIS avec les personnes avec qui on joue, et qui
- * protège ensuite toutes les parties. Il vit dans les préférences plutôt que
- * dans chaque partie parce que c'est le seul endroit où l'échange manuel n'a
- * lieu qu'une fois.
+ * Le secret partagé UNE FOIS avec un groupe, et qui protège ensuite toutes les
+ * parties jouées avec lui. PLUSIEURS plutôt qu'un seul : un club, une famille
+ * et une compétition n'ont pas à pouvoir se lire les uns les autres.
  */
 {
-    const field = $('#prefs-community-key');
-    assert(!!field, 'l’écran Préférences porte un champ de clé');
-    assert(field.value === '', 'vide tant qu’aucune clé n’a été enregistrée');
+    const list = $('#prefs-key-list');
+    const name = $('#prefs-key-name');
+    const key  = $('#prefs-community-key');
+    assert(!!list && !!name && !!key, 'l’écran Préférences porte la liste et les deux champs');
+    assert(list.options.length === 0, 'vide tant qu’aucun trousseau n’existe');
 
+    $('#prefs-key-add').click();
+    await waitFor(() => list.options.length === 1, 'Nouveau crée un trousseau');
+    name.value = 'Club du mardi';
     $('#prefs-key-new').click();
-    await waitFor(() => /^[0-9a-f]{64}$/.test(field.value), 'Générer produit une clé');
+    await waitFor(() => /^[0-9a-f]{64}$/.test(key.value), 'Générer produit une clé');
     // PAS enregistrée tout de suite : tant qu'on ne l'a pas transmise,
     // l'enregistrer rendrait nos messages illisibles pour les autres sans rien
     // dire. C'est « Enregistrer » qui engage.
-    assert(!storeData.get('community-key'), 'générer n’enregistre pas encore');
+    assert(!(storeData.get('community-keys') || [])[0]?.key, 'générer n’enregistre pas encore');
 
-    const generated = field.value;
+    const generated = key.value;
     $('#prefs-key-save').click();
-    await waitFor(() => storeData.get('community-key') === generated, 'Enregistrer la range');
-    assert(storeData.get('community-key') === generated, 'et c’est bien celle qui était affichée');
+    await waitFor(() => (storeData.get('community-keys') || [])[0]?.key === generated,
+        'Enregistrer range la clé');
+    assert(storeData.get('community-keys')[0].name === 'Club du mardi', 'avec son nom');
+    assert(storeData.get('community-key-current') === storeData.get('community-keys')[0].id,
+        'et c’est celui-là qui est sélectionné');
+
+    // Un second trousseau : c'est le point de la liste.
+    $('#prefs-key-add').click();
+    await waitFor(() => list.options.length === 2, 'un second trousseau s’ajoute');
+    name.value = 'Famille';
+    key.value = 'b'.repeat(64);
+    $('#prefs-key-save').click();
+    await waitFor(() => storeData.get('community-keys')[1]?.key === 'b'.repeat(64), 'et s’enregistre');
+    assert(storeData.get('community-keys')[1].key === 'b'.repeat(64), 'sans toucher au premier');
+    assert(storeData.get('community-keys')[0].key === generated, 'qui est toujours là');
 
     // Un format inattendu est refusé plutôt qu'enregistré : une clé à moitié
     // valide ne protège rien et en donne l'apparence.
-    field.value = 'pas une clé';
+    key.value = 'pas une clé';
     $('#prefs-key-save').click();
     await sleep(40);
-    assert(storeData.get('community-key') === generated, 'une clé mal formée ne remplace pas la bonne');
+    assert(storeData.get('community-keys')[1].key === 'b'.repeat(64),
+        'une clé mal formée ne remplace pas la bonne');
 
-    // Champ vidé = retrait assumé : les nouvelles parties repartent sans clé
-    // partagée, ce qui est un état normal et pas une panne.
-    field.value = '';
-    $('#prefs-key-save').click();
-    await waitFor(() => storeData.get('community-key') === '', 'un champ vide retire la clé');
-    assert(storeData.get('community-key') === '', 'sans que rien ne casse');
+    $('#prefs-key-del').click();
+    await waitFor(() => storeData.get('community-keys').length === 1, 'Supprimer retire le trousseau');
+    assert(storeData.get('community-keys')[0].name === 'Club du mardi', 'et laisse les autres');
 }
 
 console.log(`\n${passed} assertions OK — navigation unifiée du hub validée.`);

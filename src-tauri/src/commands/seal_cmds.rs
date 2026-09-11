@@ -96,6 +96,67 @@ pub fn open_text(key: String, sealed: String) -> Result<String, String> {
     String::from_utf8(clear).map_err(|_| "message illisible".to_string())
 }
 
+/// Derive la cle d'une partie a partir de la cle de communaute.
+///
+/// POURQUOI DERIVER PLUTOT QU'ENVOYER. Une cle de partie enveloppee dans la
+/// cle de communaute et deposee sur le relai serait ouvrable par TOUT membre
+/// de la communaute qui sait quelle partie regarder. Derivee, elle ne transite
+/// jamais : les deux joueurs la recalculent chacun de leur cote a partir de ce
+/// qu'ils ont deja -- la cle partagee une fois -- et de l'identifiant de
+/// partie, que le relai connait de toute facon puisque c'est sa cle de
+/// stockage. Rien de nouveau ne circule, et il n'y a rien a perdre a la copie.
+///
+/// HMAC-SHA256 et non un simple hachage de la concatenation : `H(cle || info)`
+/// se prolonge (length extension) sur les constructions de type Merkle-Damgard,
+/// et HMAC est precisement la reponse a ce probleme. La cle fait 32 octets,
+/// la sortie aussi, donc une extraction HKDF complete n'apporterait rien ici.
+///
+/// `info` est l'identifiant de partie. Prefixe d'une etiquette pour que la
+/// meme cle de communaute puisse servir a derive autre chose demain sans que
+/// les deux usages se rencontrent.
+#[tauri::command]
+pub fn derive_chat_key(master: String, info: String) -> Result<String, String> {
+    let key = key_from_hex(&master)?;
+    Ok(hex(&hmac_sha256(key.as_slice(), b"tabulon/chat/v1:", info.as_bytes())))
+}
+
+/// L'empreinte publique d'une cle de communaute.
+///
+/// LE PROBLEME QU'ELLE RESOUT : avec plusieurs cles -- un club, une famille,
+/// une competition -- l'invitation doit dire LAQUELLE employer, sans dire
+/// laquelle c'est a qui n'en fait pas partie. Le nom ne convient pas : chacun
+/// nomme ses cles comme il veut, et deux installations ne s'accorderaient pas.
+///
+/// L'empreinte se calcule depuis la cle elle-meme, donc les deux bouts
+/// trouvent la meme sans s'etre concertes, quel que soit le nom donne de part
+/// et d'autre. Elle est tronquee a 8 octets : assez pour designer une cle
+/// parmi quelques-unes, trop court pour servir a deviner la cle -- et de toute
+/// facon HMAC ne se remonte pas.
+#[tauri::command]
+pub fn chat_key_id(master: String) -> Result<String, String> {
+    let key = key_from_hex(&master)?;
+    let full = hmac_sha256(key.as_slice(), b"tabulon/chat-id/v1", b"");
+    Ok(hex(&full[..8]))
+}
+
+fn hmac_sha256(key: &[u8], label: &[u8], info: &[u8]) -> [u8; 32] {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    // Qualifie par le trait Mac : KeyInit expose un `new_from_slice` de meme
+    // nom, et l'appel serait ambigu sans cela. L'erreur ne peut pas survenir --
+    // HMAC accepte n'importe quelle longueur de cle, et celle-ci vient de
+    // key_from_hex, qui en garantit 32 octets.
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key)
+        .expect("HMAC accepte toute longueur de cle");
+    mac.update(label);
+    mac.update(info);
+    mac.finalize().into_bytes().into()
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +228,62 @@ mod tests {
 
     // L'accentuation et les emoji survivent : un message est de l'UTF-8, et le
     // chiffre travaille sur des octets.
+    // Les deux bouts calculent la MEME cle sans s'etre concertes : c'est toute
+    // la raison de deriver plutot que d'envoyer.
+    #[test]
+    fn both_sides_derive_the_same_key() {
+        let a = derive_chat_key(KEY.into(), "match-42".into()).unwrap();
+        let b = derive_chat_key(KEY.into(), "match-42".into()).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 64);
+        // Et la cle derivee est utilisable telle quelle par le scellement.
+        let sealed = seal_text(a.clone(), "salut".into()).unwrap();
+        assert_eq!(open_text(a, sealed).unwrap(), "salut");
+    }
+
+    // Deux parties ne partagent pas de cle : c'est ce qui fait qu'un membre de
+    // la communaute qui lit une partie ne lit pas les autres pour autant.
+    #[test]
+    fn two_games_get_different_keys() {
+        assert_ne!(
+            derive_chat_key(KEY.into(), "match-42".into()).unwrap(),
+            derive_chat_key(KEY.into(), "match-43".into()).unwrap()
+        );
+    }
+
+    #[test]
+    fn two_communities_get_different_keys() {
+        assert_ne!(
+            derive_chat_key(KEY.into(), "match-42".into()).unwrap(),
+            derive_chat_key(OTHER.into(), "match-42".into()).unwrap()
+        );
+    }
+
+    // L'empreinte designe la cle sans la donner : elle sert a choisir parmi
+    // plusieurs, et voyage dans le fragment de l'invitation.
+    #[test]
+    fn the_fingerprint_names_a_key_without_giving_it() {
+        let id = chat_key_id(KEY.into()).unwrap();
+        assert_eq!(id.len(), 16);
+        assert_eq!(chat_key_id(KEY.into()).unwrap(), id);
+        assert_ne!(chat_key_id(OTHER.into()).unwrap(), id);
+        assert!(!KEY.contains(&id));
+    }
+
+    // L'empreinte n'est pas la cle derivee : deux usages de la meme cle
+    // maitresse ne doivent pas se rencontrer, d'ou les etiquettes distinctes.
+    #[test]
+    fn fingerprint_and_derived_key_do_not_collide() {
+        let id = chat_key_id(KEY.into()).unwrap();
+        assert!(!derive_chat_key(KEY.into(), String::new()).unwrap().starts_with(&id));
+    }
+
+    #[test]
+    fn a_malformed_master_is_refused() {
+        assert!(derive_chat_key("".into(), "m".into()).is_err());
+        assert!(chat_key_id("trop court".into()).is_err());
+    }
+
     #[test]
     fn text_survives_intact() {
         let text = "à tout à l'heure 👋 — ça va être long";

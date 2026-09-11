@@ -197,4 +197,37 @@ assert(buildInvitationUrl({ relayUrl: 'pas une url', gameName: 'go', matchId: 'x
     assert(parseInvitationUrl(old).chatKey === null, 'un lien antérieur au champ se lit toujours');
 }
 
+/* ─── L'empreinte du trousseau, quand la clé se DÉRIVE ────────────────────── */
+//
+// Avec une clé de communauté, les deux joueurs calculent la clé de la partie
+// chacun de leur côté : il n'y a rien à transporter. Le lien dit seulement
+// LEQUEL de leurs trousseaux employer — une empreinte, pas un secret.
+//
+// Elle reste dans le fragment avec le reste : elle ne donne pas la clé, mais
+// elle dit à quel groupe la partie appartient, et le relai n'a pas à
+// l'apprendre.
+{
+    const relayUrl = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
+    const kid = '0123456789abcdef';
+    const link = buildInvitationUrl({ relayUrl, gameName: 'go19', matchId: 'm-1', player: 'b', chatKeyId: kid });
+
+    assert(link.includes('#kid=' + kid), 'l’empreinte est dans le fragment');
+    assert(!new URL(link).search.includes(kid), 'et pas dans la requête');
+    assert(parseInvitationUrl(link).chatKeyId === kid, 'elle se relit à l’arrivée');
+    assert(parseInvitationUrl(link).chatKey === null, 'et aucune clé ne l’accompagne — rien ne circule');
+
+    // Une empreinte mal formée est refusée à la construction, ignorée à la
+    // lecture : même politique que pour la clé.
+    assert(buildInvitationUrl({ relayUrl, gameName: 'go19', matchId: 'm', player: 'a', chatKeyId: 'zz' }) === null,
+        'une empreinte mal formée fait échouer le lien');
+    const damaged = 'https://biscandine.fr/variantes/joclymatch/index.php?game=go19&mid=m-1&player=b#kid=nawak';
+    assert(parseInvitationUrl(damaged)?.chatKeyId === null, 'une empreinte abîmée n’empêche pas de rejoindre');
+
+    // Une clé explicite l'emporte : c'est le cas de l'adversaire inconnu, qui
+    // n'a aucun trousseau en commun avec nous.
+    const both = buildInvitationUrl({ relayUrl, gameName: 'go19', matchId: 'm-1', player: 'b',
+        chatKey: 'a'.repeat(64), chatKeyId: kid });
+    assert(parseInvitationUrl(both).chatKey === 'a'.repeat(64), 'une clé explicite reste prioritaire');
+}
+
 console.log(`\n${passed} assertions passées.`);

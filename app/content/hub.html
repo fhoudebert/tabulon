@@ -233,6 +233,17 @@
 						<h4 class="prefs-section" data-i18n="prefs.chat">Conversations</h4>
 						<p class="display-hint" data-i18n="prefs.chatWhat">Messages exchanged during a remote game go through a relay that has no accounts and no passwords: whoever runs it can read what is left there. A shared key makes that content unreadable to the relay — and only to those who hold the key.</p>
 						<p class="display-hint" data-i18n="prefs.chatHow">Generate one below, then send it ONCE to the people you play with, by any channel except the relay itself — a message, an e-mail. They paste it into the same field. From then on your games with them are protected without any further step.</p>
+						<!-- Plusieurs trousseaux : un club, une famille, une
+						     competition. Celui qui est selectionne est employe pour
+						     les nouvelles invitations. -->
+						<div class="chat-key">
+							<select id="prefs-key-list" class="form-control"></select>
+							<button id="prefs-key-add" class="btn btn-default" data-i18n="prefs.keyAdd">New</button>
+							<button id="prefs-key-del" class="btn btn-default" data-i18n="prefs.keyDelete">Delete</button>
+						</div>
+						<div class="chat-key">
+							<input type="text" id="prefs-key-name" class="form-control" data-i18n-placeholder="prefs.namePlaceholder" placeholder="Name (chess club, family…)">
+						</div>
 						<div class="chat-key">
 							<input type="text" id="prefs-community-key" class="form-control" data-i18n-placeholder="prefs.keyPlaceholder" placeholder="Shared key…" spellcheck="false">
 							<button id="prefs-key-new" class="btn btn-default" data-i18n="chat.keyNew">Generate</button>

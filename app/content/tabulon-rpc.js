@@ -165,6 +165,8 @@ function buildPayload(method, args) {
     open_chat:           ([matchId])               => ({ matchId }),
     seal_text:           ([key, text])             => ({ key, text }),
     open_text:           ([key, sealed])           => ({ key, sealed }),
+    derive_chat_key:     ([master, info])          => ({ master, info }),
+    chat_key_id:         ([master])                => ({ master }),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),
