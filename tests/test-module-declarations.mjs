@@ -101,6 +101,39 @@ console.log('Les fonctions appelées entre écouteurs sont bien au niveau module
     }
 }
 
+/* ─── Chaque fichier se lit comme un MODULE ES ─────────────────────────────── */
+//
+// Le même angle mort, sous une autre forme. `node --check` analyse un `.js`
+// comme un script CommonJS, où `await` est un identifiant ordinaire : un
+// `await` posé dans une fonction qui n'est pas `async` y passe sans un mot.
+// Dans un module ES — ce que la WebView charge — `await` est un mot réservé,
+// et le fichier ENTIER refuse de se charger.
+//
+// Constaté sur invitation.js : un gestionnaire de clic devenu async à moitié.
+// La fenêtre s'ouvrait vide, avec une SyntaxError en console et rien d'autre.
+// Les suites passaient toutes, `node --check` compris.
+//
+// On relit donc chaque fichier sous l'extension .mjs, qui force l'analyse en
+// module. Analyse SEULEMENT : les exécuter demanderait un DOM.
+{
+    const { spawnSync } = await import('node:child_process');
+    const { mkdtempSync, copyFileSync, rmSync } = await import('node:fs');
+    const os = await import('node:os');
+
+    const tmp = mkdtempSync(path.join(os.tmpdir(), 'tabulon-esm-'));
+    try {
+        for (const file of readdirSync(content).filter(f => f.endsWith('.js'))) {
+            const copy = path.join(tmp, file.replace(/\.js$/, '.mjs'));
+            copyFileSync(path.join(content, file), copy);
+            const r = spawnSync(process.execPath, ['--check', copy], { encoding: 'utf-8' });
+            ok(r.status === 0, file + ' se lit comme un module ES'
+                + (r.status === 0 ? '' : ' — ' + (r.stderr || '').split('\n').filter(l => /Error/.test(l))[0]));
+        }
+    } finally {
+        rmSync(tmp, { recursive: true, force: true });
+    }
+}
+
 console.log('');
 console.log(`RESULTAT module-declarations: ${PASS} OK / ${FAIL} ECHEC`);
 process.exit(FAIL ? 1 : 0);

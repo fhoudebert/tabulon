@@ -173,7 +173,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // -- Create + Start -------------------------------------------------------------
     let created = null;  // {gameName, matchId, relayUrl, player:'a'} une fois Create cliqué
 
-    document.getElementById('button-create')?.addEventListener('click', () => {
+    // async : la cle de la partie peut etre DERIVEE du trousseau, ce qui passe
+    // par une commande Rust -- donc par une promesse.
+    document.getElementById('button-create')?.addEventListener('click', async () => {
         if (!selectedGame) { setStatus(createStatus, t('invitation.invalidLink'), 'fail'); return; }
         const relayUrl = relayInput?.value.trim() || DEFAULT_RELAY_URL;
         const matchId = generateMatchId();

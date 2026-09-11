@@ -140,13 +140,15 @@ pub fn chat_key_id(master: String) -> Result<String, String> {
 }
 
 fn hmac_sha256(key: &[u8], label: &[u8], info: &[u8]) -> [u8; 32] {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
-    // Qualifie par le trait Mac : KeyInit expose un `new_from_slice` de meme
-    // nom, et l'appel serait ambigu sans cela. L'erreur ne peut pas survenir --
-    // HMAC accepte n'importe quelle longueur de cle, et celle-ci vient de
-    // key_from_hex, qui en garantit 32 octets.
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key)
+    // Qualifie par KeyInit, et non par Mac : depuis hmac 0.13 / digest 0.11,
+    // `new_from_slice` n'appartient plus au trait Mac. Le qualifier reste
+    // necessaire, les deux traits etant tous deux en portee.
+    //
+    // L'erreur ne peut pas survenir -- HMAC accepte n'importe quelle longueur
+    // de cle, et celle-ci vient de key_from_hex, qui en garantit 32 octets.
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key)
         .expect("HMAC accepte toute longueur de cle");
     mac.update(label);
     mac.update(info);

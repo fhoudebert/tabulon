@@ -47,8 +47,8 @@ chacha20poly1305 = "0.10"
 # communauté (seal_cmds.rs). Dériver plutôt qu'envoyer évite de faire circuler
 # quoi que ce soit — les deux joueurs recalculent la même clé chacun de leur
 # côté. Pur Rust, comme le chiffrement au-dessus.
-hmac        = "0.12"
-sha2        = "0.10"
+hmac        = "0.13"
+sha2        = "0.11"
 anyhow      = "1"         # gestion d'erreurs ergonomique
 
 [profile.release]
