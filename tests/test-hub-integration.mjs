@@ -253,5 +253,44 @@ assert(storeData.get('last-game') === 'cubic-chess', 'last-game suit la sélecti
     assert(storeData.get('hub-visuals') === true, 'et le choix inverse est persisté aussi');
 }
 
+/* ── 13. La clé de communauté ───────────────────────────────────────────────
+ *
+ * Le secret partagé UNE FOIS avec les personnes avec qui on joue, et qui
+ * protège ensuite toutes les parties. Il vit dans les préférences plutôt que
+ * dans chaque partie parce que c'est le seul endroit où l'échange manuel n'a
+ * lieu qu'une fois.
+ */
+{
+    const field = $('#prefs-community-key');
+    assert(!!field, 'l’écran Préférences porte un champ de clé');
+    assert(field.value === '', 'vide tant qu’aucune clé n’a été enregistrée');
+
+    $('#prefs-key-new').click();
+    await waitFor(() => /^[0-9a-f]{64}$/.test(field.value), 'Générer produit une clé');
+    // PAS enregistrée tout de suite : tant qu'on ne l'a pas transmise,
+    // l'enregistrer rendrait nos messages illisibles pour les autres sans rien
+    // dire. C'est « Enregistrer » qui engage.
+    assert(!storeData.get('community-key'), 'générer n’enregistre pas encore');
+
+    const generated = field.value;
+    $('#prefs-key-save').click();
+    await waitFor(() => storeData.get('community-key') === generated, 'Enregistrer la range');
+    assert(storeData.get('community-key') === generated, 'et c’est bien celle qui était affichée');
+
+    // Un format inattendu est refusé plutôt qu'enregistré : une clé à moitié
+    // valide ne protège rien et en donne l'apparence.
+    field.value = 'pas une clé';
+    $('#prefs-key-save').click();
+    await sleep(40);
+    assert(storeData.get('community-key') === generated, 'une clé mal formée ne remplace pas la bonne');
+
+    // Champ vidé = retrait assumé : les nouvelles parties repartent sans clé
+    // partagée, ce qui est un état normal et pas une panne.
+    field.value = '';
+    $('#prefs-key-save').click();
+    await waitFor(() => storeData.get('community-key') === '', 'un champ vide retire la clé');
+    assert(storeData.get('community-key') === '', 'sans que rien ne casse');
+}
+
 console.log(`\n${passed} assertions OK — navigation unifiée du hub validée.`);
 process.exit(0);

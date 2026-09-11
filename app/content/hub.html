@@ -45,10 +45,10 @@
                 			<span class="icon icon-layout"></span> <span data-i18n="nav.templates">Templates</span>
 						</span>
 						<span id="nav-display" class="nav-group-item">
-                			<!-- Le meme oeil que le bouton « Options d'affichage » d'une fenetre de
-                     jeu (play.html) : deux endroits differents, un seul sujet, et
-                     l'icone est ce qui le dit sans mot. -->
-                			<span class="icon icon-eye"></span> <span data-i18n="nav.display">Display</span>
+                			<!-- Un engrenage : l'ecran ne regle plus seulement
+                     l'affichage, il porte aussi la cle des conversations, et
+                     l'oeil ne disait plus ce qu'on y trouve. -->
+                			<span class="icon icon-cog"></span> <span data-i18n="nav.display">Preferences</span>
 						</span>
 						<span id="nav-extensions" class="nav-group-item">
                 			<span class="icon icon-box"></span> <span data-i18n="nav.extensions">Extensions</span>
@@ -220,13 +220,26 @@
 					     numero de partie et dialogue avec sa fenetre de jeu, le hub
 					     n'en a pas. -->
 					<div class="pane" id="display" style="display:none">
-						<h3 data-i18n="display.title">Display</h3>
+						<h3 data-i18n="prefs.title">Preferences</h3>
+
+						<h4 data-i18n="display.title">Display</h4>
 						<div class="checkbox">
 							<label>
 								<input type="checkbox" id="display-visuals" checked> <span data-i18n="display.visuals">Show game images in the background</span>
 							</label>
 						</div>
 						<p class="display-hint" data-i18n="display.visualsHint">The images ship with the game library. If they have been removed to save space, the background cycles through nothing at all — turn this off to leave it plain.</p>
+
+						<h4 class="prefs-section" data-i18n="prefs.chat">Conversations</h4>
+						<p class="display-hint" data-i18n="prefs.chatWhat">Messages exchanged during a remote game go through a relay that has no accounts and no passwords: whoever runs it can read what is left there. A shared key makes that content unreadable to the relay — and only to those who hold the key.</p>
+						<p class="display-hint" data-i18n="prefs.chatHow">Generate one below, then send it ONCE to the people you play with, by any channel except the relay itself — a message, an e-mail. They paste it into the same field. From then on your games with them are protected without any further step.</p>
+						<div class="chat-key">
+							<input type="text" id="prefs-community-key" class="form-control" data-i18n-placeholder="prefs.keyPlaceholder" placeholder="Shared key…" spellcheck="false">
+							<button id="prefs-key-new" class="btn btn-default" data-i18n="chat.keyNew">Generate</button>
+							<button id="prefs-key-save" class="btn btn-default" data-i18n="prefs.keySave">Save</button>
+						</div>
+						<p id="prefs-key-status" class="display-hint"></p>
+						<p class="display-hint" data-i18n="prefs.chatWarning">One key for everyone you play with means everyone who has it could read your other conversations, if they knew which game to look at. A game can be given a key of its own from its chat window. Replacing the key below makes every earlier conversation unreadable — including for you.</p>
 					</div>
 
 					<div class="pane" id="about" style="display:none">

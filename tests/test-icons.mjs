@@ -46,16 +46,25 @@ ok(missing.length === 0,
    'chaque icône employée est définie'
    + (missing.length ? ' — ' + missing.map(([n, f]) => `${n} (${f})`).join(', ') : ''));
 
-// L'œil du hub est celui de la fenêtre de jeu : deux endroits, un seul sujet,
-// et c'est l'icône qui le dit sans mot.
+/*
+ * L'écran des préférences porte un ENGRENAGE, plus un œil.
+ *
+ * L'œil disait « affichage », et c'était juste tant que l'écran ne réglait que
+ * les visuels du hub. Il porte maintenant aussi la clé des conversations : une
+ * icône qui annonce autre chose que ce qu'on trouve derrière est pire qu'une
+ * icône neutre. L'œil reste, lui, sur le bouton « Options d'affichage » d'une
+ * fenêtre de jeu, qui n'a pas changé de sujet.
+ */
 {
     const hub = readFileSync(path.join(dir, 'hub.html'), 'utf-8');
     const play = readFileSync(path.join(dir, 'play.html'), 'utf-8');
     const nav = /id="nav-display"[\s\S]{0,400}?<\/span>\s*<\/span>/.exec(hub);
-    ok(!!nav && /icon-eye/.test(nav[0]),
-       'l\'entrée Affichage du hub porte l\'œil');
+    ok(!!nav && /icon-cog/.test(nav[0]),
+       'l\'entrée Préférences du hub porte l\'engrenage');
+    ok(!!nav && !/icon-eye/.test(nav[0]),
+       'et plus l\'œil, qui ne décrivait plus que la moitié de l\'écran');
     ok(/id="button-options"[\s\S]{0,200}icon-eye/.test(play),
-       'le même que le bouton « Options d\'affichage » d\'une fenêtre de jeu');
+       'l\'œil reste sur « Options d\'affichage » d\'une fenêtre de jeu');
 }
 
 console.log('');

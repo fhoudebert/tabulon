@@ -50,6 +50,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     // A appeler une fois qu'on a {gameName, matchId, relayUrl, player} valides,
     // qu'ils viennent d'un lien collé (Join) ou d'une partie qu'on vient de
     // créer ici (Create + Start).
+    /**
+     * La cle a donner a une nouvelle partie.
+     *
+     * LA CLE DE COMMUNAUTE D'ABORD (Preferences -> Conversations) : elle a
+     * deja ete echangee une fois avec les personnes avec qui on joue, donc le
+     * lien n'a plus rien a leur apprendre et il n'y a AUCUN geste a faire.
+     * C'est tout l'interet du reglage : l'echange manuel a lieu une fois, pas
+     * une fois par partie.
+     *
+     * A defaut, une cle tiree au hasard, transportee par le fragment du lien
+     * comme avant -- ce qui reste le bon comportement face a un adversaire
+     * inconnu, qui n'a pas notre cle de communaute.
+     *
+     * Et si le tirage lui-meme echoue, pas de cle du tout plutot qu'une cle
+     * devinable : une protection qui n'en est pas une est pire que rien.
+     */
+    async function inviteChatKey() {
+        const shared = await store?.get('community-key').catch(() => null);
+        if (shared) return shared;
+        try { return generateChatKey(); }
+        catch (e) {
+            console.warn('[invitation] pas de cle de discussion :', e.message || e);
+            return null;
+        }
+    }
+
     async function startMatch({ gameName, matchId, relayUrl, player, creator, peer, chatKey = null }) {
         const inviteId = 'inv-' + Date.now();
         /*
@@ -97,9 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
          * partie SANS discussion plutot qu'avec une cle devinable : une
          * protection qui n'en est pas une serait pire que pas de protection.
          */
-        let chatKey = null;
-        try { chatKey = generateChatKey(); }
-        catch (e) { console.warn('[invitation] pas de cle de discussion :', e.message || e); }
+        const chatKey = await inviteChatKey();
         const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b', chatKey });
         if (!link) { setStatus(createStatus, t('players.testFail'), 'fail'); return; }
         created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true, chatKey };
@@ -195,9 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const extraAddresses = (document.getElementById('peer-extra-addr')?.value || '')
             .split(',').map(a => a.trim()).filter(Boolean);
-        let chatKey = null;
-        try { chatKey = generateChatKey(); }
-        catch (e) { console.warn('[invitation] pas de cle de discussion :', e.message || e); }
+        const chatKey = await inviteChatKey();
         try {
             const { code, token } = await hostPeerMatch(selectedGame, { port, extraAddresses, chatKey });
             peerHosting = {

@@ -197,6 +197,46 @@ async function ListGames() {
         });
     }
 
+    /*
+     * La cle de communaute : le secret partage une fois avec les personnes
+     * avec qui on joue, et qui protege ensuite toutes les parties.
+     *
+     * Elle vit ici plutot que dans chaque partie parce que c'est le seul
+     * endroit ou l'echange manuel n'a lieu qu'UNE fois. Elle ne part jamais
+     * vers un relai -- c'est toute sa raison d'etre.
+     */
+    {
+        const field = document.getElementById('prefs-community-key');
+        const status = document.getElementById('prefs-key-status');
+        const say = (key) => { if (status) status.textContent = t(key); };
+        if (field) field.value = await store.get('community-key') || '';
+
+        document.getElementById('prefs-key-new')?.addEventListener('click', async () => {
+            const { generateChatKey } = await import('./remote-secret.js');
+            try { field.value = generateChatKey(); } catch (e) {
+                console.warn('[hub] pas de cle :', e.message || e);
+                return;
+            }
+            field.select();
+            // PAS enregistree tout de suite : tant qu'on ne l'a pas transmise,
+            // l'enregistrer rendrait nos messages illisibles pour les autres
+            // sans rien dire. C'est « Enregistrer » qui engage.
+            say('prefs.keySaved');
+        });
+
+        document.getElementById('prefs-key-save')?.addEventListener('click', async () => {
+            const { isChatKey } = await import('./remote-relay-protocol.js');
+            const key = (field?.value || '').trim().toLowerCase();
+            if (!key) { await store.set('community-key', ''); say('prefs.keyCleared'); return; }
+            // Un format inattendu est refuse plutot qu'enregistre : une cle a
+            // moitie valide ne protege rien et en donne l'apparence.
+            if (!isChatKey(key)) { say('prefs.keyBad'); return; }
+            if (field) field.value = key;
+            await store.set('community-key', key);
+            say('prefs.keySaved');
+        });
+    }
+
     const navLast = await store.get('nav-last') || 'games-fav';
     document.getElementById('nav-' + navLast)?.click();
 }

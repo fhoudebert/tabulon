@@ -208,6 +208,8 @@ html, body {
 .icon-eye::before           { content: '\e826'; }
 .icon-list::before          { content: '\e8a5'; }
 .icon-clock::before         { content: '\e862'; }
+/* Ecran Preferences du hub. Point de code releve dans la cmap de la police. */
+.icon-cog::before           { content: '\e855'; }
 /* Discussion a distance. Point de code releve dans la cmap de la police,
    comme icon-box et icon-folder. */
 .icon-chat::before          { content: '\e83c'; }
@@ -982,6 +984,10 @@ strong { font-weight: 600; }
    message arrive et personne ne le sait. Le nombre est écrit dans
    data-unread par play.js et affiché ici — pas d'élément supplémentaire à
    créer et à détruire au fil des messages. */
+/* Les sections de l'ecran Preferences : un peu d'air entre elles, sinon les
+   deux sujets -- l'affichage et les conversations -- se lisent comme un seul. */
+.prefs-section { margin-top: 22px; }
+
 #button-chat { position: relative; }
 #button-chat.has-unread::after {
   content: attr(data-unread);
