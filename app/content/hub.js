@@ -617,7 +617,18 @@ async function OpenGameFile(text, fileName, hintGame) {
         if (!r.game) return Notify(t('hub.loadNoGame'));
         if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
         const id = 'sol-' + Date.now();
-        await store.set('fork:' + id, { solution });
+        /*
+         * SOLUTION DE PROBLEME ou PARTIE SAUVEGARDEE ? Les deux sont le meme
+         * JSON -- celui de joclyMatch.save() -- et rien dans le fichier ne les
+         * distingue. Ce qui les distingue, c'est d'ou il vient : `hintGame`
+         * n'est pose que pour les exemples de problems/.
+         *
+         * La difference compte : une solution s'ouvre EN PAUSE, pour que l'IA
+         * ne joue pas par-dessus ce qu'on vient d'afficher. Une partie qu'on
+         * recharge, elle, doit reprendre -- sinon personne n'a la main, et
+         * c'est ce qui arrivait a toute sauvegarde ouverte depuis le hub.
+         */
+        await store.set('fork:' + id, { solution, fromProblems: !!hintGame });
         return tRpc.call('new_match', r.game, null, id);
     }
 

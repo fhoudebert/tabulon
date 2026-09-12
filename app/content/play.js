@@ -2577,7 +2577,22 @@ async function BookReplay(book) {
                 await joclyMatch.load({ ...saveData.solution, tsume: tsumeMatch });
                 // Meme regle que pour un livre : une sauvegarde sans coup est
                 // une POSITION, pas une partie a relire. On la laisse jouable.
-                if ((saveData.solution.playedMoves || []).length > 0) {
+                /*
+                 * EN PAUSE SEULEMENT POUR UNE SOLUTION DE PROBLEME.
+                 *
+                 * Une solution s'ouvre figee, pour que l'IA ne joue pas
+                 * par-dessus ce qu'on vient d'afficher. Une PARTIE qu'on
+                 * recharge doit reprendre : la mettre en pause et passer les
+                 * deux camps en humain donnait un plateau ou personne n'avait
+                 * la main, sans rien a l'ecran pour le dire. Le bouton Charger
+                 * de la fenetre de jeu, lui, n'a jamais fait cela -- d'ou un
+                 * meme fichier qui se comportait differemment selon la porte
+                 * par laquelle il entrait.
+                 *
+                 * Le fichier ne dit pas lequel des deux il est ; c'est le hub
+                 * qui le sait, parce qu'il sait d'ou il vient.
+                 */
+                if (saveData.fromProblems && (saveData.solution.playedMoves || []).length > 0) {
                     SetBothHuman();
                     paused = true;
                     UpdatePause();
