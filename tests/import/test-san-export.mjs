@@ -45,7 +45,7 @@ for (const file of FILES) {
   const text = readFileSync(path.join(root, 'tests/fixtures/pychess', file), 'utf8');
   const tags = {};
   for (const l of text.split('\n')) { const m=/^\s*\[(\S+)\s+(.*)\]\s*$/.exec(l.trim()); if(m) tags[m[1]]=m[2].replace(/^"|"$/g,''); }
-  const game = VariantGame(BookVariant(tags)) || idx[FairyVariantAlias(BookVariant(tags))];
+  const game = VariantGame(BookVariant(tags)) || idx[FairyVariantAlias(BookVariant(tags))]?.game;
   const tokens = ExtractMoves(text);
   const m = await J.createMatch(game);
   await m.load({ game, initialBoard: (PgnFenToShogiSfen(BookFen(tags)) || VariantFen(BookFen(tags), game)) || undefined, playedMoves: [] });

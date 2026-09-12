@@ -21,7 +21,8 @@ Publier, dans les releases de **tabulon**, des archives d'appoint séparées :
 
 | archive | contenu | pourquoi séparée |
 |---|---|---|
-| `engines-<os>.zip` | `engine/fairy-stockfish`, `engine/scan` | dépend du système, et c'est la seule qui contienne des binaires tiers |
+| `engines-<os>.zip` | `engine/fairy-stockfish`, `engine/scan`, `engine/katago` | dépend du système, et c'est la seule qui contienne des binaires tiers |
+| `katago.zip` | `engine/katago-nnetwork.bin.gz`, `engine/katago.cfg` | indépendante du système, volumineuse, et sans elle KataGo ne démarre pas |
 | `nnue.zip` | `engine/*.nnue` aux noms attendus | indépendante du système, et volumineuse |
 | `dist-extras-visuals.zip` | les images purgées du `dist` | indépendante du système, purement décorative |
 
@@ -43,6 +44,9 @@ Chaque archive se déballe **à côté de l'exécutable**, sans rien déplacer :
 ```
 engines-linux.zip   →  engine/fairy-stockfish
                        engine/scan
+                       engine/katago
+katago.zip          →  engine/katago-nnetwork.bin.gz
+                       engine/katago.cfg
 nnue.zip            →  engine/shogi.nnue
                        engine/minishogi.nnue
                        engine/kyotoshogi.nnue
@@ -63,7 +67,16 @@ seuls que le moteur reconnaîtra.
 
 ## Redistribuer les moteurs : ce que la GPL v3 demande
 
-Les deux moteurs sont sous **GNU GPL v3** — Fairy-Stockfish comme Scan. Cette
+KataGo, lui, est sous **licence MIT** : rien à joindre, une mention de
+copyright suffit. Ses réseaux se redistribuent librement aussi ; ceux
+republiés par Pachi
+(<https://github.com/pasky/pachi/releases/#release-katago_models>) sont la
+source la plus stable, les entraînements de KataGo bougeant avec leurs noms de
+fichiers. Notez que **son réseau n'est pas facultatif** : contrairement au NNUE
+de Fairy-Stockfish, KataGo ne joue pas sans lui, et il lui faut en plus un
+`katago.cfg` — d'où l'archive séparée ci-dessus.
+
+Les deux autres moteurs sont sous **GNU GPL v3** — Fairy-Stockfish comme Scan. Cette
 licence est permissive sur l'usage : on peut redistribuer, empaqueter, même
 vendre. Elle pose **une seule vraie condition**, et c'est celle qui nous
 concerne :

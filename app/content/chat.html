@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self' asset: https://asset.localhost; img-src 'self' asset: https://asset.localhost data:; style-src 'self' 'unsafe-inline'">
+	<title>Tabulon</title>
+	<link rel="stylesheet" href="../photon/css/photon.css">
+	<link rel="stylesheet" href="tabulon.css">
+</head>
+<body>
+	<div class="window">
+		<div class="window-content">
+			<div class="pane chat-pane">
+
+				<!-- Le fil. Rempli par chat.js ; vide au départ plutôt que
+				     porteur d'un exemple, qu'il faudrait traduire et qui
+				     ressemblerait à un vrai message. -->
+				<div id="chat-thread" class="chat-thread"></div>
+
+				<!-- Ce qui ne demande pas d'écrire.
+				     Ces boutons envoient un IDENTIFIANT, pas leur libellé :
+				     l'autre les affiche dans sa langue. C'est ce qui permet à
+				     deux joueurs sans langue commune de se dire l'essentiel,
+				     et rien de personnel ne transite. -->
+				<div class="chat-quick">
+					<button class="btn btn-default" data-quick="wellPlayed" data-i18n="chat.wellPlayed">Well played</button>
+					<button class="btn btn-default" data-quick="yourTurn" data-i18n="chat.yourTurn">Your turn</button>
+					<button class="btn btn-default" data-quick="backSoon" data-i18n="chat.backSoon">Back in a few minutes</button>
+					<button class="btn btn-default" data-quick="rematch" data-i18n="chat.rematch">Another game?</button>
+					<!-- Celui-ci a une raison d'etre particuliere : un message
+					     rapide voyage comme IDENTIFIANT, donc il se lit meme
+					     quand les deux cles ne s'accordent pas. C'est le seul
+					     moyen de DIRE a l'autre qu'on ne le lit pas. -->
+					<button class="btn btn-default" data-quick="unreadable" data-i18n="chat.unreadable">Unreadable — change key!</button>
+				</div>
+
+				<div class="chat-compose">
+					<input type="text" id="chat-input" class="form-control" data-i18n-placeholder="chat.placeholder" placeholder="Write a message…">
+					<button id="chat-send" class="btn btn-primary" data-i18n="chat.send">Send</button>
+				</div>
+
+				<!-- Dit pourquoi le champ de saisie est fermé, le cas échéant :
+				     une partie sans clé garde les boutons ci-dessus mais refuse
+				     le texte libre, et un champ grisé sans explication est une
+				     énigme. -->
+				<p id="chat-status" class="chat-status"></p>
+
+				<!-- Ajouter une cle a une partie qui n'en a pas.
+				     Elle ne peut pas s'inventer d'un seul cote : les deux
+				     joueurs doivent avoir LA MEME, et elle ne doit pas passer
+				     par le relai -- sinon il l'aurait, et tout le chiffrement
+				     ne servirait a rien. Elle se transmet donc par un autre
+				     canal, comme le lien d'invitation. -->
+				<!-- Choisir laquelle des cles de communaute sert a cette
+				     partie. C'est la manoeuvre courante quand on ne se lit
+				     pas : la bonne cle est souvent deja sur la machine, sous
+				     un autre nom. Cachee tant qu'aucune n'est enregistree. -->
+				<div id="chat-keyring-row" class="chat-key" style="display:none">
+					<select id="chat-keyring" class="form-control"></select>
+				</div>
+				<p id="chat-key-hint" class="chat-status"></p>
+				<div id="chat-key-row" class="chat-key">
+					<input type="text" id="chat-key-input" class="form-control" data-i18n-placeholder="chat.keyPlaceholder" placeholder="Paste a shared key…" spellcheck="false">
+					<button id="chat-key-apply" class="btn btn-default" data-i18n="chat.keyApply">Use</button>
+					<button id="chat-key-new" class="btn btn-default" data-i18n="chat.keyNew">Generate</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script type="module" src="chat.js"></script>
+</body>
+</html>

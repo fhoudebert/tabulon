@@ -135,6 +135,7 @@ function buildPayload(method, args) {
     stop_recording:      ([matchId])               => ({ matchId }),
     // hub
     get_app_info:        ()                             => ({}),
+    install_status:      ()                             => ({}),
     remove_template:     ([templateName])              => ({ templateName }),
     notify_user_response:([token, result])             => ({ token, result }),
     // windows — hub actions
@@ -155,6 +156,17 @@ function buildPayload(method, args) {
     scan_probe:          ()                        => ({}),
     scan_search:         ([request])               => ({ request }),
     scan_stop:           ()                        => ({}),
+    // moteur de go natif (KataGo) — katago_probe prend un parametre nomme
+    // `net`, pas une requete : le reseau est un argument de LANCEMENT.
+    katago_probe:        ([opts])                  => ({ net: (opts && opts.net) || null }),
+    katago_search:       ([request])               => ({ request }),
+    katago_stop:         ()                        => ({}),
+    // discussion a distance : le scellement vit en Rust, voir seal_cmds.rs
+    open_chat:           ([matchId])               => ({ matchId }),
+    seal_text:           ([key, text])             => ({ key, text }),
+    open_text:           ([key, sealed])           => ({ key, sealed }),
+    derive_chat_key:     ([master, info])          => ({ master, info }),
+    chat_key_id:         ([master])                => ({ master }),
     // fs
     read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),

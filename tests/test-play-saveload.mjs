@@ -122,28 +122,44 @@ await waitFor(() => match.pendingUserTurn && clockEvents.some(e => e.clock.turn 
   'tour suivant');
 assert(clockEvents.at(-1).clock.mode === 'countup', 'sans clocked play : horloge countup par défaut (comme JoclyBoard)');
 
-// 1b. Bouton '…' : bascule barre ⟷ sélecteurs de joueurs (persistée).
-// Le couplage est en CSS pur (.bar-visible masque .player-select-wrap) :
-// on vérifie la classe + la présence de la règle CSS d'exclusion mutuelle.
-const actions = document.querySelector('.ephemeral-actions');
-assert(!actions.classList.contains('bar-visible'), 'barre masquée par défaut → joueurs A/B visibles');
+/*
+ * 1b. La barre latérale : tous les boutons visibles, et plus d'état caché.
+ *
+ * Les vingt et un boutons étaient derrière un « … » dont l'état était
+ * MÉMORISÉ, replié par défaut : qui n'avait jamais cliqué dessus ne découvrait
+ * ni l'horloge, ni la discussion, ni l'export. Ils sont désormais dans un rail
+ * toujours ouvert, et le pied de page garde en permanence ce qui accompagne la
+ * partie -- l'état, les joueurs, l'habillage.
+ *
+ * Ce qui se vérifie ici est donc l'ABSENCE de la mécanique de repli, autant
+ * que la présence de la barre : un reste de « … » ou de .bar-visible voudrait
+ * dire que les deux montages cohabitent.
+ */
 {
+  const sidebar = document.getElementById('game-sidebar');
+  assert(!!sidebar, 'la barre latérale existe');
+  assert(sidebar.querySelectorAll('.sidebar-btn').length >= 15,
+    `elle porte les boutons (${sidebar.querySelectorAll('.sidebar-btn').length})`);
+  // Icône ET libellé : c'est le libellé qui rend un bouton découvrable, et
+  // c'est la largeur d'un rail qui lui fait de la place -- un pied de page
+  // n'en avait pas.
+  assert([...sidebar.querySelectorAll('.sidebar-btn')].every(b => b.querySelectorAll('span').length >= 2),
+    'chaque entrée porte une icône et un libellé');
+  assert(sidebar.querySelectorAll('.sidebar-title').length >= 3,
+    'réparties en sections');
+
+  assert(!document.getElementById('button-toggle-bar'), "le bouton '…' a disparu");
+  assert(!document.querySelector('.ephemeral-appear'), 'et la barre repliable avec lui');
   const css = readFileSync('./app/content/tabulon.css', 'utf-8');
-  assert(css.includes('.ephemeral-actions.bar-visible .player-select-wrap { display: none; }'),
-    'règle CSS : barre visible → sélecteurs de joueurs masqués');
-  assert(css.includes('.ephemeral-actions.bar-visible #toggle-bar-group { margin-left: 0; }'),
-    "règle CSS : barre visible → '…' collé à droite de la barre (pas centré)");
-  const barGroup = document.querySelector('.ephemeral-appear');
-  const toggleGroup = document.getElementById('toggle-bar-group');
-  assert(barGroup.nextElementSibling === toggleGroup,
-    "DOM : le bouton '…' suit immédiatement la barre de boutons");
+  assert(!css.includes('.bar-visible'),
+    'plus aucune règle d’exclusion mutuelle dans la feuille de style');
+
+  // Le plein écran prend la place du « … » : le seul bouton de la barre qui
+  // agisse sur la FENÊTRE et non sur la partie.
+  const footer = document.querySelector('.ephemeral-actions');
+  assert(footer.contains(document.getElementById('button-fullscreen')),
+    'le plein écran reste dans le pied, là où était le « … »');
 }
-document.getElementById('button-toggle-bar').click();
-assert(actions.classList.contains('bar-visible'), 'clic … → barre visible');
-document.getElementById('button-toggle-bar').click();
-assert(!actions.classList.contains('bar-visible'), '2e clic … → barre masquée');
-document.getElementById('button-toggle-bar').click();   // laisser visible pour cliquer Save
-await waitFor(() => storeData.get('play-footer-bar') === true, 'état de la barre persisté');
 
 // 2. SAVE : dialogue natif + commande Rust save_text_file (plus de data: URI)
 document.getElementById('button-save').click();
@@ -173,7 +189,17 @@ fileElem.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await waitFor(() => match.loadedWith?.playedMoves?.length === 5, 'partie chargée');
 await waitFor(() => match.pendingUserTurn, 'boucle repartie sur la position chargée');
 assert(match.turn === PLAYER_B, 'après 5 coups chargés : trait à Player B');
-assert(document.getElementById('board-footer-text').textContent === '', 'footer nettoyé');
+// Le pied de plateau ne garde rien du chargement -- ni « Réflexion... » ni un
+// message d'erreur -- mais il n'est plus vide pour autant : depuis que le tour
+// humain s'annonce, il nomme le camp au trait. C'est ce qu'on verifie, plutot
+// que le vide, qui ne distinguait pas « nettoye » de « muet ».
+{
+  const footer = document.getElementById('board-footer-text').textContent;
+  // Le camp, pas le niveau : le trait est a B ci-dessus, donc c'est B qui doit
+  // etre nomme. Une phrase qui dirait « Humain » passerait des deux cotes.
+  assert(/Player B|joueur B/.test(footer),
+    'footer nettoyé, et annonçant le trait : ' + JSON.stringify(footer));
+}
 
 // On joue 3 coups pour laisser une éventuelle double boucle se manifester
 for (let i = 0; i < 3; i++) { playHumanMove(); await waitFor(() => match.pendingUserTurn, 'coup ' + i); }

@@ -101,4 +101,31 @@ function assert(cond, msg) {
     assert(t1 !== t2, 'deux jetons diffèrent');
 }
 
+/* ─── La clé de discussion dans le code pair-à-pair ───────────────────────── */
+//
+// Ici, contrairement au lien du relai, il n'y a AUCUN serveur à qui la cacher :
+// le code est copié-collé d'un joueur à l'autre et le flux est direct. Elle
+// voyage donc dans la charge utile comme le reste.
+{
+    const key = 'b'.repeat(64);
+    const code = encodePeerCode({ gameName: 'go19', ips: ['192.168.1.10'], port: 7777, token: 'ab'.repeat(16), chatKey: key });
+    assert(decodePeerCode(code).chatKey === key, 'la clé fait l’aller-retour');
+
+    // Un code sans discussion reste identique à ce qu'il était : le champ
+    // n'est écrit que s'il y en a une.
+    const plain = encodePeerCode({ gameName: 'go19', ips: ['192.168.1.10'], port: 7777, token: 'ab'.repeat(16) });
+    assert(!JSON.parse(Buffer.from(plain.slice(5), 'base64url').toString()).k,
+        'un code sans discussion ne porte pas le champ');
+    assert(decodePeerCode(plain).chatKey === null, 'et se relit sans clé');
+
+    // Mal formée : refusée à l'écriture, ignorée à la lecture — même politique
+    // que pour le lien du relai.
+    assert(encodePeerCode({ gameName: 'go19', ips: ['1.2.3.4'], port: 7777, token: 'ab'.repeat(16), chatKey: 'zz' }) === null,
+        'une clé mal formée fait échouer la construction du code');
+    const damaged = 'TBP1-' + Buffer.from(JSON.stringify({
+        v: 1, g: 'go19', a: ['1.2.3.4'], p: 7777, t: 'ab'.repeat(16), k: 'nawak' })).toString('base64url');
+    const d = decodePeerCode(damaged);
+    assert(d !== null && d.chatKey === null, 'une clé abîmée n’empêche pas de rejoindre la partie');
+}
+
 console.log(`\ntest-remote-peer-protocol: ${passed} assertions OK`);

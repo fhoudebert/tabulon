@@ -213,5 +213,124 @@ assert($$('#game-detail .visuals > div > div').length === 0, 'cubic-chess (sans 
 //     (on simule en revérifiant l'état du store)
 assert(storeData.get('last-game') === 'cubic-chess', 'last-game suit la sélection');
 
+/* ── 12. Le réglage d'affichage des visuels ─────────────────────────────────
+ *
+ * Les visuels de fond sont de grandes images livrées avec la ludothèque, et
+ * souvent les premières supprimées quand la place manque. Le fond enchaînait
+ * alors des fondus sur RIEN, toutes les cinq secondes, sans que rien ne
+ * l'explique. D'où l'interrupteur — dans le hub, et pas dans la fenêtre
+ * « Options d'affichage », qui est ouverte avec un numéro de partie et
+ * dialogue avec sa fenêtre de jeu.
+ */
+{
+    const nav = $('#nav-display');
+    assert(!!nav, 'la configuration porte une entrée Affichage');
+    nav.click();
+    await waitFor(() => $('#display').style.display === '', 'le panneau Affichage s\'ouvre');
+    assert(storeData.get('nav-last') === 'display', 'la navigation retient le panneau');
+
+    const box = $('#display-visuals');
+    assert(box && box.checked, 'les visuels sont affichés par défaut');
+
+    // Décoché : le conteneur se VIDE et le minuteur s'arrête. Rendre les
+    // images transparentes ne suffirait pas — le fondu continuerait à tourner
+    // en arrière-plan toutes les cinq secondes.
+    box.checked = false;
+    box.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(() => storeData.get('hub-visuals') === false, 'le choix est persisté');
+
+    liveLi('classic-chess').click();
+    await waitFor(() => $('#game-detail .game-title').textContent.includes('Chess'), 'détail rouvert');
+    assert($$('#game-detail .visuals > div > div').length === 0,
+        'réglage éteint : aucun visuel injecté, même pour un jeu qui en a');
+
+    // Et rallumé, ils reviennent : un interrupteur qui n'a qu'un sens n'en est
+    // pas un.
+    box.checked = true;
+    box.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(() => $$('#game-detail .visuals > div > div').length === 2,
+        'réglage rallumé : les visuels reviennent sans changer de jeu');
+    assert(storeData.get('hub-visuals') === true, 'et le choix inverse est persisté aussi');
+}
+
+/* ── 13. Les trousseaux de communauté ───────────────────────────────────────
+ *
+ * Le secret partagé UNE FOIS avec un groupe, et qui protège ensuite toutes les
+ * parties jouées avec lui. PLUSIEURS plutôt qu'un seul : un club, une famille
+ * et une compétition n'ont pas à pouvoir se lire les uns les autres.
+ */
+{
+    const list = $('#prefs-key-list');
+    const name = $('#prefs-key-name');
+    const key  = $('#prefs-community-key');
+    assert(!!list && !!name && !!key, 'l’écran Préférences porte la liste et les deux champs');
+    assert(list.options.length === 0, 'vide tant qu’aucun trousseau n’existe');
+
+    $('#prefs-key-add').click();
+    await waitFor(() => list.options.length === 1, 'Nouveau crée un trousseau');
+    name.value = 'Club du mardi';
+    $('#prefs-key-new').click();
+    await waitFor(() => /^[0-9a-f]{64}$/.test(key.value), 'Générer produit une clé');
+    // PAS enregistrée tout de suite : tant qu'on ne l'a pas transmise,
+    // l'enregistrer rendrait nos messages illisibles pour les autres sans rien
+    // dire. C'est « Enregistrer » qui engage.
+    assert(!(storeData.get('community-keys') || [])[0]?.key, 'générer n’enregistre pas encore');
+
+    const generated = key.value;
+    $('#prefs-key-save').click();
+    await waitFor(() => (storeData.get('community-keys') || [])[0]?.key === generated,
+        'Enregistrer range la clé');
+    assert(storeData.get('community-keys')[0].name === 'Club du mardi', 'avec son nom');
+    assert(storeData.get('community-key-current') === storeData.get('community-keys')[0].id,
+        'et c’est celui-là qui est sélectionné');
+
+    // Un second trousseau : c'est le point de la liste.
+    $('#prefs-key-add').click();
+    await waitFor(() => list.options.length === 2, 'un second trousseau s’ajoute');
+    name.value = 'Famille';
+    key.value = 'b'.repeat(64);
+    $('#prefs-key-save').click();
+    await waitFor(() => storeData.get('community-keys')[1]?.key === 'b'.repeat(64), 'et s’enregistre');
+    assert(storeData.get('community-keys')[1].key === 'b'.repeat(64), 'sans toucher au premier');
+    assert(storeData.get('community-keys')[0].key === generated, 'qui est toujours là');
+
+    // Un format inattendu est refusé plutôt qu'enregistré : une clé à moitié
+    // valide ne protège rien et en donne l'apparence.
+    key.value = 'pas une clé';
+    $('#prefs-key-save').click();
+    await sleep(40);
+    assert(storeData.get('community-keys')[1].key === 'b'.repeat(64),
+        'une clé mal formée ne remplace pas la bonne');
+
+    $('#prefs-key-del').click();
+    await waitFor(() => storeData.get('community-keys').length === 1, 'Supprimer retire le trousseau');
+    assert(storeData.get('community-keys')[0].name === 'Club du mardi', 'et laisse les autres');
+}
+
+/* ── 14. Le chemin de ffmpeg ────────────────────────────────────────────────
+ *
+ * L'enregistrement vidéo appelle un binaire qui n'est pas livré avec Tabulon.
+ * Sous Linux il coexiste souvent en plusieurs exemplaires, et celui du PATH
+ * n'est pas toujours celui qui sait encoder en H.264 — d'où un réglage, seul
+ * moyen d'en désigner un autre sans toucher au système.
+ */
+{
+    const field = $('#prefs-ffmpeg-path');
+    assert(!!field, 'l’écran Préférences porte un champ pour ffmpeg');
+    assert(field.value === '', 'vide par défaut : on emploie celui du système');
+
+    field.value = '/opt/ffmpeg-7/bin/ffmpeg';
+    $('#prefs-ffmpeg-save').click();
+    await waitFor(() => storeData.get('ffmpeg-path') === '/opt/ffmpeg-7/bin/ffmpeg',
+        'le chemin est enregistré');
+
+    // Vider le champ revient à reprendre celui du PATH : c'est un état normal,
+    // pas un effacement de réglage.
+    field.value = '   ';
+    $('#prefs-ffmpeg-save').click();
+    await waitFor(() => storeData.get('ffmpeg-path') === '', 'un champ vide rend la main au système');
+    assert(storeData.get('ffmpeg-path') === '', 'sans laisser d’espaces derrière');
+}
+
 console.log(`\n${passed} assertions OK — navigation unifiée du hub validée.`);
 process.exit(0);

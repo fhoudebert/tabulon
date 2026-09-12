@@ -1,0 +1,8 @@
+[JoclyGame "minichess5x5-chess"]
+[Event "minichess5x5-chess"]
+[Date "2026.9.4"]
+[White "Humain"]
+[Black "Facile"]
+[PlyCount "12"]
+
+1. #0 -- 2. c2-c3 a4-a3 3. b2xa3 d4xc3 4. a3xb4 Bc5xb4 5. d2xc3 Qd5xd1+ 6. Ke1xd1 Nb5xc3+

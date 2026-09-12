@@ -68,7 +68,8 @@ function ResolveGame(tags, folder) {
     const declared = BookGame(tags);
     if (declared && names.includes(declared)) return declared;
     const variant = FairyVariantAlias(BookVariant(tags) || declared);
-    if (variant && fairy[variant]) return fairy[variant];
+    // L'index rend { game, setup } ; ici seul le jeu importe.
+    if (variant && fairy[variant]) return fairy[variant].game;
     return names.includes(folder) ? folder : null;
 }
 

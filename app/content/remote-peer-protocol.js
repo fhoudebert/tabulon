@@ -71,12 +71,31 @@ export function generatePeerToken() {
  * @param {{gameName:string, ips:string[], port:number, token:string}} info
  * @returns {string|null} null si un champ requis manque/est invalide
  */
-export function encodePeerCode({ gameName, ips, port, token }) {
+export function encodePeerCode({ gameName, ips, port, token, chatKey = null }) {
     if (!gameName || typeof gameName !== 'string') return null;
     if (!Array.isArray(ips) || ips.length === 0 || !ips.every(a => typeof a === 'string' && a)) return null;
     if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
     if (!token || typeof token !== 'string') return null;
-    return CODE_PREFIX + toBase64Url(JSON.stringify({ v: 1, g: gameName, a: ips, p: port, t: token }));
+    const payload = { v: 1, g: gameName, a: ips, p: port, t: token };
+    /*
+     * `k` : la cle de discussion, quand la partie en propose une.
+     *
+     * Ici, contrairement au lien du relai, il n'y a AUCUN serveur a qui la
+     * cacher -- le code est copie-colle d'un joueur a l'autre et le flux est
+     * direct. Elle voyage donc dans la charge utile comme le reste. Le champ
+     * n'est ecrit que s'il y en a une : un code d'aujourd'hui reste identique
+     * a un code d'hier, et un client ancien qui recevrait le champ l'ignore --
+     * il ne lit que g, a, p et t.
+     *
+     * Une cle mal formee est refusee plutot qu'ecrite : un code annoncant une
+     * discussion protegee qui ne le serait pas est pire qu'un code sans
+     * discussion.
+     */
+    if (chatKey !== null) {
+        if (typeof chatKey !== 'string' || !/^[0-9a-f]{64}$/.test(chatKey)) return null;
+        payload.k = chatKey;
+    }
+    return CODE_PREFIX + toBase64Url(JSON.stringify(payload));
 }
 
 /**
@@ -109,5 +128,8 @@ export function decodePeerCode(code) {
     if (!Array.isArray(ips) || ips.length === 0 || !ips.every(x => typeof x === 'string' && x)) return null;
     if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
     if (!token || typeof token !== 'string') return null;
-    return { gameName, ips, port, token };
+    // Une cle abimee est traitee comme une absence de cle : la partie doit
+    // pouvoir demarrer, sans discussion, plutot que d'echouer entierement.
+    const chatKey = typeof parsed.k === 'string' && /^[0-9a-f]{64}$/.test(parsed.k) ? parsed.k : null;
+    return { gameName, ips, port, token, chatKey };
 }

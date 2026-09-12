@@ -18,6 +18,29 @@
 
 export const PROTOCOL_VERSION = 1;
 
+/**
+ * Nature d'une enveloppe.
+ *
+ * POURQUOI CE CHAMP EXISTE MAINTENANT : jusqu'ici une enveloppe ne pouvait
+ * etre qu'un coup, et `hasOpponentMoved` la reconnaissait a son `nbTurns`. Des
+ * qu'un second genre de message circule sur le meme canal -- discussion,
+ * presence (« je fais une pause »), relance -- deviner le genre a la forme
+ * devient un piege : un message sans `nbTurns` serait rejete par
+ * decodeEnvelope, et un message qui en aurait un serait pris pour un coup.
+ *
+ * COMPATIBILITE : une enveloppe ancienne n'a pas de `kind`, et c'est toujours
+ * un coup -- d'ou le defaut a MOVE au decodage. Le champ est donc additif et
+ * PROTOCOL_VERSION ne bouge pas : un client ancien qui recevrait un message de
+ * discussion le refuserait faute de `nbTurns`, ce qui est exactement le
+ * comportement voulu (il l'ignore au lieu de le jouer).
+ */
+export const ENVELOPE_KIND = {
+    MOVE: 'move',
+    CHAT: 'chat',
+    PRESENCE: 'presence',
+    NUDGE: 'nudge',
+};
+
 // Relai HTTP par defaut (etape 1/2 : instance de test jocly-simple-match
 // utilisee pour valider le protocole -- voir DEVELOPMENT.md § Remote
 // play). A rendre choisissable par l'utilisateur dans une
@@ -46,6 +69,7 @@ export function encodeEnvelope({ nbTurns, lastMove = null, state = null }) {
     }
     return JSON.stringify({
         v: PROTOCOL_VERSION,
+        kind: ENVELOPE_KIND.MOVE,
         nbTurns,
         lastMove,
         state,
@@ -69,8 +93,12 @@ export function decodeEnvelope(text) {
         return null;
     }
     if (!data || typeof data !== 'object' || !Number.isInteger(data.nbTurns)) return null;
+    // Une enveloppe sans `kind` vient d'un client anterieur au champ : c'etait
+    // forcement un coup, il n'y avait rien d'autre.
+    if (data.kind !== undefined && data.kind !== ENVELOPE_KIND.MOVE) return null;
     return {
         v: Number.isInteger(data.v) ? data.v : 1,
+        kind: ENVELOPE_KIND.MOVE,
         nbTurns: data.nbTurns,
         lastMove: data.lastMove ?? null,
         state: data.state ?? null,
@@ -85,7 +113,13 @@ export function decodeEnvelope(text) {
  * @param {{nbTurns:number}|null} remoteEnvelope
  */
 export function hasOpponentMoved(localNbTurns, remoteEnvelope) {
-    return !!remoteEnvelope && remoteEnvelope.nbTurns > localNbTurns;
+    if (!remoteEnvelope) return false;
+    // Ceinture et bretelles : decodeEnvelope ne rend deja que des coups, mais
+    // cette fonction est aussi appelee sur des objets venus d'ailleurs (le
+    // rattrapage de PeerChannel, les tests). Un message de discussion pris
+    // pour un coup ferait avancer la partie sur du vide.
+    if (remoteEnvelope.kind !== undefined && remoteEnvelope.kind !== ENVELOPE_KIND.MOVE) return false;
+    return remoteEnvelope.nbTurns > localNbTurns;
 }
 
 /**
@@ -206,7 +240,50 @@ export function parseInvitationUrl(urlString) {
     if (!gameName || !matchId || (playerParam !== 'a' && playerParam !== 'b')) return null;
     // index.php -> fileio.php, meme dossier (convention jocly-simple-match)
     const relayPath = url.pathname.replace(/[^/]*$/, 'fileio.php');
-    return { gameName, matchId, player: playerParam, relayUrl: url.origin + relayPath };
+    const hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
+    const keyId = hash.get('kid');
+    return {
+        gameName, matchId, player: playerParam,
+        relayUrl: url.origin + relayPath,
+        chatKey: chatKeyFromHash(url.hash),
+        /*
+         * L'empreinte de la cle de communaute a employer, quand il y en a une.
+         *
+         * Elle DESIGNE une cle sans la donner : l'invite cherche parmi les
+         * siennes celle qui porte cette empreinte, et en derive la cle de la
+         * partie. Rien de secret ne voyage donc -- mais elle reste dans le
+         * fragment avec le reste, parce qu'elle dit a quel groupe la partie
+         * appartient, et que le relai n'a pas a l'apprendre.
+         */
+        chatKeyId: /^[0-9a-f]{16}$/.test(keyId || '') ? keyId : null,
+    };
+}
+
+/**
+ * Clé de discussion transportée par le lien -- DANS LE FRAGMENT, jamais dans
+ * la requête.
+ *
+ * C'EST LE POINT DE TOUTE LA CONSTRUCTION. Le lien d'invitation est une URL de
+ * joclymatch, faite pour être ouverte dans un navigateur ; un `?k=...` serait
+ * donc envoyé au SERVEUR dès que l'invité clique dessus, et la clé censée
+ * cacher la conversation à ce serveur lui arriverait par la porte d'entrée. Un
+ * fragment, lui, n'est jamais transmis : le navigateur le garde, la page de
+ * joclymatch l'ignore, et Tabulon le lit.
+ *
+ * Le lien voyage par un autre canal -- message, courriel -- que celui du
+ * relai. C'est ce qui rend la séparation possible : le relai voit
+ * l'identifiant de partie, il ne voit pas la clé.
+ */
+function chatKeyFromHash(hash) {
+    const raw = String(hash || '').replace(/^#/, '');
+    if (!raw) return null;
+    const key = new URLSearchParams(raw).get('k');
+    return isChatKey(key) ? key : null;
+}
+
+/** Forme attendue d'une clé : 32 octets en hexadécimal, comme la graine. */
+export function isChatKey(value) {
+    return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 }
 
 /**
@@ -216,7 +293,7 @@ export function parseInvitationUrl(urlString) {
  * @param {{relayUrl:string, gameName:string, matchId:string, player:'a'|'b'}} data
  * @returns {string|null} null si relayUrl n'est pas une URL valide
  */
-export function buildInvitationUrl({ relayUrl, gameName, matchId, player }) {
+export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null, chatKeyId = null }) {
     let url;
     try {
         url = new URL(relayUrl);
@@ -225,8 +302,25 @@ export function buildInvitationUrl({ relayUrl, gameName, matchId, player }) {
     }
     url.pathname = url.pathname.replace(/[^/]*$/, 'index.php');
     url.search = '';
+    url.hash = '';
     url.searchParams.set('game', gameName);
     url.searchParams.set('mid', matchId);
     url.searchParams.set('player', player);
+    /*
+     * La clé va dans le FRAGMENT, et une clé mal formée est refusée plutôt
+     * qu'écrite : un lien qui en porterait une inutilisable annoncerait une
+     * discussion protégée qui ne le serait pas. Voir chatKeyFromHash pour
+     * pourquoi le fragment et pas la requête.
+     */
+    if (chatKey !== null) {
+        if (!isChatKey(chatKey)) return null;
+        url.hash = 'k=' + chatKey;
+    } else if (chatKeyId !== null) {
+        // Une EMPREINTE plutot qu'une cle : les deux joueurs partagent deja la
+        // cle de communaute, le lien n'a donc qu'a dire laquelle employer. Rien
+        // de secret ne circule, et il n'y a rien a perdre a la copie.
+        if (!/^[0-9a-f]{16}$/.test(chatKeyId)) return null;
+        url.hash = 'kid=' + chatKeyId;
+    }
     return url.toString();
 }

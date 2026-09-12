@@ -144,8 +144,11 @@ export function IsVariantsIni(text) {
  * tout : si la variante est deja jouee nativement par un jeu, c'est celui-la.
  */
 export function MatchGames(variant, fairyIndex, geometries) {
+    // L'index rend { game, setup } : le nom du jeu ET, pour un jeu a prelude,
+    // l'arrangement que cette variante designe. Ici seul le jeu compte -- on
+    // propose un plateau, pas une partie.
     const direct = (fairyIndex || {})[String(variant?.name || '').toLowerCase()];
-    if (direct) return [direct];
+    if (direct?.game) return [direct.game];
     if (!variant?.files || !variant?.ranks) return [];
     return Object.entries(geometries || {})
         .filter(([, g]) => g && g.files === variant.files && g.ranks === variant.ranks)

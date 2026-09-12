@@ -111,8 +111,12 @@ console.log('Test 5 - jeux Jocly candidats');
         'draughts':      { model: { levels: [{ ai: 'uct' }] } },
     };
     const index = FairyGameIndex(configs);
-    ok(index.shako === 'shako-chess', 'variante native -> jeu Jocly');
-    ok(index.gothic === 'capablanca-chess', 'jeu a prelude : toutes ses variantes sont indexees');
+    // L'index rend { game, setup } : le jeu, et pour un jeu a prelude
+    // l'arrangement que la variante designe -- sans quoi un fichier rouvrait
+    // le bon jeu au premier arrangement.
+    ok(index.shako?.game === 'shako-chess', 'variante native -> jeu Jocly');
+    ok(index.shako?.setup === null, 'sans arrangement : ce jeu n\'a pas de prelude');
+    ok(index.gothic?.game === 'capablanca-chess', 'jeu a prelude : toutes ses variantes sont indexees');
     ok(index.draughts === undefined, 'un jeu sans niveau Fairy n\'entre pas dans l\'index');
     ok(FairyGameIndex(null) && Object.keys(FairyGameIndex(null)).length === 0,
        'catalogue absent -> index vide, pas d\'exception');

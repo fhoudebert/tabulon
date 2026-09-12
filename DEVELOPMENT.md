@@ -566,6 +566,61 @@ not a failure — it is passed through as `bestMove: null`, which is what
 `jocly.scan.js` expects. No move-notation translation is needed at all:
 Scan's natural notation is already what `checkersbase-model.js` produces.
 
+
+## Native engine (KataGo, Go levels)
+
+Same rationale, same shape and the same fallback as the two drivers above,
+for Go: `katago_cmds.rs` drives a native **KataGo** binary over GTP,
+`engine-native.js` stands in for `jocly.kataworker.js`. Put the binary in
+`engine/katago` (`engine\katago.exe` on Windows), or point `TABULON_KATAGO`
+at it. KataGo is MIT-licensed, unlike the two GPL engines beside it.
+
+Without it nothing breaks: the probe fails, Jocly marks the engine
+unavailable and plays with its native AI — the console says so explicitly
+(`moteur de go indisponible — …`), as it does on success
+(`moteur de go natif : KataGo v1.13 - réseau … - goban 19`).
+
+Three things differ from Fairy-Stockfish, and each one is a trap:
+
+- **KataGo cannot start without its network.** Fairy-Stockfish without an
+  NNUE runs a classical evaluation — a missing network there is a detail.
+  KataGo takes `-model` as a *launch* argument: a missing network is a
+  failed probe, not a degraded mode. It also refuses to start without
+  `-config`, so `engine/katago.cfg` is required too; the `gtp_example.cfg`
+  shipped with KataGo does. Both are reported separately by
+  `install_status`, so the panel can say which one is missing.
+- **The position is a move list, not a FEN.** `jocly.kata.js` sends
+  `moves: [{loc, col}]`, `toPlay` and `komi`, because that is what the wasm
+  ABI wants — it replays the game itself. In GTP that becomes a run of
+  `play` commands, so `loc` has to be translated. `loc_to_gtp` /
+  `gtp_to_loc` are the one place where a bug would produce a silently
+  *wrong move* rather than a visible failure, so they are round-tripped
+  over every intersection of 9x9, 13x13 and 19x19.
+
+  The convention is Jocly's own (`go-model.js`, `CoordToString`): columns
+  A..T skipping I, rows numbered from the bottom. The wasm bridge does not
+  settle the axis — it passes `loc` straight through, which it can afford
+  to do, since the two conventions differ by a reflection applied on the way
+  in and on the way out. GTP text fixes the direction, so here a choice has
+  to be made, and it is the one the player sees on screen.
+
+- **The network and the board size arrive with `Init`, not with `Search`.**
+  KataGo needs both at launch. The shim therefore remembers what `Init`
+  carried and sends it with every search; a shim that forgets leaves the
+  Rust side with nothing to start the engine, and the failure only shows at
+  the first move.
+
+One process per search, like the other two — but this is the engine where
+that trade-off deserves re-measuring. Fairy-Stockfish starts in
+milliseconds; KataGo has to load its network, which is seconds on a CPU. If
+it proves tiresome in play, the way out is a persistent process driven over
+GTP (`clear_board` between games), at the cost of the shared state that
+`engine_cmds.rs` warns about. Measure before deciding.
+
+The search budget comes from the level, not from `katago.cfg`:
+`-override-config maxVisits=…,maxTime=…` is what makes "Easy" and "Strong"
+differ without editing the config file.
+
 ## Internationalization (i18n)
 
 `app/content/tabulon-i18n.js` holds an `en`/`fr` dictionary (`en` is the

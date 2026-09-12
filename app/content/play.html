@@ -18,6 +18,99 @@
 
 <body style="height:100%">
 	<div class="game-zone play-content">
+		<!-- ── Barre laterale ────────────────────────────────────────────────
+		     Elle remplace le bouton « … » et la barre repliable du pied.
+		
+		     POURQUOI : vingt et un boutons etaient derriere un repli dont
+		     l'etat etait MEMORISE. Qui n'avait jamais clique dessus ne
+		     decouvrait ni l'horloge, ni la discussion, ni l'export -- et le
+		     repli etait l'etat par defaut.
+		
+		     Et « toujours visible » ne suffisait pas : vingt et une icones
+		     muettes en colonne sont aussi opaques qu'en ligne. Ce qui rend un
+		     bouton decouvrable, c'est le LIBELLE a cote -- que la largeur d'un
+		     rail permet et que la hauteur d'un pied de page interdisait. Les
+		     libelles reprennent les cles tip.* du dictionnaire, deja traduites
+		     et jusqu'ici visibles seulement en infobulle, donc invisibles au
+		     toucher.
+		
+		     Les sections suivent l'usage plutot que la technique : on regle
+		     l'affichage ET les joueurs ensemble parce que c'est ce qu'on
+		     enregistre comme modele ; on ouvre, sauve et reprend une partie
+		     ensemble ; la capture est a part parce qu'elle sert rarement. -->
+		<nav class="game-sidebar" id="game-sidebar">
+
+			<h2 class="sidebar-title" data-i18n="sidebar.setup">Setup</h2>
+			<button id="button-options" class="sidebar-btn" title="View options" data-i18n-title="tip.viewOptions">
+				<span class="icon icon-eye"></span><span data-i18n="tip.viewOptions">View options</span>
+			</button>
+			<button id="button-players" class="sidebar-btn" title="Players" data-i18n-title="tip.players">
+				<span class="icon icon-users"></span><span data-i18n="tip.players">Players</span>
+			</button>
+			<button id="button-template" class="sidebar-btn" title="Save template" data-i18n-title="tip.saveTemplate">
+				<span class="icon icon-layout"></span><span data-i18n="tip.saveTemplate">Save template</span>
+			</button>
+
+			<h2 class="sidebar-title" data-i18n="sidebar.game">Game</h2>
+			<button id="button-pause" class="sidebar-btn" title="Pause" data-i18n-title="tip.pause">
+				<span class="icon icon-pause"></span><span data-i18n="tip.pause">Pause</span>
+			</button>
+			<button id="button-resume" class="sidebar-btn" title="Resume" data-i18n-title="tip.resume" style="display:none">
+				<span class="icon icon-play"></span><span data-i18n="tip.resume">Resume</span>
+			</button>
+			<button id="button-replay" class="sidebar-btn" title="Replay last move" data-i18n-title="tip.replay">
+				<span class="icon icon-level-down"></span><span data-i18n="tip.replay">Replay last move</span>
+			</button>
+			<button id="button-history" class="sidebar-btn" title="History" data-i18n-title="tip.history">
+				<span class="icon icon-list"></span><span data-i18n="tip.history">History</span>
+			</button>
+			<button id="button-save" class="sidebar-btn" title="Save" data-i18n-title="tip.save">
+				<span class="icon icon-download"></span><span data-i18n="tip.save">Save</span>
+			</button>
+			<button id="button-load" class="sidebar-btn" title="Load" data-i18n-title="tip.load">
+				<span class="icon icon-upload"></span><span data-i18n="tip.load">Load</span>
+			</button>
+			<!-- Le vrai selecteur de fichier, cache : c'est le bouton ci-dessus qui
+			     le declenche. Il vit a cote de lui plutot qu'ailleurs dans la page,
+			     pour qu'on ne le perde pas de vue en deplacant le bouton -- c'est
+			     exactement ce qui vient d'arriver en demontant la barre repliable. -->
+			<input type="file" id="fileElem" accept="application/json" style="display:none"/>
+			<button id="button-clone" class="sidebar-btn" title="Fork" data-i18n-title="tip.fork">
+				<span class="icon icon-flow-cascade"></span><span data-i18n="tip.fork">Fork</span>
+			</button>
+
+			<h2 class="sidebar-title" data-i18n="sidebar.around">Around the game</h2>
+			<button id="button-clock" class="sidebar-btn" title="Clock" data-i18n-title="tip.clock">
+				<span class="icon icon-clock"></span><span data-i18n="tip.clock">Clock</span>
+			</button>
+			<button id="button-chat" class="sidebar-btn" title="Chat" data-i18n-title="tip.chat" style="display:none">
+				<span class="icon icon-chat"></span><span data-i18n="tip.chat">Chat</span>
+			</button>
+			<button id="button-favorite-no" class="sidebar-btn" title="Favorite" data-i18n-title="tip.favorite">
+				<span class="icon icon-star-empty"></span><span data-i18n="tip.favorite">Favorite</span>
+			</button>
+			<button id="button-favorite-yes" class="sidebar-btn" title="Unfavorite" data-i18n-title="tip.unfavorite" style="display:none">
+				<span class="icon icon-star"></span><span data-i18n="tip.unfavorite">Unfavorite</span>
+			</button>
+			<button id="button-help" class="sidebar-btn" title="Rules, credits, about" data-i18n-title="tip.rules">
+				<span class="icon icon-info-circled"></span><span data-i18n="tip.rules">Rules</span>
+			</button>
+
+			<!-- Rarement employee, et deux de ses trois entrees sont a reprendre :
+			     elle ferme la liste plutot que de couper les sections utiles. -->
+			<h2 class="sidebar-title" data-i18n="sidebar.capture">Capture</h2>
+			<button id="button-snapshot" class="sidebar-btn" title="Take snapshot" data-i18n-title="tip.snapshot">
+				<span class="icon icon-camera"></span><span data-i18n="tip.snapshot">Take snapshot</span>
+			</button>
+			<button id="button-video" class="sidebar-btn" title="Record video" data-i18n-title="tip.recordVideo">
+				<span class="icon icon-video"></span><span data-i18n="tip.recordVideo">Record video</span>
+			</button>
+			<button id="button-camera" class="sidebar-btn" title="Camera view" data-i18n-title="tip.cameraView">
+				<span class="icon icon-target"></span><span data-i18n="tip.cameraView">Camera view</span>
+			</button>
+		</nav>
+
+		<div class="game-main">
 		<div class="game-header hidden">
 			<div>
 				<header class="toolbar toolbar-header">
@@ -60,86 +153,28 @@
 					<!-- Actions rapides visibles quand la barre est masquée (même
 					     mécanique d'exclusion que les sélecteurs, via player-select-wrap) -->
 					<span class="pull-left player-select-wrap" id="quick-actions-wrap">
-						<button id="quick-takeback" class="btn btn-default" title="Take back" data-i18n-title="tip.takeBack">
+						<button id="button-takeback" class="btn btn-default" title="Take back" data-i18n-title="tip.takeBack">
 							<span class="icon icon-back"></span>
 						</button>
-						<button id="quick-restart" class="btn btn-default" title="Restart" data-i18n-title="tip.restart">
+						<button id="button-restart" class="btn btn-default" title="Restart" data-i18n-title="tip.restart">
 							<span class="icon icon-ccw"></span>
 						</button>
 					</span>
-						<div class="btn-group pull-right ephemeral-appear">
-							<button id="button-players" class="btn btn-default" title="Players" data-i18n-title="tip.players">
-								<span class="icon icon-users"></span>
-							</button>
-							<button id="button-options" class="btn btn-default" title="View options" data-i18n-title="tip.viewOptions">
-								<span class="icon icon-eye"></span>
-							</button>
-							<button id="button-takeback" class="btn btn-default" title="Take back" data-i18n-title="tip.takeBack">
-								<span class="icon icon-back"></span>
-							</button>
-							<button id="button-restart" class="btn btn-default" title="Restart" data-i18n-title="tip.restart">
-								<span class="icon icon-ccw"></span>
-							</button>
-							<button id="button-history" class="btn btn-default" title="History" data-i18n-title="tip.history">
-								<span class="icon icon-list"></span>
-							</button>
-							<button id="button-clock" class="btn btn-default" title="Clock" data-i18n-title="tip.clock">
-								<span class="icon icon-clock"></span>
-							</button>
-							<button id="button-replay" class="btn btn-default" title="Replay last move" data-i18n-title="tip.replay">
-								<span class="icon icon-level-down"></span>
-							</button>
-							<button id="button-pause" class="btn btn-default" title="Pause" data-i18n-title="tip.pause">
-								<span class="icon icon-pause"></span>
-							</button>
-							<button id="button-resume" class="btn btn-default" title="Resume" style="display:none">
-								<span class="icon icon-play"></span>
-							</button>
+						<!-- Le plein ecran prend la place de l'ancien bouton « … » : c'est
+						     le seul de la barre qui agisse sur la FENETRE et non sur la
+						     partie, et c'est aussi celui qu'on cherche a l'endroit ou le
+						     replie etait. -->
+						<div class="btn-group pull-right" id="fullscreen-group">
 							<button id="button-fullscreen" class="btn btn-default" title="Full screen" data-i18n-title="tip.fullscreen">
 								<span class="icon icon-resize-full"></span>
-							</button>
-							<button id="button-save" class="btn btn-default" title="Save" data-i18n-title="tip.save">
-								<span class="icon icon-download"></span>
-							</button>
-                            <input type="file" id="fileElem" accept="application/json" style="display:none"/>
-							<button id="button-load" class="btn btn-default" title="Load" data-i18n-title="tip.load">
-								<span class="icon icon-upload"></span>
-							</button>
-							<button id="button-snapshot" class="btn btn-default" title="Take snapshot" data-i18n-title="tip.snapshot">
-								<span class="icon icon-camera"></span>
-							</button>
-							<button id="button-video" class="btn btn-default" title="Record video" data-i18n-title="tip.recordVideo">
-								<span class="icon icon-video"></span>
-							</button>
-<button id="button-template" class="btn btn-default" title="Save template" data-i18n-title="tip.saveTemplate">
-								<span class="icon icon-layout"></span>
-							</button>
-							<button id="button-clone" class="btn btn-default" title="Fork" data-i18n-title="tip.fork">
-								<span class="icon icon-flow-cascade"></span>
-							</button>
-							<button id="button-camera" class="btn btn-default" title="Camera view" data-i18n-title="tip.cameraView">
-								<span class="icon icon-target"></span>
-							</button>
-<button id="button-favorite-yes" class="btn btn-default" title="Unfavorite" style="display:none">
-								<span class="icon icon-star"></span>
-							</button>
-							<button id="button-favorite-no" class="btn btn-default" title="Favorite" data-i18n-title="tip.favorite">
-								<span class="icon icon-star-empty"></span>
-							</button>
-							<button id="button-help" class="btn btn-default" title="Rules, credits, about">
-								<span class="icon icon-info-circled"></span>
-							</button>
-						</div>
-						<div class="btn-group" id="toggle-bar-group">
-							<button id="button-toggle-bar" class="btn btn-default" title="Show/hide buttons" data-i18n-title="tip.toggleBar">
-								<span class="icon icon-dot-3"></span>
 							</button>
 						</div>
 					</div>
 				</footer>
+			</div>
 		</div>
-	</div>
-	</div>
+		</div><!-- game-main -->
+	</div><!-- game-zone -->
 </body>
 
 </html>

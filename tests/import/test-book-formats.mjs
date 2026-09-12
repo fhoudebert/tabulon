@@ -378,8 +378,13 @@ console.log('Test 15 - deux nomenclatures, jamais confondues');
         'mini-shogi':       { model: { levels: [{ ai: 'fairy-stockfish', variant: 'minishogi' }] } },
         'knightmate-chess': { model: { levels: [{ ai: 'fairy-stockfish', variant: 'knightmate' }] } },
     });
-    ok(index.minishogi === 'mini-shogi' && index.knightmate === 'knightmate-chess',
+    // L'index rend { game, setup } et non plus le seul nom du jeu : un jeu a
+    // prelude declare une variante PAR arrangement, et sans le numero un
+    // fichier « mirza » rouvrait Timurid au premier arrangement.
+    ok(index.minishogi?.game === 'mini-shogi' && index.knightmate?.game === 'knightmate-chess',
        'le catalogue donne la correspondance exacte, sans table ecrite a la main');
+    ok(index.minishogi?.setup === null,
+       'et aucun arrangement pour une variante qui n\'a pas de prelude');
     ok(index['mini-shogi'] === undefined, 'un nom Jocly n\'entre pas dans l\'index des variantes');
 
     // Ecriture : les deux tags cohabitent, aucune conversion destructive.

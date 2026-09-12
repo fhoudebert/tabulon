@@ -60,6 +60,13 @@ function ApplyOptions(data) {
         if (inp) inp.checked = !!options.showMoves;
     }
 
+    const lastWrap = document.getElementById('showLastMove');
+    if (config.useShowLastMove) {
+        lastWrap?.classList.remove('hidden');
+        const inp = lastWrap?.querySelector('input');
+        if (inp) inp.checked = !!options.showLastMove;
+    }
+
     // "Voir en tant que" (comme le select #view-as de l'exemple
     // examples/browser/control.html de jocly2) : seulement pour les jeux
     // dont la vue est retournable (config.switchable) -- setViewOptions
@@ -91,6 +98,7 @@ function ReadOptions() {
     if (config.useNotation)     opts.notation     = !!document.querySelector('#notation input')?.checked;
     if (config.useAutoComplete) opts.autoComplete = !!document.querySelector('#autoComplete input')?.checked;
     if (config.useShowMoves)    opts.showMoves    = !!document.querySelector('#showMoves input')?.checked;
+    if (config.useShowLastMove) opts.showLastMove = !!document.querySelector('#showLastMove input')?.checked;
     // viewAs : uniquement si le bloc est actif (jeu retournable) -- ne pas
     // envoyer la cle sinon (cote iframe, un viewAs indefini est ignore par
     // la garde de setViewOptions, mais autant rester propre).

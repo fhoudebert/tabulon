@@ -11,7 +11,8 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
-import { initI18n, t, translateLevelLabel } from './tabulon-i18n.js';
+import { initI18n, t, translateLevelLabel, getLocale } from './tabulon-i18n.js';
+import { gameTitle } from './localized-field.js';
 import { installNativeEngine } from './engine-native.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
@@ -19,6 +20,10 @@ import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogi
          ParseWxfMove, WxfMatches, ParseSanMove, SanMatches, BuildSanMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
 import { PeerChannel } from './remote-peer-channel.js';
+import { RelayChatChannel, PeerChatChannel } from './remote-chat-channel.js';
+import { ENVELOPE_KIND, PRESENCE, presenceOf } from './remote-chat-protocol.js';
+import { makeSealer, deriveChatKey, chatKeyId } from './remote-secret.js';
+import { isChatKey } from './remote-relay-protocol.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
@@ -157,9 +162,22 @@ let remoteChannel      = null;
 let remoteChannelKey   = null;   // Jocly.PLAYER_A/B associe au canal actif
 let remoteMoveBuffer   = null;   // {nbTurns, lastMove} recu avant d'etre attendu
 let remoteMoveWaiters  = [];     // [{expectedNbTurns, resolve, reject}]
+/*
+ * La derniere enveloppe recue, gardee de cote.
+ *
+ * Elle porte `state`, l'etat complet de la partie -- indispensable au codec
+ * jocly-simple-match, ou un vrai client fait match.load(matchdata). Le chemin
+ * nominal ne s'en sert pas : il joue le seul `lastMove`, et c'est tres bien
+ * ainsi. Elle ne sert QUE si ce coup se revele injouable ici, auquel cas elle
+ * est la seule source de verite partagee pour remettre les deux plateaux
+ * d'accord. Rangee a part plutot que passee au tour, pour ne rien changer au
+ * cas qui marche.
+ */
+let remoteLastEnvelope = null;
 
 function onRemoteMoveReceived(payload) {
     remoteMoveBuffer = payload;
+    remoteLastEnvelope = payload;
     remoteMoveWaiters = remoteMoveWaiters.filter(w => {
         if (payload.nbTurns !== w.expectedNbTurns) return true;
         remoteMoveBuffer = null;
@@ -194,7 +212,7 @@ function cancelRemoteWait(reason) {
 // currentNbTurns : nombre de coups deja joues localement au moment de la
 // creation (baseline correcte pour une partie deja entamee -- fork, reprise
 // apres fermeture de la fenetre...) ; ignore si le canal existe deja.
-function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer }, currentNbTurns) {
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey, chatKeyId: chatKid }, currentNbTurns) {
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
@@ -220,10 +238,217 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
     remoteChannelKey = playerKey;
     remoteChannel.onRemoteMove(onRemoteMoveReceived);
     remoteChannel.start();
+    // playerKey est le camp DISTANT : le notre est l'autre. C'est lui qui
+    // signe nos messages et qui decide laquelle des deux cles de fil nous
+    // appartient (voir chatMidFor).
+    ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: chatKid }, -playerKey);
     return remoteChannel;
 }
 
+/* -- Ce qui n'est pas un coup ---------------------------------------------------
+ *
+ * Presence pour l'instant : « je fais une pause », « je reviens ». Ce sont des
+ * DRAPEAUX, pas des phrases -- ils traversent le reseau comme identifiants et
+ * s'affichent ici dans la langue de chacun, ce qui marche entre deux joueurs
+ * qui n'en partagent aucune. Rien de personnel ne circule, donc ils voyagent
+ * SANS CLE : ils fonctionnent meme quand la partie n'a pas de discussion.
+ */
+let chatChannel  = null;
+let chatSealed   = false;    // la partie a-t-elle une cle ? (texte libre possible)
+let chatSeenId   = null;    // dernier message que la fenetre dit avoir affiche
+let chatUnread   = 0;
+let remotePresence = null;   // dernier etat declare par l'adversaire
+
+/**
+ * Ouvre le canal des messages, s'il y a un adversaire distant.
+ *
+ * La cle vient de l'invitation, ou elle a ete rangee par invitation.js. Son
+ * ABSENCE n'empeche rien : le canal s'ouvre quand meme, sans scelleur, et
+ * refusera seulement le texte libre -- la presence, elle, n'en a pas besoin.
+ * C'est le cas d'une invitation d'avant cette version, ou d'un hote qui n'a
+ * pas voulu de discussion.
+ */
+let chatConfig = null;      // la derniere configuration, pour rouvrir le canal
+let chatKeyring = [];       // [{id, name}] -- les cles de communaute, SANS les cles
+let chatKeyringId = null;   // celle qui sert a cette partie, si on la reconnait
+
+function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: kid = null }, localSide) {
+    disposeChatChannel();
+    chatConfig = { matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: kid };
+    RefreshChatKeyring().then(PushChat).catch(() => {});
+    let sealer = null;
+    if (chatKey) {
+        try { sealer = makeSealer(chatKey); }
+        catch (e) { console.warn('[play] cle de discussion inutilisable :', e.message || e); }
+    }
+    chatChannel = peer
+        ? new PeerChatChannel({ side: localSide })
+        : new RelayChatChannel({
+            relayUrl, matchId: remoteMatchId, side: localSide, sealer,
+        });
+    chatSealed = !!sealer || !!peer;   // en pair-a-pair, rien ne transite par un serveur
+    chatChannel.onConversation(OnConversation);
+    chatChannel.start().catch(e => console.warn('[play] discussion indisponible :', e.message || e));
+    // Le bouton n'apparait qu'ici : en partie locale il n'y a personne a qui
+    // ecrire, et une fenetre vide est une promesse non tenue.
+    const chatBtn = document.getElementById('button-chat');
+    if (chatBtn) chatBtn.style.display = '';
+    return chatChannel;
+}
+
+function disposeChatChannel() {
+    chatChannel?.stop();
+    chatChannel = null;
+    chatSealed = false;
+    chatSeenId = null;
+    chatUnread = 0;
+    remotePresence = null;
+    UpdateChatBadge();
+    const chatBtn = document.getElementById('button-chat');
+    if (chatBtn) chatBtn.style.display = 'none';
+}
+
+/**
+ * Envoie l'etat de la conversation a la fenetre, si elle est ouverte.
+ *
+ * `canWrite` dit si le texte libre est possible : sans cle, le canal le
+ * refuserait, et laisser taper pour echouer ensuite serait pire que de fermer
+ * le champ en disant pourquoi. Les messages rapides, eux, restent disponibles.
+ */
+function PushChat() {
+    emit(`play-event:${matchId}:chat`, {
+        conversation: chatChannel ? chatChannel.conversation : [],
+        canWrite: !!chatSealed,
+        /*
+         * LA CLE ELLE-MEME, pour que la fenetre puisse l'AFFICHER.
+         *
+         * Sans cela, celui qui cree la partie n'avait aucun moyen de retrouver
+         * sa cle : elle est tiree au tirage de l'invitation et ne vit que dans
+         * le fragment du lien. Si l'autre joueur ne l'a pas recue -- lien
+         * tronque a la copie, invitation transmise autrement -- personne ne
+         * pouvait la lui redonner, et la ligne de saisie n'apparaissait que
+         * chez celui qui en manquait.
+         *
+         * La montrer ne coute rien : elle est deja sur cette machine, et c'est
+         * le seul endroit ou la relire. Elle ne part JAMAIS vers le relai,
+         * c'est tout ce qui compte.
+         */
+        chatKey: chatConfig?.chatKey || null,
+        /*
+         * LE TROUSSEAU, pour que la fenetre propose de CHANGER de cle.
+         *
+         * C'est la manoeuvre courante quand on ne se lit pas : les deux
+         * joueurs n'emploient pas la meme cle de communaute. Sans la liste ici,
+         * le seul recours etait de coller une cle a la main -- alors que la
+         * bonne est deja sur la machine, sous un autre nom.
+         *
+         * Seuls le NOM et l'empreinte voyagent : la cle elle-meme reste dans
+         * les preferences, la fenetre n'en a pas besoin pour en demander une.
+         */
+        keyring: chatKeyring,
+        keyringId: chatKeyringId,
+        sides: { 1: SideName(Jocly.PLAYER_A), '-1': SideName(Jocly.PLAYER_B) },
+    }).catch(() => {});
+}
+
+/**
+ * Relit le trousseau et repere laquelle de ses cles sert a cette partie.
+ *
+ * L'empreinte est calculee depuis la cle elle-meme (chat_key_id), donc elle
+ * designe la meme entree des deux cotes quel que soit le nom que chacun lui a
+ * donne -- c'est ce qui permet a la fenetre de preselectionner la bonne ligne
+ * sans rien demander a personne.
+ */
+async function RefreshChatKeyring() {
+    chatKeyring = [];
+    chatKeyringId = null;
+    const keys = (await store?.get('community-keys').catch(() => null)) || [];
+    for (const entry of keys) {
+        if (!entry?.key) continue;
+        const id = await chatKeyId(entry.key).catch(() => null);
+        if (!id) continue;
+        chatKeyring.push({ id, name: entry.name || '' });
+        if (chatConfig?.chatKeyId && id === chatConfig.chatKeyId) chatKeyringId = id;
+    }
+}
+
+/**
+ * Combien de messages de l'adversaire n'ont pas ete lus.
+ *
+ * Compte a partir du dernier que la fenetre a signale (chat-seen), et
+ * uniquement les siens : les notres sont lus par construction. Un identifiant
+ * inconnu -- fenetre qui parle d'un fil plus ancien, message efface -- fait
+ * tout compter comme non lu, ce qui attire l'attention plutot que de la
+ * detourner.
+ */
+function CountUnread(conversation) {
+    const from = chatSeenId ? conversation.findIndex(m => m.id === chatSeenId) : -1;
+    // Les messages SEULEMENT : un changement de presence s'affiche deja dans
+    // le pied de plateau, et allumer la pastille pour lui enverrait ouvrir une
+    // fenetre ou il n'y a rien de nouveau a lire.
+    return conversation
+        .slice(from + 1)
+        .filter(m => m.side === remoteChannelKey && m.kind === ENVELOPE_KIND.CHAT)
+        .length;
+}
+
+/**
+ * La pastille de la barre de jeu.
+ *
+ * ELLE EST LA PARCE QUE LA FENETRE EST FERMEE PAR DEFAUT : sans elle, un
+ * message arrive et personne ne le sait. Un nombre plutot qu'un point : « 3 »
+ * dit s'il faut ouvrir tout de suite ou finir de reflechir d'abord.
+ */
+function UpdateChatBadge() {
+    const btn = document.getElementById('button-chat');
+    if (!btn) return;
+    btn.classList.toggle('has-unread', chatUnread > 0);
+    btn.dataset.unread = chatUnread > 9 ? '9+' : String(chatUnread || '');
+}
+
+function OnConversation(conversation) {
+    chatUnread = CountUnread(conversation);
+    UpdateChatBadge();
+    PushChat();
+    const side = remoteChannelKey;
+    if (side === null) return;
+    const before = remotePresence?.state ?? null;
+    remotePresence = presenceOf(conversation, side);
+    // Le pied de plateau n'est repeint QUE si l'etat a change : il porte aussi
+    // le chronometre de reflexion, rafraichi dix fois par seconde, et deux
+    // ecrivains qui se marchent dessus font clignoter la ligne.
+    if ((remotePresence?.state ?? null) !== before) ShowRemotePresence();
+}
+
+/**
+ * Affiche l'etat de l'adversaire, avec depuis combien de temps.
+ *
+ * La duree est ce qui rend l'information utile : « en pause » ne dit pas s'il
+ * faut attendre ou fermer la fenetre, « en pause depuis 12 min » si.
+ */
+function ShowRemotePresence() {
+    if (!remotePresence) return;
+    const minutes = Math.max(0, Math.round((Date.now() - remotePresence.at) / 60000));
+    const key = remotePresence.state === PRESENCE.PAUSED ? 'play.opponentPaused'
+        : remotePresence.state === PRESENCE.LEAVING ? 'play.opponentLeaving'
+        : 'play.opponentBack';
+    UpdateFooter(t(key, { player: SideName(remoteChannelKey), minutes }));
+}
+
+/**
+ * Declare notre propre etat, si quelqu'un est la pour l'entendre.
+ *
+ * Silencieux quand il n'y a pas d'adversaire distant : le bouton Pause sert
+ * aussi en partie locale, ou il n'y a personne a prevenir.
+ */
+function DeclarePresence(state) {
+    if (!chatChannel) return;
+    chatChannel.send({ kind: ENVELOPE_KIND.PRESENCE, state })
+        .catch(e => console.warn('[play] presence non transmise :', e.message || e));
+}
+
 function disposeRemoteChannel() {
+    disposeChatChannel();
     remoteChannel?.stop();
     remoteChannel = null;
     remoteChannelKey = null;
@@ -316,6 +541,21 @@ function buildPlayerValue(info) {
 let gameResult = null;
 
 // Nom lisible d'un cote, pour les tags [White]/[Black] du PJN.
+/**
+ * Le camp au trait, nomme comme partout ailleurs dans Tabulon : « Joueur A »,
+ * « Joueur B » -- la fenetre des joueurs, l'horloge, les options de vue et le
+ * verdict de fin de partie emploient deja ces deux noms.
+ *
+ * PAS le libelle du niveau (« Humain », « Expert ») : il dit QUI calcule, pas
+ * DE QUEL COTE, et deux niveaux identiques donnaient la meme phrase des deux
+ * cotes. Le niveau reste utile pendant une recherche, ou il repond a une autre
+ * question -- combien de temps cela va durer -- et il y est ajoute entre
+ * parentheses plutot que substitue.
+ */
+function SideName(turn) {
+    return t(turn > 0 ? 'common.playerA' : 'common.playerB');
+}
+
 function PlayerLabel(key) {
     const value = players[key];
     if (!value) return t('common.human');
@@ -359,7 +599,44 @@ async function gameLoop() {
                     UpdateFooter(t('play.waitingRemote'));
                     const move = await waitForRemoteMove(moves.length + 1);
                     UpdateFooter('');
-                    const playResult = await joclyMatch.playMove(move);
+                    let playResult;
+                    try {
+                        playResult = await joclyMatch.playMove(move);
+                    } catch (e) {
+                        /*
+                         * LE COUP RECU NE VA PAS SUR NOTRE PLATEAU.
+                         *
+                         * Ce n'est pas cense arriver entre deux Tabulon a jour
+                         * -- c'est arrive entre deux ludotheques jocly
+                         * differentes, dont une seule connaissait l'etape vide
+                         * du prelude du go. Mais la FACON dont ca se
+                         * manifestait etait le vrai defaut : l'exception
+                         * remontait au catch du tour, qui journalisait « turn
+                         * aborted » et rebouclait -- sur la meme attente, avec
+                         * le meme coup en tampon. Les deux joueurs restaient en
+                         * attente l'un de l'autre, sans rien a l'ecran.
+                         *
+                         * On se resynchronise donc sur l'etat complet quand il
+                         * accompagne le coup, et on le DIT sinon. Le chemin
+                         * nominal, lui, n'a pas change d'une ligne : ce bloc ne
+                         * s'execute que sur une exception qui, jusqu'ici,
+                         * menait droit au blocage.
+                         */
+                        console.warn('[play] coup distant inapplicable :', e.message || e);
+                        const state = remoteLastEnvelope?.state;
+                        if (state) {
+                            console.info('[play] resynchronisation sur l’etat distant');
+                            await joclyMatch.load(state).catch(
+                                e2 => console.warn('[play] resynchronisation impossible :', e2.message || e2));
+                            await resyncRemoteChannelBaseline();
+                            UpdateFooter(t('play.remoteResync'));
+                            continue;
+                        }
+                        // Sans etat, rien a rattraper : on le dit, plutot que
+                        // de reboucler en silence.
+                        UpdateFooter(t('play.remoteDesync'));
+                        throw e;
+                    }
                     finished = playResult?.finished || false;
                     winner   = playResult?.winner;
 
@@ -367,7 +644,13 @@ async function gameLoop() {
                     // Tour humain.
                     // userTurn() joue le coup en interne (mode proxy iframe)
                     // et retourne {move, finished, winner} directement.
+                    // Qui doit jouer, ecrit noir sur blanc : sur un plateau ou
+                    // rien ne bouge entre deux coups -- un goban en
+                    // particulier -- le seul indice est sinon la couleur du
+                    // trait, que jocly n'affiche nulle part.
+                    UpdateFooter(t(turn > 0 ? 'play.turnA' : 'play.turnB'));
                     const result = await joclyMatch.userTurn();
+                    UpdateFooter('');
                     finished = result?.finished || false;
                     winner   = result?.winner;
                     playedLocally = true;
@@ -376,8 +659,16 @@ async function gameLoop() {
                     // Tour IA.
                     // machineSearch() en mode proxy iframe retourne {move, ...}
                     // mais NE joue PAS le coup -- il faut appeler playMove().
-                    UpdateFooter(t('play.thinking'));
-                    const result = await joclyMatch.machineSearch({ level });
+                    // Le niveau nomme plutot que « Reflexion... » seul : une
+                    // recherche KataGo dure des secondes, et la question du
+                    // joueur pendant ce temps est de savoir QUI reflechit,
+                    // pas que quelqu'un reflechit.
+                    const stopClock = StartThinkingClock(
+                        t(turn > 0 ? 'play.thinkingA' : 'play.thinkingB',
+                          { level: PlayerLabel(turn) }));
+                    let result;
+                    try { result = await joclyMatch.machineSearch({ level }); }
+                    finally { stopClock(); }
                     UpdateFooter('');
 
                     // Repli Fairy-Stockfish -> IA native : jocly pose
@@ -388,6 +679,8 @@ async function gameLoop() {
                     // qu'il joue contre l'IA native. jocly ne signale QUE le
                     // coup concerne, mais il replie a CHAQUE coup : on
                     // n'avertit donc qu'une fois par partie.
+                    // Pas d'await : le bandeau interroge l'ecran
+                    // d'installation, et le coup n'a pas a attendre apres lui.
                     ShowFairyFallback(result?.fairyFallback);
 
                     if (!result?.move) {
@@ -434,9 +727,11 @@ async function gameLoop() {
             if (finished) {
                 ClockStop();
                 gameResult = winner === 0 ? '1/2-1/2' : winner > 0 ? '1-0' : '0-1';
-                UpdateFooter(winner === 0 ? t('play.draw')
+                const verdict = winner === 0 ? t('play.draw')
                     : winner > 0 ? t('play.aWins')
-                    : t('play.bWins'));
+                    : t('play.bWins');
+                const margin = await FinalMargin();
+                UpdateFooter(margin ? `${verdict} : ${margin}` : verdict);
                 loopActive = false;
             }
             // Notifier les satellites (history.js) qu'un coup a ete joue
@@ -447,6 +742,71 @@ async function gameLoop() {
         UpdateFooter('');
     }
     console.info('[play] gameLoop ended');
+}
+
+/**
+ * L'ecart final, pour les jeux qui le publient.
+ *
+ * « Le joueur A gagne » ne dit pas de combien, et au go c'est la moitie du
+ * resultat : une partie se gagne de 0.5 comme de 60. jocly ne traduit rien --
+ * la barre de statut du goban ne peut donc afficher qu'une pierre et un
+ * nombre -- mais go-model.js publie les chiffres par getBoardState('score'),
+ * le seul canal que jocly fasse deja traverser l'iframe. La phrase se compose
+ * donc ICI, ou le dictionnaire existe.
+ *
+ * Les autres jeux repondent leur notation de plateau (une CHAINE) ou echouent :
+ * dans les deux cas on affiche le verdict seul, comme avant.
+ */
+async function FinalMargin() {
+    const state = await joclyMatch.getBoardState('score').catch(() => null);
+    if (!state || typeof state !== 'object' || !state.counted) return null;
+    const margin = Math.abs(state.margin);
+    return margin > 0 ? margin : null;   // un jigo n'a pas d'ecart a annoncer
+}
+
+/**
+ * Un temps de reflexion, ecrit court : « 3.4 s » sous la minute, « 1:05 »
+ * au-dela. Le dixieme compte -- c'est ce qui distingue un moteur qui cherche
+ * d'un moteur qui a fini et n'a pas rendu la main.
+ *
+ * L'unite ne passe pas par le dictionnaire : « s » s'ecrit pareil dans les
+ * deux langues, et un affichage qui se rafraichit dix fois par seconde n'est
+ * pas l'endroit ou faire travailler l'i18n.
+ */
+function FormatElapsed(ms) {
+    const s = ms / 1000;
+    if (s < 60) return s.toFixed(1) + ' s';
+    return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+}
+
+/**
+ * Le chronometre d'un tour de moteur, demarre avant la recherche et arrete
+ * par l'appelant quoi qu'il arrive (d'ou le `finally`).
+ *
+ * POURQUOI : une recherche KataGo dure des secondes, et pendant ce temps rien
+ * ne bouge -- ni le plateau, ni le pied de page. Un texte fixe ne distingue
+ * pas « cela reflechit » de « cela a plante », alors qu'un compteur qui avance
+ * repond a la question sans qu'on ait a ouvrir la console.
+ *
+ * Le compteur n'avance que si la recherche ne tient pas le fil principal.
+ * C'est le cas ici -- jocly fait tourner ses moteurs dans un Worker ou, pour
+ * les moteurs natifs, dans un processus fils cote Rust -- mais un moteur qui
+ * bloquerait la page figerait aussi son chronometre, et l'immobilite serait
+ * alors le bon diagnostic plutot qu'un bug d'affichage.
+ *
+ * @returns {() => number} arret du chronometre ; renvoie la duree ecoulee.
+ */
+function StartThinkingClock(label) {
+    const t0 = Date.now();
+    const tick = () => UpdateFooter(`${label} ${FormatElapsed(Date.now() - t0)}`);
+    tick();
+    const timer = setInterval(tick, 100);
+    return () => {
+        clearInterval(timer);
+        const ms = Date.now() - t0;
+        console.info(`[play] recherche terminee en ${FormatElapsed(ms)}`);
+        return ms;
+    };
 }
 
 // -- Helpers UI ---------------------------------------------------------------
@@ -474,17 +834,63 @@ function HideWarning() {
 // Champ absent d'un dist jocly anterieur au support de fairyFallback : dans
 // ce cas info est undefined et rien ne s'affiche -- pas de regression.
 let fairyFallbackWarned = false;
-function ShowFairyFallback(info) {
+// Le moteur nomme par jocly -> l'entree correspondante de l'ecran
+// d'installation. Les trois moteurs de jocly sont, dans Tabulon, des binaires
+// poses a cote de l'executable (voir engine-native.js) : c'est donc a cet
+// ecran que renvoie le message quand il en manque un.
+const ENGINE_INSTALL_ID = {
+    'fairy-stockfish': 'engine',
+    'scan':            'scan',
+    'kata':            'katago',
+};
+
+/**
+ * Le niveau demande n'a pas pu jouer : on le dit une fois par partie.
+ *
+ * POURQUOI CE MESSAGE EXISTE : sans lui, un niveau adosse a un moteur absent
+ * rendait la main au joueur SANS RIEN DIRE -- il se retrouvait a jouer les
+ * deux couleurs en croyant a un bug de l'interface. C'etait le cas de
+ * « Champion » aux dames internationales tant que jocly.scan.js n'avait pas
+ * de repli.
+ *
+ * DEUX NIVEAUX SONT NOMMES, pas un : celui que le joueur a choisi reste
+ * affiche dans la liste deroulante, donc ne citer que le remplacant laisserait
+ * croire a une erreur d'affichage. jocly transporte les deux (`requested` et
+ * `level`) ; un vieux dist qui ne poserait que le second donne un message
+ * encore juste, sans le nom du niveau demande.
+ *
+ * LE CONSEIL QUI SUIT EST DEDUIT, PAS DEVINE. Un binaire manquant et une page
+ * sans isolation cross-origin demandent deux gestes opposes, et le motif rendu
+ * par le moteur est un texte libre qu'on ne va pas analyser. On demande donc a
+ * l'ecran d'installation si le binaire est la : absent -> il faut l'installer ;
+ * present -> c'est l'environnement qui l'empeche de tourner.
+ */
+async function ShowFairyFallback(info) {
     if (!info || fairyFallbackWarned) return;
     fairyFallbackWarned = true;
-    let msg = t('play.fairyFallback', { level: translateLevelLabel(info.level) || '?' });
-    // Le conseil "servir la page en cross-origin isolated" n'a de sens que
-    // si l'environnement peut effectivement l'obtenir. Sous WebKitGTK le
-    // schema tauri:// n'accorde pas l'isolation : inviter l'utilisateur a
-    // corriger des en-tetes ne l'avancerait a rien.
-    msg += ' ' + (typeof SharedArrayBuffer === 'function'
-        ? t('play.fairyFallbackIsolate')
-        : t('play.fairyFallbackUnsupported'));
+
+    const asked = translateLevelLabel(info.requested);
+    const played = translateLevelLabel(info.level) || '?';
+    let msg = asked
+        ? t('play.engineFallback', { requested: asked, level: played })
+        : t('play.engineFallbackAnon', { level: played });
+
+    const id = ENGINE_INSTALL_ID[info.engine];
+    const status = id ? await tRpc.call('install_status').catch(() => null) : null;
+    const item = status?.items?.find(i => i.id === id);
+
+    if (item && !item.present)
+        msg += ' ' + t('play.engineFallbackInstall', { page: t('install.title') });
+    else if (typeof SharedArrayBuffer === 'function')
+        // L'isolation cross-origin est atteignable ici : la conseiller a un
+        // sens. Sous WebKitGTK le schema tauri:// ne l'accorde pas, et
+        // inviter a corriger des en-tetes n'avancerait a rien.
+        // La phrase ne nomme plus Fairy-Stockfish : les trois moteurs passent
+        // par ce chemin, et le message nomme deja le niveau concerne.
+        msg += ' ' + t('play.engineFallbackIsolate');
+    else
+        msg += ' ' + t('play.engineFallbackUnsupported');
+
     ShowWarning(msg);
 }
 
@@ -567,7 +973,10 @@ function hasRemoteSide() {
 // (l'infobulle explique pourquoi), et les handlers gardent une garde de
 // fond. Ils redeviennent actifs des que plus aucun cote n'est distant
 // (partie rapide, chronometree, locale...).
-const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart', 'quick-takeback', 'quick-restart'];
+// Les doublons quick-* ont disparu avec la barre repliable : les deux boutons
+// du pied portent maintenant les identifiants principaux, et une seule entree
+// suffit ici comme ailleurs.
+const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart'];
 
 function updateRemoteRestrictedButtons() {
     const remote = hasRemoteSide();
@@ -612,6 +1021,116 @@ function syncFooterSelect(key) {
 //   play.html -> satellite : emit('play-rep:{matchId}:{action}', result)
 function initSatelliteListeners() {
     const prefix = `play-req:${matchId}:`;
+
+    /*
+     * get-chat / send-chat : la fenetre de discussion.
+     *
+     * Le fil vit ICI, comme l'horloge : c'est play.js qui tient le canal, qui
+     * a la cle et qui sait s'il y a un adversaire distant. La fenetre n'affiche
+     * et ne demande -- elle peut donc etre fermee et rouverte sans que la
+     * partie s'en apercoive, et sans qu'un message se perde.
+     */
+    // Le trousseau est relu a chaque demande : le joueur a pu ajouter une cle
+    // dans les Preferences depuis que la partie a commence, et lui demander de
+    // rouvrir la partie pour la voir apparaitre serait absurde.
+    listen(prefix + 'get-chat', () => {
+        RefreshChatKeyring().then(PushChat).catch(() => PushChat());
+    });
+
+    // La fenetre dit ce qu'elle a affiche. play.js n'a aucun moyen de le
+    // deviner : Tauri ne previent pas de la fermeture d'une fenetre, et une
+    // fenetre fermee ne dit rien -- ce qui est exactement le comportement
+    // voulu, ses messages restant non lus.
+    /*
+     * Ajouter une cle a une partie qui n'en avait pas.
+     *
+     * Elle ne peut pas s'inventer d'un seul cote : les deux joueurs doivent
+     * avoir LA MEME, et elle ne doit pas passer par le relai -- sinon il
+     * l'aurait. Elle se transmet donc de la main a la main, comme le lien
+     * d'invitation, et chacun la colle chez soi.
+     *
+     * Rangee AVEC l'invitation : c'est de la qu'elle sera relue si la fenetre
+     * de jeu est fermee puis rouverte, et c'est la seule copie -- personne
+     * d'autre ne l'a.
+     */
+    listen(prefix + 'set-chat-key', async ({ payload }) => {
+        const key = String(payload?.key || '').trim().toLowerCase();
+        if (!isChatKey(key)) {
+            console.warn('[play] cle de discussion refusee : format inattendu');
+            PushChat();
+            return;
+        }
+        if (inviteId) {
+            const invite = await store?.get('invite:' + inviteId).catch(() => null);
+            if (invite) await store?.set('invite:' + inviteId, { ...invite, chatKey: key });
+        }
+        // Le canal est reconstruit avec le scelleur : le fil deja depose reste
+        // en clair et le restera -- on ne rechiffre pas le passe, et le dire
+        // vaut mieux que de le faire croire.
+        if (remoteChannel && remoteChannelKey !== null)
+            ensureChatChannel({ ...chatConfig, chatKey: key }, -remoteChannelKey);
+        PushChat();
+    });
+
+    /*
+     * CHANGER DE CLE DE COMMUNAUTE pour cette partie.
+     *
+     * La manoeuvre courante quand on ne se lit pas : les deux joueurs
+     * n'emploient pas la meme cle. La bonne est souvent deja sur la machine,
+     * sous un autre nom -- il suffit de la designer.
+     *
+     * La cle de la partie en est DERIVEE (cle de communaute + identifiant de
+     * partie) : rien ne transite, et l'autre joueur qui choisit la meme
+     * communaute obtient exactement la meme cle de son cote.
+     */
+    listen(prefix + 'set-chat-keyring', async ({ payload }) => {
+        const wanted = String(payload?.id || '');
+        const keys = (await store?.get('community-keys').catch(() => null)) || [];
+        let master = null;
+        for (const entry of keys) {
+            if (!entry?.key) continue;
+            if (await chatKeyId(entry.key).catch(() => null) === wanted) { master = entry.key; break; }
+        }
+        if (!master) { console.warn('[play] cle de communaute introuvable'); PushChat(); return; }
+
+        const derived = await deriveChatKey(master, chatConfig?.matchId || matchId).catch(e => {
+            console.warn('[play] derivation impossible :', e.message || e);
+            return null;
+        });
+        if (!derived) { PushChat(); return; }
+
+        if (inviteId) {
+            const invite = await store?.get('invite:' + inviteId).catch(() => null);
+            if (invite) await store?.set('invite:' + inviteId,
+                { ...invite, chatKey: derived, chatKeyId: wanted });
+        }
+        if (remoteChannel && remoteChannelKey !== null)
+            ensureChatChannel({ ...chatConfig, chatKey: derived, chatKeyId: wanted }, -remoteChannelKey);
+        PushChat();
+    });
+
+    listen(prefix + 'chat-seen', ({ payload }) => {
+        if (!payload?.id) return;
+        chatSeenId = payload.id;
+        chatUnread = chatChannel ? CountUnread(chatChannel.conversation) : 0;
+        UpdateChatBadge();
+    });
+
+    listen(prefix + 'send-chat', async ({ payload }) => {
+        if (!chatChannel || !payload) return;
+        /*
+         * Un message rapide voyage comme IDENTIFIANT, pas comme texte : c'est
+         * ce qui permet a l'autre de le lire dans SA langue, et rien de
+         * personnel ne transite -- donc rien a sceller. Seul le texte libre est
+         * du texte, et c'est le seul qui exige une cle.
+         */
+        const msg = payload.quick
+            ? { kind: ENVELOPE_KIND.CHAT, quick: String(payload.quick) }
+            : { kind: ENVELOPE_KIND.CHAT, body: String(payload.body || '') };
+        await chatChannel.send(msg).catch(e => {
+            console.warn('[play] message non transmis :', e.message || e);
+        });
+    });
 
     // get-view-options : retourne viewOptions actuelles + config vue
     listen(prefix + 'get-view-options', async () => {
@@ -707,6 +1226,14 @@ function initSatelliteListeners() {
         tsume:  tsumeMatch,
         white:  PlayerLabel(Jocly.PLAYER_A),
         black:  PlayerLabel(Jocly.PLAYER_B),
+        // Les MEMES libelles, nommes par le camp et non par la couleur. Au go
+        // c'est PLAYER_A qui joue les pierres noires, donc « white » ci-dessus
+        // designe le joueur NOIR -- un heritage des echecs, ou A est bien
+        // Blanc. Un export SGF nomme des couleurs reelles (PB, PW) et ne peut
+        // pas se servir des deux champs precedents sans les inverser une fois
+        // sur deux ; ceux-ci ne se pretent pas a la confusion.
+        playerA: PlayerLabel(Jocly.PLAYER_A),
+        playerB: PlayerLabel(Jocly.PLAYER_B),
         result: gameResult,
     });
 
@@ -727,9 +1254,18 @@ function initSatelliteListeners() {
         // un tag [FEN] a la sauvegarde, sans quoi une partie partie d'un
         // probleme se rechargerait depuis la position initiale du jeu.
         const saved = await SaveMatch();
+        // Komi, regles et ecart : ce qu'un export SGF doit ecrire et que la
+        // liste des coups ne porte pas. Publies par go-model.js sur le canal
+        // getBoardState('score') ; les autres jeux repondent leur notation de
+        // plateau (une chaine) et n'ajoutent donc rien ici.
+        const score = await joclyMatch.getBoardState('score').catch(() => null);
+        const go = score && typeof score === 'object' ? score : null;
         await emit(`play-rep:${matchId}:get-played-moves`, {
             moves: Array.isArray(strings) ? strings : moves.map(() => '?'),
             initialBoard: saved?.initialBoard || null,
+            komi:   go ? go.komi : null,
+            rules:  go ? go.rules : null,
+            margin: go && go.counted ? go.margin : null,
             // Le jeu, pour que la fenetre Historique ecrive le bon tag
             // [JoclyGame] a la sauvegarde. Elle le lit AUSSI dans son URL,
             // mais cette reponse-ci fait autorite : elle vient du match.
@@ -746,7 +1282,8 @@ function initSatelliteListeners() {
         let data = null;
         try { data = await WesternGame(); }
         catch (e) { console.warn('[play] export occidental:', e.message || e); }
-        await emit(`play-rep:${matchId}:get-western-moves`, data || { moves: null, sfen: null });
+        await emit(`play-rep:${matchId}:get-western-moves`,
+            data || { moves: null, sfen: null, variant: null });
     });
 
     // rollback-to : annuler jusqu'a l'index demande
@@ -951,9 +1488,76 @@ function UsiToJocly(square, files) {
 // Renvoie null si le jeu ne sait pas ecrire l'USI (pas de sfen-model.js) :
 // l'appelant retombe alors sur le PJN, plutot que d'ecrire un fichier
 // bancal dans un format qu'il annonce.
+/**
+ * Le nom que Fairy-Stockfish donne a ce jeu, ou null.
+ *
+ * POURQUOI IL COMPTE : c'est ce qu'attend la balise [Variant] d'un PGN. Sans
+ * lui, le fichier annonce le nom Jocly -- « horde-chess » la ou un lecteur
+ * attend « horde » -- et personne ne le relit, alors que les coups eux-memes
+ * sont bons.
+ *
+ * L'information existe deja : chaque jeu qui a un niveau Expert declare la
+ * variante correspondante. Sous deux formes, selon que le jeu a un prelude ou
+ * non :
+ *
+ *   - `variant` : un seul nom (horde, 3check, patchanka) ;
+ *   - `variants` : un nom PAR ARRANGEMENT, car le prelude change les regles.
+ *     Capablanca et Timurid sont dans ce cas, et leur couverture est
+ *     PARTIELLE -- Capablanca declare les arrangements 0, 1 et 4, pas les
+ *     autres. Un arrangement sans variante rend donc null, ce qui est la
+ *     verite et non une panne.
+ *
+ * @param {Array} played - les coups joues, ou se trouve la reponse au prelude
+ */
+function FairyVariantName(played) {
+    return FairyProfile(played).variant;
+}
+
+/**
+ * Ce que le jeu declare a Fairy-Stockfish : le nom de la variante, et la
+ * correspondance des lettres de pieces.
+ *
+ * `pieceMap` n'est pas un detail : jocly et Fairy-Stockfish ne nomment pas
+ * toujours les memes pieces de la meme facon. Capablanca ecrit « M » pour le
+ * chancelier la ou le moteur attend « C » -- et le manifeste porte deja
+ * `pieceMap: { M: 'C' }` pour que le moteur puisse JOUER. La meme
+ * correspondance vaut pour ECRIRE : un PGN qui annonce [Variant "capablanca"]
+ * et parle de « Mf3 » n'est pas du Fairy-Stockfish, c'est du jocly deguise.
+ */
+function FairyProfile(played) {
+    const empty = { variant: null, pieceMap: null };
+    const level = (levels || []).find(l => l && l.ai === 'fairy-stockfish');
+    if (!level) return empty;
+    if (level.variant) return { variant: level.variant, pieceMap: level.pieceMap || null };
+    if (!Array.isArray(level.variants)) return empty;
+    const answer = (played || []).find(m => m && m.setup !== undefined);
+    if (!answer) return empty;
+    const match = level.variants.find(v => v && v.setup === answer.setup);
+    if (!match || !match.variant) return empty;
+    return { variant: match.variant, pieceMap: match.pieceMap || level.pieceMap || null };
+}
+
+/**
+ * Traduit la lettre d'une piece dans l'alphabet de Fairy-Stockfish.
+ *
+ * La correspondance du manifeste est ecrite en majuscules (« M » -> « C ») ;
+ * le plateau, lui, distingue les camps par la casse. On traduit donc sur la
+ * majuscule et on rend une majuscule, qui est ce qu'attend une notation SAN.
+ */
+function FairyLetters(letterAt, pieceMap) {
+    if (!letterAt || !pieceMap) return letterAt;
+    return (square) => {
+        const raw = letterAt(square);
+        if (!raw) return raw;
+        const up = raw.toUpperCase();
+        return pieceMap[up] || up;
+    };
+}
+
 async function WesternGame() {
     const played = await joclyMatch.getPlayedMoves().catch(() => []);
-    if (!played || !played.length) return { moves: [], sfen: null };
+    if (!played || !played.length) return { moves: [], sfen: null, variant: null };
+    const { variant, pieceMap } = FairyProfile(played);
     // La position de depart est FACULTATIVE : ChuShogiLite n'ecrit [FEN] que
     // pour une position non standard, et une partie jouee depuis le debut n'en
     // a pas besoin. La refuser faute de SFEN privait d'export toutes les
@@ -985,6 +1589,35 @@ async function WesternGame() {
         const first = await joclyMatch.getBoardState('sfen').catch(() => null);
         const start = (sfenOk && first && first.trim().split(/\s+/).length <= 4) ? first : null;
         for (let ply = 0; ply < here; ply++) {
+            /*
+             * La reponse au prelude n'est pas un coup : elle choisit
+             * l'arrangement des pieces avant que la partie commence. L'ecrire
+             * donnerait un PGN decale d'un demi-coup, et « #0 » n'est traduisible
+             * dans aucune notation -- c'est ce jeton qui faisait refuser
+             * l'export entier pour Timurid et Capablanca.
+             *
+             * Ce qu'il dit est deja dans la balise [Variant], calculee
+             * au-dessus : rien ne se perd a l'ecarter d'ici.
+             */
+            /*
+             * DEUX demi-coups, pas un : le prelude choisit l'arrangement
+             * (« #0 ») PUIS fait passer le trait a l'adversaire par une etape
+             * vide (« -- »), sans quoi le mauvais camp ouvrirait la partie.
+             *
+             * Le premier porte `setup`, le second ne porte RIEN -- c'est un
+             * objet vide. Ne sauter que le premier laissait le second dans la
+             * boucle, ou il ne correspondait a aucun coup legal : l'export
+             * rendait « ? » et refusait la partie entiere. C'est ce qui
+             * arrivait encore a Timurid et Capablanca apres le premier
+             * correctif.
+             *
+             * Le critere est donc « ce coup ne bouge aucune piece » : un vrai
+             * coup de plateau a toujours une case de depart.
+             */
+            if (played[ply] && (played[ply].setup !== undefined || played[ply].f === undefined)) {
+                await joclyMatch.rollback(ply + 1);
+                continue;
+            }
             const legal = await joclyMatch.getPossibleMoves();
             const naturals = await joclyMatch.getMoveString(legal);
             const letterAt = BoardLetters(await joclyMatch.getBoardState(),
@@ -1027,7 +1660,10 @@ async function WesternGame() {
             } else {
                 const usiMove = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
                 token = BuildSanMove(naturals[index], rivals, gameName, {
-                    letterAt: reliableLetters ? letterAt : undefined,
+                    // Les lettres de Fairy-Stockfish, pas celles de jocly :
+                    // c'est ce qui distingue un PGN relisible par le moteur
+                    // d'un fichier qui lui ressemble.
+                    letterAt: reliableLetters ? FairyLetters(letterAt, pieceMap) : undefined,
                     // Le xiangqi numerote ses rangees a partir de 0 et n'ecrit
                     // ni separateur ni prise : l'appelant fournit les deux.
                     rankOffset: zeroBasedRanks ? 1 : 0,
@@ -1041,7 +1677,7 @@ async function WesternGame() {
             out.push(token || '?');
             await joclyMatch.rollback(ply + 1);
         }
-        return { moves: out, sfen: start };
+        return { moves: out, sfen: start, variant };
     } finally {
         // Quoi qu'il arrive, l'utilisateur retrouve la position qu'il avait.
         await joclyMatch.rollback(here).catch(() => {});
@@ -1059,6 +1695,26 @@ async function WesternGame() {
 //
 // jocly n'ecrit pas la case de depart sur un coup a deux pas : on compare
 // alors les seules cases qu'il donne, passage puis arrivee.
+/**
+ * Un point de goban ("Q16", "pass") -> le coup legal correspondant, ou null.
+ *
+ * Comparaison EXACTE contre la notation naturelle du jeu : jocly ecrit
+ * exactement ces chaines (go-model.js, PosToString), donc il n'y a rien a
+ * traduire, seulement a verifier. Rendre null quand le point n'est pas jouable
+ * est tout l'interet : c'est ce qui distingue un coup refuse par le superko
+ * d'un coup joue une intersection plus loin.
+ */
+async function MoveFromGoPoint(token) {
+    const want = String(token || '').trim().toUpperCase();
+    if (!/^([A-HJ-Z]\d{1,2}|PASS)$/.test(want)) return null;
+    const moves = await joclyMatch.getPossibleMoves();
+    if (!moves || !moves.length) return null;
+    const naturals = await joclyMatch.getMoveString(moves);
+    for (let i = 0; i < moves.length; i++)
+        if (String(naturals[i]).trim().toUpperCase() === want) return moves[i];
+    return null;
+}
+
 async function MoveFromSquares(token) {
     // Parachutage : « P@c6 », la piece nommee et la case, sans depart.
     const drop = /^([A-Z+]*)@([a-l]\d{1,2})$/.exec(String(token || '').trim());
@@ -1151,7 +1807,15 @@ let sanRankOffset = null;
 // choix, « -- » pour une etape qui ne demande rien mais qu'il faut franchir.
 const PRELUDE_MOVE = /^(#\d+|--)$/;
 
-async function AnswerPrelude(firstToken) {
+async function AnswerPrelude(firstToken, recorded) {
+    // Un fichier ecrit par Tabulon PORTE la reponse : « 1. #2 -- ». Quand
+    // elle est la, on la suit au lieu de la deviner -- et il le faut, parce
+    // que la deviner ne peut pas marcher : le seul jeton dont on disposait
+    // pour departager etait « #2 » lui-meme, qui ne designe aucun coup une
+    // fois le prelude franchi. Aucun choix ne le resolvait, le repli prenait
+    // le premier arrangement, et une partie de Malett se serait rechargee en
+    // Gardner -- si la lecture etait allee au bout.
+    const queue = (recorded || []).slice();
     // PLUSIEURS ETAPES. Sho Shogi en a deux : le choix de la regle, puis un
     // passage. N'en franchir qu'une laissait la partie sur un coup « -- »
     // unique, et le premier coup du fichier restait introuvable -- exactement
@@ -1163,6 +1827,18 @@ async function AnswerPrelude(firstToken) {
         const names = await joclyMatch.getMoveString(moves).catch(() => []);
         if (!PRELUDE_MOVE.test(names[0] || '')) break;
 
+        // Le fichier dit quelle etape a ete franchie et comment.
+        if (queue.length) {
+            const want = queue.shift();
+            const i = names.indexOf(want);
+            if (i >= 0) {
+                await joclyMatch.playMove(moves[i]);
+                stages.push(names[i]);
+                continue;
+            }
+            console.warn('[play] prelude : « ' + want + ' » ne figure pas parmi '
+                + names.join(' ') + ' — on devine');
+        }
         // Une etape sans choix se franchit sans se poser de question.
         if (moves.length === 1) {
             await joclyMatch.playMove(moves[0]);
@@ -1267,7 +1943,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     store = await Store.load('tabulon.json');
 
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(t('play.title', { game: config.model['title-en'], id: matchId }), '.game-header');
+    await twu.init(t('play.title', { game: gameTitle(config.model, getLocale()), id: matchId }), '.game-header');
 
     levels = config.model.levels || [];
     BuildPlayerSelect('select-player-a', Jocly.PLAYER_A);
@@ -1290,18 +1966,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('play-warning-close')?.addEventListener('click', HideWarning);
 
-    // Bouton '…' : montre/masque la barre de boutons (état persisté).
-    // Remplace le survol .ephemeral-actions:hover de JoclyBoard, inutilisable
-    // sur tablette.
-    const ephemeralActions = document.querySelector('.ephemeral-actions');
-    if (await store.get('play-footer-bar').catch(() => false))
-        ephemeralActions?.classList.add('bar-visible');
-    btn('button-toggle-bar', () => {
-        const visible = ephemeralActions?.classList.toggle('bar-visible');
-        store?.set('play-footer-bar', !!visible);
-    });
+    /*
+     * Plus de bouton « … » ni d'etat replie : les boutons vivent desormais
+     * dans la barre laterale, toujours ouverte (voir play.html). La preference
+     * play-footer-bar n'a plus d'objet -- une valeur qui traine dans le
+     * magasin ne gene personne, la relire ne servirait qu'a la reecrire.
+     */
 
     btn('button-history',  () => tRpc.call('open_history', matchId, gameName));
+    btn('button-chat',     () => tRpc.call('open_chat', matchId));
     btn('button-clock',    () => tRpc.call('open_clock', matchId));
     btn('button-players',  () => tRpc.call('open_players', matchId));
     btn('button-options',  () => tRpc.call('open_view_options', matchId));
@@ -1371,18 +2044,62 @@ document.addEventListener('DOMContentLoaded', async () => {
         joclyMatch?.abortUserTurn().catch(() => {});
         joclyMatch?.abortMachineSearch().catch(() => {});
         UpdatePause();
+        // Le bouton Pause EST « je fais une pause » : plutot qu'un second
+        // bouton a cote qui dirait la meme chose, on previent l'adversaire
+        // distant avec celui-ci. En partie locale, il n'y a personne a
+        // prevenir et DeclarePresence ne fait rien.
+        DeclarePresence(PRESENCE.PAUSED);
     });
 
     btn('button-resume', () => {
         paused = false;
         UpdatePause();
+        DeclarePresence(PRESENCE.BACK);
     });
 
+    /*
+     * REJOUER LE DERNIER COUP : le montrer une seconde fois, et rien d'autre.
+     *
+     * Ce bouton ne faisait que RECULER d'un demi-coup. La piece revenait en
+     * arriere, le coup n'etait jamais rejoue, et la partie restait la -- une
+     * position en arriere de ce que la boucle et les fenetres satellites
+     * croyaient. D'ou le desaccord constate : le plateau montrait une position,
+     * le selecteur de coup en proposait une autre.
+     *
+     * Deux choses manquaient, et la seconde est celle qui abime la partie :
+     *
+     *   1. le coup n'etait pas REJOUE. « Rejouer » veut dire le remontrer,
+     *      donc revenir juste avant puis le jouer de nouveau, animation
+     *      comprise -- et finir exactement d'ou l'on partait.
+     *   2. rien n'etait REARME. Un tour humain en cours pointe sur la position
+     *      qu'il a recue ; la deplacer sous lui laisse une machine a etats
+     *      accrochee a un plateau qui n'existe plus. C'est ce que takeback et
+     *      restart font depuis toujours, et que celui-ci ne faisait pas.
+     *
+     * Le nombre de coups est le meme au depart et a l'arrivee : rien a
+     * resynchroniser cote distant, et rien a annoncer aux satellites.
+     */
     btn('button-replay', async () => {
         if (!joclyMatch) return;
-        const moves = await joclyMatch.getPlayedMoves();
-        if (moves?.length > 0)
-            await joclyMatch.rollback(moves.length - 1).catch(() => {});
+        const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+        const n = moves?.length || 0;
+        if (n === 0) return;
+
+        // La recherche machine d'abord : reculer sous une recherche en cours
+        // la ferait aboutir sur une position qui n'est plus la.
+        await joclyMatch.abortMachineSearch().catch(() => {});
+        await joclyMatch.abortUserTurn().catch(() => {});
+
+        await joclyMatch.rollback(n - 1).catch(() => {});
+        // Et on le rejoue : c'est tout l'objet du bouton. En cas d'echec, on
+        // ne laisse PAS la partie un demi-coup en arriere -- mieux vaut une
+        // animation manquee qu'une position fausse.
+        await joclyMatch.playMove(moves[n - 1]).catch(async (e) => {
+            console.warn('[play] rejeu impossible :', e.message || e);
+            await joclyMatch.rollback(n).catch(() => {});
+        });
+
+        await rearmAfterPositionChange();
     });
 
     // Save : équivalent du download JSON de JoclyBoard. Le `data:` URI +
@@ -1524,8 +2241,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Actions rapides du footer (barre masquée) : proxys vers les boutons
     // de la barre — un seul handler par action, zéro duplication de logique.
-    btn('quick-takeback', () => document.getElementById('button-takeback')?.click());
-    btn('quick-restart',  () => document.getElementById('button-restart')?.click());
 
     // Bascule : démarrer si à l'arrêt, arrêter si en cours (demande UX)
     btn('button-video',      () => videoRecording ? StopRecording() : StartRecording());
@@ -1588,9 +2303,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // se rabat sur son IA native et le bandeau #play-warning s'affiche.
     installNativeEngine(gameArea, tRpc);
 
-    // Sélecteur de skin (2D/3D) du footer, à côté des joueurs A/B — visible
-    // seulement quand la barre de boutons est masquée (classe
-    // player-select-wrap, exclusion gérée en CSS par .bar-visible).
+    // Sélecteur de skin (2D/3D) du pied de page, à côté des joueurs A/B. Il y
+    // est désormais visible EN PERMANENCE : la barre repliable qui le masquait
+    // a laissé place à la barre latérale.
     // Capture d'écran / vidéo : disponibles uniquement en 3D (limitation
     // Jocly : viewControl('takeSnapshot') rejette "Snapshot only available
     // on 3D views" en 2D — c'est le rendu WebGL qui est capturé). On grise
@@ -1724,11 +2439,38 @@ async function BookReplay(book) {
         // le choix est une REGLE : rien dans le fichier ne dit laquelle, et
         // on ne devine pas -- on essaie. Le bon choix est celui sous lequel
         // le premier coup du fichier se resout.
-        await AnswerPrelude(book.moves && book.moves[0]);
+        // Les jetons de prelude en tete du fichier ne sont pas des coups a
+        // rejouer : ils sont la reponse au dialogue d'ouverture. Les laisser
+        // dans la liste faisait echouer la lecture sur le tout premier jeton
+        // -- « #0 » ne designe aucun coup legal une fois le prelude franchi,
+        // donc zero coup joue et le fichier declare illisible. Ils faussaient
+        // aussi MoveFormat(), qui les lisait comme des coups pour deviner la
+        // notation du fichier.
+        const recordedPrelude = [];
+        while (book.moves && book.moves.length && PRELUDE_MOVE.test(book.moves[0]))
+            recordedPrelude.push(book.moves.shift());
+        /*
+         * Un PGN ne porte PAS la reponse au prelude : « #4 » n'est pas un coup
+         * d'echecs, et l'export l'ecarte a juste titre. Elle est dans la balise
+         * [Variant], que le hub a su ramener a un arrangement -- c'est ce qu'on
+         * recoit ici. Sans elle, AnswerPrelude en serait reduit a deviner, et
+         * deviner ne marche pas : les arrangements d'un meme jeu acceptent
+         * souvent le meme premier coup, donc le premier essai gagne toujours.
+         */
+        if (!recordedPrelude.length && Array.isArray(book.prelude))
+            recordedPrelude.push(...book.prelude);
+        await AnswerPrelude(book.moves && book.moves[0], recordedPrelude);
 
-        const format = book.kif ? 'kif' : MoveFormat(book.moves);
+        // Un livre venu d'un SGF porte ses coups en POINTS du goban ("Q16",
+        // "pass") -- la notation que go-model.js ecrit lui-meme. Le hub l'a
+        // dit (`book.sgf`), et la resolution est exacte : « Q16 » et « Q15 »
+        // ne different que d'un caractere, donc la resolution floue jouerait
+        // le point voisin sans le dire, et une partie de go ne pardonne pas
+        // une pierre posee a cote.
+        const format = book.kif ? 'kif' : (book.sgf ? 'sgf' : MoveFormat(book.moves));
         let exact = null;
         if (format === 'kif') exact = MoveFromSquares;
+        else if (format === 'sgf') exact = MoveFromGoPoint;
         else if (format === 'wxf') exact = MoveFromWxf;
         else if (format === 'san') exact = MoveFromSan;
         else if (format === 'usi') exact = MoveFromUSI;
@@ -1835,7 +2577,22 @@ async function BookReplay(book) {
                 await joclyMatch.load({ ...saveData.solution, tsume: tsumeMatch });
                 // Meme regle que pour un livre : une sauvegarde sans coup est
                 // une POSITION, pas une partie a relire. On la laisse jouable.
-                if ((saveData.solution.playedMoves || []).length > 0) {
+                /*
+                 * EN PAUSE SEULEMENT POUR UNE SOLUTION DE PROBLEME.
+                 *
+                 * Une solution s'ouvre figee, pour que l'IA ne joue pas
+                 * par-dessus ce qu'on vient d'afficher. Une PARTIE qu'on
+                 * recharge doit reprendre : la mettre en pause et passer les
+                 * deux camps en humain donnait un plateau ou personne n'avait
+                 * la main, sans rien a l'ecran pour le dire. Le bouton Charger
+                 * de la fenetre de jeu, lui, n'a jamais fait cela -- d'ou un
+                 * meme fichier qui se comportait differemment selon la porte
+                 * par laquelle il entrait.
+                 *
+                 * Le fichier ne dit pas lequel des deux il est ; c'est le hub
+                 * qui le sait, parce qu'il sait d'ou il vient.
+                 */
+                if (saveData.fromProblems && (saveData.solution.playedMoves || []).length > 0) {
                     SetBothHuman();
                     paused = true;
                     UpdatePause();
@@ -1872,9 +2629,13 @@ async function BookReplay(book) {
                 // donc enveloppe 'tabulon' -- pas de codec jocly-simple-match.
                 remote: true, peer: true, matchId: invite.matchId,
                 gameName: invite.gameName || gameName,
+                chatKey: invite.chatKey || null,
+                chatKeyId: invite.chatKeyId || null,
             } : {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
+                chatKey: invite.chatKey || null,
+                chatKeyId: invite.chatKeyId || null,
             });
             syncFooterSelect(localSide);
             console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);

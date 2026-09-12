@@ -7,7 +7,7 @@
 //
 // Aucun binaire ni webview requis : le RPC est injecte.
 
-import { installInWindow, NativeFairyWorker, NativeScanWorker } from '../app/content/engine-native.js';
+import { installInWindow, NativeFairyWorker, NativeScanWorker, NativeKataWorker } from '../app/content/engine-native.js';
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
@@ -243,7 +243,93 @@ console.log('Test 9 - moteur de dames (scan)');
     ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
 }
 
-console.log('Test 10 - les deux moteurs cohabitent');
+console.log('Test 10 - KataGo : ce que l\'Init doit retenir');
+{
+    // Ce que jocly.kata.js envoie : le reseau et la taille du goban arrivent
+    // a l'Init, pas a la recherche -- KataGo en a besoin AU LANCEMENT. Un
+    // shim qui ne les retient pas laisse le cote Rust sans rien pour demarrer
+    // le moteur, et l'echec ne se voit qu'au premier coup.
+    const rpc = makeRpc({
+        katago_probe: () => Promise.resolve('KataGo v1.13'),
+        katago_search: () => Promise.resolve({ bestMove: 40, resigned: false }),
+    });
+    const w = new NativeKataWorker(rpc);
+    const seen = listen(w);
+    w.postMessage({ type: 'Init', net: 'katago-nnetwork.bin.gz', boardSize: 9 });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Ready', 'moteur present -> Ready');
+    ok(rpc.calls[0].method === 'katago_probe', 'Init interroge katago_probe');
+    ok(rpc.calls[0].args[0].net === 'katago-nnetwork.bin.gz',
+       'la sonde recoit le reseau, seul moyen de savoir s\'il est la');
+
+    w.postMessage({
+        type: 'Search',
+        moves: [{ loc: 40, col: 1 }], toPlay: 2, komi: 5.5,
+        rules: 'chinese-ogs',
+        visits: 64, moveTimeMs: 3000,
+    });
+    await settle();
+    const req = rpc.calls[1].args[0];
+    ok(rpc.calls[1].method === 'katago_search', 'Search interroge katago_search');
+    ok(req.net === 'katago-nnetwork.bin.gz' && req.boardSize === 9,
+       'le reseau et le goban de l\'Init accompagnent la recherche');
+    ok(JSON.stringify(req.moves) === JSON.stringify([{ loc: 40, col: 1 }]),
+       'la position part telle quelle : une suite de coups, pas un FEN');
+    ok(req.toPlay === 2 && req.komi === 5.5, 'le trait et le komi suivent');
+    ok(req.visits === 64 && req.moveTimeMs === 3000, 'le budget du niveau suit');
+    // Les regles voyagent avec la position. Sans elles KataGo joue sous celles
+    // de son katago.cfg -- que Tabulon ne fournit pas, et dont le modele livre
+    // par KataGo porte tromp-taylor : le moteur proposerait alors des suicides
+    // multi-pierres que jocly refuse.
+    ok(req.rules === 'chinese-ogs',
+       'les regles arbitrees par le jeu accompagnent la recherche');
+    ok(seen.length === 2 && seen[1].type === 'Done' && seen[1].data.bestMove === 40,
+       'la reponse porte l\'index de l\'intersection');
+}
+
+console.log('Test 11 - KataGo : reseau absent, repli silencieux');
+{
+    // KataGo ne joue pas sans reseau -- contrairement a Fairy-Stockfish, pour
+    // qui un NNUE manquant n'est qu'une evaluation classique. C'est donc un
+    // Error, celui qui fait basculer jocly sur son IA native.
+    const rpc = makeRpc({ katago_probe: new Error('reseau KataGo introuvable a cote du binaire') });
+    const w = new NativeKataWorker(rpc);
+    const seen = listen(w);
+    w.postMessage({ type: 'Init', net: 'katago-nnetwork.bin.gz', boardSize: 19 });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Error', 'reseau absent -> Error (et non un silence)');
+    ok(/reseau/.test(seen[0].error), 'la cause est transmise');
+}
+
+console.log('Test 12 - KataGo : passe, abandon et interruption');
+{
+    // -1 est aussi bien une passe qu'un abandon : les deux sont un « pas de
+    // coup » pour jocly, et c'est `resigned` qui les distingue pour le log.
+    let rpc = makeRpc({ katago_search: () => Promise.resolve({ bestMove: -1, resigned: false }) });
+    let w = new NativeKataWorker(rpc);
+    let seen = listen(w);
+    w.postMessage({ type: 'Search', moves: [], toPlay: 1, komi: 7.5 });
+    await settle();
+    ok(seen.length === 1 && seen[0].data.bestMove === -1, 'une passe remonte comme -1');
+
+    rpc = makeRpc({ katago_search: () => Promise.resolve({ bestMove: -1, resigned: true }) });
+    w = new NativeKataWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', moves: [], toPlay: 1, komi: 7.5 });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Done', 'un abandon reste un Done, pas une erreur');
+
+    let reject;
+    rpc = makeRpc({ katago_search: () => new Promise((_, rj) => { reject = rj; }) });
+    w = new NativeKataWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', moves: [], toPlay: 1, komi: 7.5 });
+    w.postMessage({ type: 'Stop' });
+    ok(rpc.calls.some((c) => c.method === 'katago_stop'), 'Stop interrompt cote Rust');
+    reject(new Error('killed'));
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
+}
+
+console.log('Test 13 - les trois moteurs cohabitent');
 {
     class FakeWorker { constructor(url) { this.url = url; } }
     const created = [];
@@ -254,9 +340,12 @@ console.log('Test 10 - les deux moteurs cohabitent');
        'fairyworker -> shim echecs');
     ok(new win.Worker('/browser/jocly.scanworker.js') instanceof NativeScanWorker,
        'scanworker -> shim dames');
+    ok(new win.Worker('/browser/jocly.kataworker.js') instanceof NativeKataWorker,
+       'kataworker -> shim go');
     // Le worker d'IA native reste au hook d'asset-rewrite.
     const ai = new win.Worker('/browser/jocly.aiworker.js');
-    ok(!(ai instanceof NativeFairyWorker) && !(ai instanceof NativeScanWorker) && created.length === 1,
+    ok(!(ai instanceof NativeFairyWorker) && !(ai instanceof NativeScanWorker)
+       && !(ai instanceof NativeKataWorker) && created.length === 1,
        'aiworker passe au Worker precedent');
 }
 

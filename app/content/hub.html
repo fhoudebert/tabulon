@@ -44,6 +44,12 @@
 						<span id="nav-templates" class="nav-group-item">
                 			<span class="icon icon-layout"></span> <span data-i18n="nav.templates">Templates</span>
 						</span>
+						<span id="nav-display" class="nav-group-item">
+                			<!-- Un engrenage : l'ecran ne regle plus seulement
+                     l'affichage, il porte aussi la cle des conversations, et
+                     l'oeil ne disait plus ce qu'on y trouve. -->
+                			<span class="icon icon-cog"></span> <span data-i18n="nav.display">Preferences</span>
+						</span>
 						<span id="nav-extensions" class="nav-group-item">
                 			<span class="icon icon-box"></span> <span data-i18n="nav.extensions">Extensions</span>
 						</span>
@@ -178,7 +184,14 @@
 						     attribue rien. -->
 						<p class="install-links">
 							<a href="https://github.com/fhoudebert/jocly2/releases/" data-i18n="install.releases">Download a Jocly game library…</a><br>
-							<a href="https://github.com/fhoudebert/tabulon/releases/" data-i18n="install.extras">Download engines, networks and images…</a>
+							<a href="https://github.com/fhoudebert/tabulon/releases/" data-i18n="install.extras">Download engines, networks and images…</a><br>
+							<!-- KataGo n'est pas redistribue par Tabulon : c'est chez son
+							     auteur qu'on va le chercher, et la version est ecrite en
+							     clair parce qu'une page « latest » proposerait demain une
+							     autre. La variante EIGEN est celle qui tourne sans carte
+							     graphique -- c'est le seul choix sur lequel un lien peut
+							     s'engager sans rien savoir de la machine. -->
+							<a href="https://github.com/lightvector/KataGo/releases/tag/v1.18.1" data-i18n="install.katagoRelease">Download KataGo v1.18.1 (Eigen, CPU)…</a>
 						</p>
 						<!-- Les deux moteurs sont sous GPL v3. Redistribuer un binaire
 						     oblige a fournir la source correspondante OU un lien vers
@@ -191,9 +204,61 @@
 							<ul>
 								<li><a href="https://github.com/fairy-stockfish/Fairy-Stockfish">Fairy-Stockfish</a> — GPL v3</li>
 								<li><a href="https://github.com/rhalbersma/scan">Scan</a> — GPL v3</li>
+								<!-- KataGo est sous licence MIT, pas GPL : le lien n'est
+								     donc pas la meme obligation que les deux au-dessus. Il
+								     reste du au titre de la mention de droit d'auteur que
+								     la MIT exige, et il est utile la ou est celui qui
+								     cherche le moteur. -->
+								<li><a href="https://github.com/lightvector/KataGo">KataGo</a> — MIT</li>
 								<li><a href="https://fairy-stockfish.github.io/nnue/">Fairy-Stockfish NNUE networks</a></li>
 							</ul>
 						</div>
+					</div>
+
+					<!-- Reglages d'affichage du hub. Distinct de la fenetre « Options
+					     d'affichage » d'une partie : celle-la est ouverte avec un
+					     numero de partie et dialogue avec sa fenetre de jeu, le hub
+					     n'en a pas. -->
+					<div class="pane" id="display" style="display:none">
+						<h3 data-i18n="prefs.title">Preferences</h3>
+
+						<h4 data-i18n="display.title">Display</h4>
+						<div class="checkbox">
+							<label>
+								<input type="checkbox" id="display-visuals" checked> <span data-i18n="display.visuals">Show game images in the background</span>
+							</label>
+						</div>
+						<p class="display-hint" data-i18n="display.visualsHint">The images ship with the game library. If they have been removed to save space, the background cycles through nothing at all — turn this off to leave it plain.</p>
+
+						<h4 class="prefs-section" data-i18n="prefs.video">Video recording</h4>
+						<p class="display-hint" data-i18n="prefs.videoWhat">Recording a game calls ffmpeg, which is not shipped with Tabulon. Leave this empty to use the one found on the system; fill it in to point at another — several versions often coexist, and the one on the PATH is not always the one that can encode H.264.</p>
+						<div class="chat-key">
+							<input type="text" id="prefs-ffmpeg-path" class="form-control" data-i18n-placeholder="prefs.videoPlaceholder" placeholder="ffmpeg" spellcheck="false">
+							<button id="prefs-ffmpeg-save" class="btn btn-default" data-i18n="prefs.keySave">Save</button>
+						</div>
+						<p id="prefs-ffmpeg-status" class="display-hint"></p>
+
+						<h4 class="prefs-section" data-i18n="prefs.chat">Conversations</h4>
+						<p class="display-hint" data-i18n="prefs.chatWhat">Messages exchanged during a remote game go through a relay that has no accounts and no passwords: whoever runs it can read what is left there. A shared key makes that content unreadable to the relay — and only to those who hold the key.</p>
+						<p class="display-hint" data-i18n="prefs.chatHow">Generate one below, then send it ONCE to the people you play with, by any channel except the relay itself — a message, an e-mail. They paste it into the same field. From then on your games with them are protected without any further step.</p>
+						<!-- Plusieurs trousseaux : un club, une famille, une
+						     competition. Celui qui est selectionne est employe pour
+						     les nouvelles invitations. -->
+						<div class="chat-key">
+							<select id="prefs-key-list" class="form-control"></select>
+							<button id="prefs-key-add" class="btn btn-default" data-i18n="prefs.keyAdd">New</button>
+							<button id="prefs-key-del" class="btn btn-default" data-i18n="prefs.keyDelete">Delete</button>
+						</div>
+						<div class="chat-key">
+							<input type="text" id="prefs-key-name" class="form-control" data-i18n-placeholder="prefs.namePlaceholder" placeholder="Name (chess club, family…)">
+						</div>
+						<div class="chat-key">
+							<input type="text" id="prefs-community-key" class="form-control" data-i18n-placeholder="prefs.keyPlaceholder" placeholder="Shared key…" spellcheck="false">
+							<button id="prefs-key-new" class="btn btn-default" data-i18n="chat.keyNew">Generate</button>
+							<button id="prefs-key-save" class="btn btn-default" data-i18n="prefs.keySave">Save</button>
+						</div>
+						<p id="prefs-key-status" class="display-hint"></p>
+						<p class="display-hint" data-i18n="prefs.chatWarning">One key for everyone you play with means everyone who has it could read your other conversations, if they knew which game to look at. A game can be given a key of its own from its chat window. Replacing the key below makes every earlier conversation unreadable — including for you.</p>
 					</div>
 
 					<div class="pane" id="about" style="display:none">

@@ -47,6 +47,30 @@ const twu = {
     } else {
       document.title = title;
     }
+
+    /*
+     * ET LA BARRE DE TITRE DU SYSTEME, qui est une autre chose.
+     *
+     * Ces fenetres sont creees cote Rust (window_cmds.rs) avec un titre ecrit
+     * en dur -- « Players #3 », « History #3 » -- et, contrairement a un
+     * onglet de navigateur, un document.title change dans la webview ne
+     * remonte pas jusqu'a la decoration de la fenetre. Le titre traduit
+     * s'affichait donc a l'interieur et l'anglais restait autour : la barre
+     * des taches et le gestionnaire de fenetres ne connaissaient que celui-la.
+     *
+     * Rust ne peut pas ecrire le bon : il faudrait y dupliquer le
+     * dictionnaire. C'est donc la fenetre elle-meme qui se renomme, une fois,
+     * au moment ou elle sait ce qu'elle affiche.
+     *
+     * Silencieux en cas d'echec : un titre en anglais est un defaut
+     * d'affichage, pas une raison d'empecher une fenetre de s'ouvrir.
+     */
+    try {
+      const win = getCurrentWindow();
+      if (win && typeof win.setTitle === 'function') await win.setTitle(title);
+    } catch (e) {
+      console.warn('[winutils] setTitle:', e);
+    }
   },
 
   /**

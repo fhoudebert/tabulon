@@ -67,6 +67,24 @@ pub async fn open_clock(app: AppHandle, match_id: u32) -> Result<(), String> {
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// rpc.call("open_chat", matchId)
+///
+/// Une fenetre plutot qu'un panneau a cote du plateau : le plateau est la
+/// seule chose qu'on regarde, et sur un goban 19x19 ou un 12x12 lui prendre un
+/// tiers de la largeur coute cher. Etroite et haute par defaut, comme une
+/// conversation.
+#[tauri::command]
+pub async fn open_chat(app: AppHandle, match_id: u32) -> Result<(), String> {
+    open_window(&app, WindowOptions {
+        label: &format!("chat-{match_id}"),
+        url:   &format!("content/chat.html?id={match_id}"),
+        title: &format!("Chat #{match_id}"),
+        width: 360.0, height: 480.0,
+        min_width: 260.0, min_height: 240.0,
+        persist_key: Some(format!("window:chat-{match_id}")),
+    }).map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// rpc.call("openPlayers", matchId)
 #[tauri::command]
 pub async fn open_players(app: AppHandle, match_id: u32) -> Result<(), String> {

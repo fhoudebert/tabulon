@@ -1778,13 +1778,32 @@ export function FairyVariantAlias(name) {
  */
 export function FairyGameIndex(configs) {
     const index = {};
+    const add = (variant, entry) => {
+        if (typeof variant !== 'string' || !variant) return;
+        const key = variant.toLowerCase();
+        if (!index[key]) index[key] = entry;
+    };
     for (const [name, cfg] of Object.entries(configs || {})) {
         for (const lvl of cfg?.model?.levels || []) {
             if (lvl?.ai !== 'fairy-stockfish') continue;
-            const declared = [lvl.variant, ...(lvl.variants || []).map(v => v?.variant)];
-            for (const v of declared)
-                if (typeof v === 'string' && v && !index[v.toLowerCase()])
-                    index[v.toLowerCase()] = name;
+            add(lvl.variant, { game: name, setup: null });
+            /*
+             * L'ARRANGEMENT, ET PAS SEULEMENT LE JEU.
+             *
+             * Un jeu a prelude declare une variante PAR arrangement :
+             * timurid-xsx, timurid-huh... L'index ne retenait que le nom du
+             * jeu, donc un fichier « mirza » rouvrait bien Timurid -- mais au
+             * premier arrangement, Herat. Le fichier etait juste, la partie
+             * relue etait une autre.
+             *
+             * On garde donc le numero du setup, qui est exactement la reponse
+             * au prelude (« #4 ») : AnswerPrelude sait deja la suivre quand un
+             * fichier la porte. Le PGN, lui, n'a pas a la porter -- il la dit
+             * deja dans [Variant], et un coup de prelude n'est pas un coup
+             * d'echecs.
+             */
+            for (const v of lvl.variants || [])
+                add(v?.variant, { game: name, setup: Number.isInteger(v?.setup) ? v.setup : null });
         }
     }
     return index;
@@ -1859,3 +1878,316 @@ export function ParseSolution(text) {
     if (!Array.isArray(o.playedMoves) && typeof o.initialBoard !== 'string') return null;
     return o;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * SGF (Smart Game Format) — les parties de go
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * Le format des serveurs de go et des bases de parties. Rien a voir avec le
+ * PGN : un ARBRE de noeuds entre parentheses, des proprietes en majuscules,
+ * et des coordonnees qui ne sont pas celles que le joueur voit.
+ *
+ * TROIS PIEGES, dans l'ordre ou ils mordent.
+ *
+ * 1. C'est un arbre, pas une liste. « (;B[pd](;W[dp])(;W[dd]) ) » propose deux
+ *    suites ; la premiere est la partie, les autres des variantes. Lire le
+ *    fichier comme une suite de « ;X[..] » melangerait les branches et
+ *    produirait une partie que personne n'a jouee.
+ *
+ * 2. Les coordonnees sont des lettres a partir du COIN HAUT-GAUCHE, colonne
+ *    puis ligne, sans sauter le I : « dp » est la 4e colonne et la 16e ligne
+ *    depuis le haut. Le joueur, lui, lit « D4 » — lettre de colonne SANS le I,
+ *    et ligne comptee depuis le BAS. Les deux lectures se ressemblent assez
+ *    pour qu'une erreur passe inapercue et assez peu pour que la partie soit
+ *    fausse.
+ *
+ * 3. Le format ne sert pas qu'au go : GM[1] est le go, GM[2] l'othello, GM[6]
+ *    le backgammon... Un fichier d'un autre jeu se lirait sans erreur et
+ *    donnerait des coups absurdes, donc GM est verifie.
+ */
+
+// Colonnes telles que le joueur les lit, et telles que go-model.js les ecrit :
+// l'alphabet SANS le I, convention universelle du go.
+const SGF_COLUMNS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ';
+
+/**
+ * Une valeur de propriete SGF -> le point tel que jocly l'ecrit ("D4"), ou
+ * null si ce n'en est pas un.
+ *
+ * Une valeur VIDE est une passe, et « tt » l'etait aussi dans FF[3] pour les
+ * gobans jusqu'a 19x19 — une convention morte qu'on rencontre encore dans les
+ * archives, et qui sur un goban plus grand designerait un vrai point.
+ */
+export function SgfPoint(value, size) {
+    const v = String(value == null ? '' : value).trim();
+    if (!v) return 'pass';
+    if (v.length !== 2) return null;
+    if (v === 'tt' && size <= 19) return 'pass';
+    const col = v.charCodeAt(0) - 97;
+    const row = v.charCodeAt(1) - 97;
+    if (col < 0 || row < 0 || col >= size || row >= size) return null;
+    return SGF_COLUMNS[col] + (size - row);
+}
+
+/**
+ * Est-ce un SGF ? Un arbre ouvert par « (; », que ni le PGN ni le KIF ni une
+ * sauvegarde JSON ne produisent.
+ */
+export function IsSgf(text) {
+    return /^\uFEFF?\s*\(\s*;/.test(String(text || ''));
+}
+
+/**
+ * Decoupe un SGF en noeuds de la LIGNE PRINCIPALE.
+ *
+ * Descente recursive sur la grammaire du format :
+ *   Arbre    := "(" Sequence Arbre* ")"
+ *   Sequence := Noeud+
+ *   Noeud    := ";" Propriete*
+ *   Propriete:= IDENT "[" valeur "]"+
+ *
+ * La ligne principale est la sequence de la racine suivie de celle du PREMIER
+ * sous-arbre, recursivement : c'est la convention du format, les sous-arbres
+ * suivants sont des variantes. On les jette plutot que de les signaler comme
+ * une erreur — un fichier commente en contient toujours.
+ *
+ * Renvoie [{ PROP: [valeurs] }], ou null si le texte ne se lit pas.
+ */
+function SgfNodes(text) {
+    const s = String(text || '');
+    let i = 0;
+
+    const skip = () => { while (i < s.length && /\s/.test(s[i])) i++; };
+
+    function value() {
+        // Le crochet fermant se protege par « \ », et le meme « \ » protege
+        // les « \ ». Sans cela un commentaire contenant « [sic] » couperait
+        // la propriete en deux et decalerait tout ce qui suit.
+        let out = '';
+        i++;                                   // le "[" ouvrant
+        while (i < s.length && s[i] !== ']') {
+            if (s[i] === '\\') i++;
+            out += s[i++];
+        }
+        i++;                                   // le "]" fermant
+        return out;
+    }
+
+    function node() {
+        i++;                                   // le ";"
+        const props = {};
+        for (;;) {
+            skip();
+            const m = /^[A-Za-z]+/.exec(s.slice(i));
+            if (!m) return props;
+            // Les identifiants s'ecrivent en majuscules, mais FF[3] tolerait
+            // « AddBlack » pour AB : seules les capitales comptent.
+            const name = m[0].replace(/[a-z]/g, '');
+            i += m[0].length;
+            const values = [];
+            for (;;) {
+                skip();
+                if (s[i] !== '[') break;
+                values.push(value());
+            }
+            if (!values.length) return null;    // un identifiant sans valeur
+            props[name] = (props[name] || []).concat(values);
+        }
+    }
+
+    function tree() {
+        skip();
+        if (s[i] !== '(') return null;
+        i++;
+        const nodes = [];
+        for (;;) {
+            skip();
+            if (s[i] !== ';') break;
+            const n = node();
+            if (!n) return null;
+            nodes.push(n);
+        }
+        // Le premier sous-arbre continue la partie ; les suivants sont des
+        // variantes, qu'on lit quand meme pour retrouver la parenthese
+        // fermante mais dont on ne garde rien.
+        let first = true;
+        for (;;) {
+            skip();
+            if (s[i] !== '(') break;
+            const sub = tree();
+            if (!sub) return null;
+            if (first) { nodes.push.apply(nodes, sub); first = false; }
+        }
+        skip();
+        if (s[i] !== ')') return null;
+        i++;
+        return nodes;
+    }
+
+    const out = tree();
+    return out && out.length ? out : null;
+}
+
+/**
+ * Lecture d'un SGF de go. Renvoie null si ce n'en est pas un, ou s'il decrit
+ * un autre jeu.
+ *
+ * `moves` est en notation jocly ("Q16", "pass"), directement resoluble contre
+ * les coups legaux — c'est la forme que go-model.js ecrit lui-meme.
+ *
+ * Ce qui est RENDU sans etre traite est aussi important que le reste :
+ * `handicap`, `setup` et `rules` decrivent des choses que le go de jocly ne
+ * sait pas encore faire. L'appelant en decide ; ici on lit, on ne juge pas.
+ */
+export function ParseSgf(text) {
+    if (!IsSgf(text)) return null;
+    const nodes = SgfNodes(text);
+    if (!nodes) return null;
+
+    const root = nodes[0] || {};
+    const first = (name) => (root[name] || [])[0];
+
+    // GM[1] = go. Absent, on suppose le go : c'est le defaut du format et la
+    // plupart des fichiers de go l'omettent. Present et different, on refuse
+    // — un SGF d'othello se lirait sans erreur et donnerait des coups absurdes.
+    const gm = first('GM');
+    if (gm !== undefined && String(gm).trim() !== '1') return null;
+
+    // SZ[19] ou SZ[19:19]. Un goban rectangulaire existe dans le format et
+    // dans aucun jeu de jocly : on le rend tel quel pour que l'appelant puisse
+    // le refuser en le nommant.
+    const sz = String(first('SZ') || '19').trim();
+    const dims = sz.split(':');
+    const size = parseInt(dims[0], 10);
+    const height = dims[1] ? parseInt(dims[1], 10) : size;
+    if (!(size > 0)) return null;
+
+    const points = (name) => (root[name] || [])
+        .map(v => SgfPoint(v, size)).filter(p => p && p !== 'pass');
+
+    const moves = [];
+    let colours = '';                          // "BWBW..." tel que le fichier l'ecrit
+    for (const n of nodes) {
+        const colour = n.B !== undefined ? 'B' : (n.W !== undefined ? 'W' : null);
+        if (!colour) continue;
+        const p = SgfPoint(n[colour][0], size);
+        // Un point hors du goban est une erreur de fichier, pas une passe :
+        // s'arreter la vaut mieux que jouer la suite au mauvais endroit.
+        if (!p) break;
+        moves.push(p);
+        colours += colour;
+    }
+
+    const komi = parseFloat(first('KM'));
+    const handicap = parseInt(first('HA') || '0', 10) || 0;
+
+    return {
+        size,
+        // Rendu separement : seul l'appelant sait s'il a un jeu pour ca.
+        height,
+        komi: isNaN(komi) ? null : komi,
+        rules: (first('RU') || '').trim() || null,
+        handicap,
+        setup: { black: points('AB'), white: points('AW') },
+        moves,
+        // Le camp du premier coup joue, et l'alternance. Le go de jocly
+        // alterne strictement en commencant par Noir : un fichier qui fait
+        // autrement (handicap, position de probleme) ne peut pas etre rejoue
+        // tel quel, et mieux vaut le dire que de decaler toutes les couleurs.
+        firstPlayer: colours[0] || null,
+        alternates: !/BB|WW/.test(colours),
+        meta: {
+            black: first('PB') || null,
+            white: first('PW') || null,
+            event: first('EV') || null,
+            name: first('GN') || null,
+            date: first('DT') || null,
+            result: first('RE') || null,
+        },
+    };
+}
+
+/**
+ * Un point tel que jocly l'ecrit ("D4") -> la valeur SGF ("dp"), ou null.
+ *
+ * L'inverse exact de SgfPoint, et teste comme tel : les deux systemes se
+ * ressemblent assez pour qu'une erreur de conversion se relise sans broncher
+ * et designe une autre intersection.
+ */
+export function SgfValue(point, size) {
+    const p = String(point == null ? '' : point).trim().toUpperCase();
+    if (!p || p === 'PASS') return '';
+    const col = SGF_COLUMNS.indexOf(p[0]);
+    const line = parseInt(p.slice(1), 10);
+    if (col < 0 || col >= size || !(line >= 1) || line > size) return null;
+    return String.fromCharCode(97 + col) + String.fromCharCode(97 + (size - line));
+}
+
+/**
+ * Ecriture d'une partie de go au format SGF.
+ *
+ * `moves` est la notation naturelle de jocly ("Q16", "pass"), telle que
+ * l'Historique la detient deja. Les jetons de PRELUDE ("#0") sont ecartes :
+ * ils comptent pour un coup chez jocly mais ne posent aucune pierre, et un
+ * lecteur tiers n'en ferait rien.
+ *
+ * LES COULEURS VIENNENT DE LA PARITE, pas du fichier : le go de jocly part
+ * d'un goban vide et alterne strictement en commencant par Noir. C'est aussi
+ * pourquoi l'import refuse les parties a handicap -- les deux moities de ce
+ * module font la meme hypothese, et elle est vraie de tout ce que Tabulon
+ * sait jouer.
+ *
+ * PIEGE DES NOMS. Chez jocly, PLAYER_A joue les pierres NOIRES et ouvre la
+ * partie ; ailleurs dans Tabulon, A est appele « White » parce que c'est vrai
+ * aux echecs. Les proprietes SGF, elles, nomment des couleurs reelles : PB est
+ * le joueur A, PW le joueur B. Le meta demande donc `playerA` et `playerB`,
+ * qui ne peuvent pas etre pris l'un pour l'autre.
+ */
+export function BuildSGF(moves, size, meta = {}) {
+    const esc = (v) => String(v == null ? '' : v).replace(/([\]\\])/g, '\\$1');
+    const prop = (name, value) => (value == null || value === '' ? '' : name + '[' + esc(value) + ']');
+
+    const head = [
+        'GM[1]', 'FF[4]', 'CA[UTF-8]',
+        'SZ[' + size + ']',
+        meta.komi == null ? '' : 'KM[' + meta.komi + ']',
+        prop('RU', SGF_RULE_NAMES[meta.rules] || meta.rules),
+        prop('AP', meta.application),
+        prop('GN', meta.event),
+        prop('PB', meta.playerA),
+        prop('PW', meta.playerB),
+        prop('DT', meta.date),
+        prop('RE', meta.result),
+    ].filter(Boolean).join('');
+
+    let body = '', line = 0;
+    for (const raw of moves || []) {
+        const token = String(raw == null ? '' : raw).trim();
+        if (/^#\d+$/.test(token)) continue;           // reponse de prelude
+        const value = SgfValue(token, size);
+        // Un jeton qu'on ne sait pas ecrire arreterait la partie au mauvais
+        // endroit sans le dire : on refuse le fichier entier.
+        if (value === null) return null;
+        body += ';' + (line % 2 === 0 ? 'B' : 'W') + '[' + value + ']';
+        line++;
+        if (line % 10 === 0) body += '\n';
+    }
+    return '(;' + head + '\n' + body + ')\n';
+}
+
+/**
+ * Le nom SGF d'un jeu de regles de jocly.
+ *
+ * RU est un champ libre, mais ses valeurs usuelles sont connues des lecteurs
+ * et « chinese-ogs » n'en fait pas partie. On ecrit donc ce que les autres
+ * comprennent, en acceptant que « Chinese » soit moins precis que la verite --
+ * la difference tient au ko, que ces parties-ci n'exercent presque jamais, et
+ * un RU inconnu ferait supposer le japonais par defaut, ce qui serait faux
+ * sur le point qui compte vraiment : le comptage.
+ */
+const SGF_RULE_NAMES = {
+    'chinese-ogs': 'Chinese',
+    'chinese-kgs': 'Chinese',
+    'chinese': 'Chinese',
+    'tromp-taylor': 'Tromp-Taylor',
+};

@@ -44,6 +44,16 @@
 							<input type="checkbox"> <span data-i18n="view.showMoves">Show moves</span>
 						</label>
 					</div>
+
+					<!-- Visible seulement si la vue sait dessiner la marque :
+					     getViewOptions n'inclut showLastMove que dans ce cas,
+					     et c'est a cette absence que se reconnait un jeu qui
+					     n'a rien a montrer. -->
+					<div id="showLastMove" class="checkbox hidden">
+						<label>
+							<input type="checkbox"> <span data-i18n="view.showLastMove">Mark the last move</span>
+						</label>
+					</div>
 					<div id="autoComplete" class="checkbox hidden">
 						<label>
 							<input type="checkbox"> <span data-i18n="view.autoComplete">Auto-complete moves</span>

@@ -208,6 +208,11 @@ html, body {
 .icon-eye::before           { content: '\e826'; }
 .icon-list::before          { content: '\e8a5'; }
 .icon-clock::before         { content: '\e862'; }
+/* Ecran Preferences du hub. Point de code releve dans la cmap de la police. */
+.icon-cog::before           { content: '\e855'; }
+/* Discussion a distance. Point de code releve dans la cmap de la police,
+   comme icon-box et icon-folder. */
+.icon-chat::before          { content: '\e83c'; }
 .icon-level-down::before    { content: '\e892'; }
 .icon-resize-full::before   { content: '\e869'; }
 .icon-download::before      { content: '\e82d'; }
@@ -229,6 +234,10 @@ html, body {
 .icon-info::before          { content: '\e81e'; }
 .icon-plus::before          { content: '\e816'; }
 .icon-box::before           { content: '\e852'; }  /* Extensions (glyphe 'box', vérifié dans la cmap photon-entypo) */
+/* « Choisir un fichier… » (hub.html) : la classe etait employee sans etre
+   definie ici, donc le bouton n'affichait aucune icone. Point de code releve
+   dans la cmap de la police, comme pour icon-box. */
+.icon-folder::before        { content: '\e850'; }
 
 /* ── Formulaires ────────────────────────────────────────────────────────────── */
 .form-group {
@@ -543,6 +552,16 @@ strong { font-weight: 600; }
   transition: opacity 1.2s ease;
 }
 
+/* Le panneau Affichage : une explication sous la case, en gris, pour dire
+   pourquoi on voudrait éteindre quelque chose qui a l'air décoratif. */
+.display-hint {
+  margin-top: 8px;
+  max-width: 46em;
+  color: #6c6c6c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* Carte d'infos superposée aux visuels */
 .game-detail .info {
   position: absolute;
@@ -657,12 +676,81 @@ strong { font-weight: 600; }
 }
 
 /* ── Fenêtre play.html ─────────────────────────────────────────────────────── */
-/* game-zone : colonne flex qui occupe toute la fenêtre */
+/* game-zone : une LIGNE — la barre latérale à gauche, tout le reste à droite.
+   C'était une colonne tant que les boutons vivaient dans le pied de page. */
 .game-zone {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   overflow: hidden;
+}
+
+/* game-main : l'ancienne colonne (en-tête, plateau, bandeau, pied). */
+.game-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Barre latérale de play.html ─────────────────────────────────────────────
+   Largeur fixe : le plateau prend ce qui reste, et une largeur qui varierait
+   avec le plus long libellé ferait sauter le plateau d'une langue à l'autre.
+   Le défilement plutôt qu'un repli : un défilement se découvre, un repli non —
+   et c'est précisément la découverte qu'on cherchait en supprimant le « … ». */
+.game-sidebar {
+  flex: 0 0 168px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 6px 6px 12px;
+  background: #f5f5f4;
+  border-right: 1px solid #c2c0c2;
+}
+
+.sidebar-title {
+  margin: 12px 0 4px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #8a8a8a;
+}
+.sidebar-title:first-child { margin-top: 2px; }
+
+.sidebar-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font-size: 12px;
+  text-align: left;
+  color: #333;
+  cursor: pointer;
+}
+.sidebar-btn:hover { background: #e4e3e2; }
+.sidebar-btn:active { background: #d6d4d3; }
+.sidebar-btn .icon { flex: 0 0 14px; color: #555; font-size: 14px; }
+/* Le libellé ne se coupe pas en deux lignes : une entrée haute d'une ligne et
+   une autre de deux donneraient une liste en escalier. */
+.sidebar-btn > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Enregistrement vidéo en cours : l'icône passe au rouge, là où elle est. */
+#button-video.recording .icon { color: #c00; }
+
+/* Fenêtre étroite : plus de place pour les libellés, on garde les icônes.
+   Les infobulles reprennent alors seules le travail — moins bien, mais c'est
+   le seul arbitrage possible quand le plateau n'a plus la place. */
+@media (max-width: 620px) {
+  .game-sidebar { flex-basis: 40px; align-items: center; }
+  .sidebar-title { display: none; }
+  .sidebar-btn { justify-content: center; padding: 6px 0; }
+  .sidebar-btn > span:last-child { display: none; }
 }
 
 /* game-fullsize : zone centrale qui prend tout l'espace restant */
@@ -930,30 +1018,80 @@ strong { font-weight: 600; }
   border-color: #2980b9;
 }
 
-/* ── Fenêtre play.html : barre de boutons repliable ─────────────────────────── */
-/* JoclyBoard révélait la barre au survol (.ephemeral-actions:hover) ; ici la
-   bascule se fait au CLIC sur le bouton '…' (#button-toggle-bar) — plus
-   adapté à la tablette où le survol n'existe pas. play.js pose/retire la
-   classe .bar-visible et persiste l'état dans le store. */
-/* Le bouton '…' est aligné à droite : marge auto quand il est seul (barre
-   masquée) ; quand la barre est visible, c'est ELLE qui porte la marge auto
-   (pull-right) et le '…' se colle à sa droite — deux marges auto simultanées
-   répartiraient l'espace et centreraient le bouton. */
-/* Enregistrement vidéo en cours : icône rouge sur le bouton-bascule */
-#button-video.recording .icon { color: #c00; }
+/* ── Fenêtre play.html : ce que le pied de page garde ────────────────────────
+   La barre repliable et son bouton « … » ont disparu au profit de la barre
+   latérale. Le pied conserve ce qui accompagne la partie en cours -- l'état,
+   les sélecteurs de joueurs, l'habillage, reprendre un coup et recommencer --
+   et n'a donc plus d'état caché ni d'exclusion mutuelle : tout y est visible
+   en permanence. */
+#fullscreen-group { margin-left: auto; }
 
-#toggle-bar-group { margin-left: auto; }
-.ephemeral-actions.bar-visible #toggle-bar-group { margin-left: 0; }
+/* Le pied de plateau porte un chronomètre de réflexion rafraîchi dix fois par
+   seconde. Des chiffres à chasse fixe évitent que « 9.9 s » puis « 10.0 s »
+   fassent respirer la ligne à chaque dixième. */
+#board-footer-text { font-variant-numeric: tabular-nums; }
 
-.ephemeral-actions .ephemeral-appear { display: none; }
-.ephemeral-actions.bar-visible .ephemeral-appear { display: inline-flex; }
-/* Les sélecteurs de joueurs A/B et la barre s'excluent mutuellement :
-   barre masquée (défaut) → joueurs visibles ; barre visible → joueurs
-   masqués. Le clic sur '…' bascule les deux d'un coup via .bar-visible. */
-.ephemeral-actions.bar-visible .player-select-wrap { display: none; }
-/* Quand la barre est ouverte, le titre s'efface pour lui laisser la place
-   (équivalent du .ephemeral-vanish de JoclyBoard) */
-.ephemeral-actions.bar-visible .ephemeral-vanish { display: none; }
+/* La pastille de messages non lus, sur le bouton Discussion de la barre de jeu.
+   Elle existe parce que la fenêtre est fermée par défaut : sans elle, un
+   message arrive et personne ne le sait. Le nombre est écrit dans
+   data-unread par play.js et affiché ici — pas d'élément supplémentaire à
+   créer et à détruire au fil des messages. */
+/* Les sections de l'ecran Preferences : un peu d'air entre elles, sinon les
+   deux sujets -- l'affichage et les conversations -- se lisent comme un seul. */
+.prefs-section { margin-top: 22px; }
+
+#button-chat { position: relative; }
+#button-chat.has-unread::after {
+  content: attr(data-unread);
+  position: absolute;
+  top: -4px; right: -4px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #d64541;
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  font-weight: 600;
+  text-align: center;
+  /* Le bouton porte déjà l'infobulle ; la pastille ne doit pas la voler. */
+  pointer-events: none;
+}
+
+/* ── Fenêtre chat.html (discussion d'une partie à distance) ────────────────── */
+.chat-pane { display: flex; flex-direction: column; height: 100%; padding: 8px; }
+
+/* Le fil prend toute la hauteur disponible : c'est lui qu'on lit, le reste est
+   de la commande. */
+.chat-thread {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  border: 1px solid #d8d8d8;
+  border-radius: 3px;
+  padding: 6px 8px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.chat-line { display: flex; gap: 6px; align-items: baseline; }
+.chat-who  { flex: 0 0 auto; font-weight: 600; color: #6c6c6c; }
+.chat-text { flex: 1 1 auto; word-break: break-word; }
+/* L'heure ne doit pas attirer l'oeil : elle sert à situer, pas à être lue. */
+.chat-when { flex: 0 0 auto; color: #a0a0a0; font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Un message qu'on ne peut pas ouvrir reste visible, en retrait : un trou
+   silencieux dans une conversation est pire qu'un cadenas. */
+.chat-line.locked .chat-text { color: #a0a0a0; font-style: italic; }
+
+.chat-quick { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 0; }
+.chat-quick .btn { font-size: 11px; padding: 3px 6px; }
+
+.chat-compose { display: flex; gap: 6px; margin-top: 8px; }
+.chat-compose input { flex: 1 1 auto; }
+
+.chat-key { display: flex; gap: 6px; margin-top: 6px; }
+.chat-key input { flex: 1 1 auto; font-family: monospace; font-size: 11px; }
+
+.chat-status { margin: 6px 0 0; color: #6c6c6c; font-size: 11px; line-height: 1.4; }
 
 /* ── Fenêtre clock.html (affichage de l'horloge, porté de JoclyBoard) ───────── */
 .clock-content { height: 100%; padding: 0; }

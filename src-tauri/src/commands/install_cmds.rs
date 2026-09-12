@@ -113,6 +113,20 @@ pub fn install_status() -> InstallStatus {
     let dist = dist_override::external_dist().map(|p| p.to_path_buf());
     let engine = engine_cmds::engine_path();
     let scan = engine_cmds::binary_path("scan", "TABULON_SCAN");
+    let katago = engine_cmds::binary_path("katago", "TABULON_KATAGO");
+    // KataGo a besoin de DEUX fichiers a cote du binaire, et l'absence de
+    // l'un ou l'autre l'empeche de demarrer : le reseau (il n'a pas
+    // d'evaluation de repli, contrairement au NNUE de Fairy-Stockfish) et sa
+    // configuration (`katago gtp` refuse -config manquant). On les rapporte
+    // separement pour que le message dise lequel manque.
+    let katago_dir = katago.as_ref().and_then(|e| e.parent().map(Path::to_path_buf));
+    let katago_net = katago_dir
+        .as_ref()
+        .and_then(|dir| any_katago_net(dir));
+    let katago_cfg = katago_dir
+        .as_ref()
+        .map(|dir| dir.join("katago.cfg"))
+        .filter(|p| p.is_file());
     // Le NNUE se cherche a cote du moteur : c'est la que le moteur le lira.
     let nnue = engine
         .as_ref()
@@ -146,6 +160,31 @@ pub fn install_status() -> InstallStatus {
             detail: None,
         },
         InstallItem {
+            id: "katago",
+            present: katago.is_some(),
+            path: show(katago),
+            expected: show(engine_dir().map(|d| d.join(if cfg!(target_os = "windows") {
+                "katago.exe"
+            } else {
+                "katago"
+            }))),
+            detail: None,
+        },
+        InstallItem {
+            id: "katago-network",
+            present: katago_net.is_some(),
+            path: show(katago_net),
+            expected: show(engine_dir()),
+            detail: None,
+        },
+        InstallItem {
+            id: "katago-config",
+            present: katago_cfg.is_some(),
+            path: show(katago_cfg),
+            expected: show(engine_dir().map(|d| d.join("katago.cfg"))),
+            detail: None,
+        },
+        InstallItem {
             id: "nnue",
             present: nnue.is_some(),
             path: show(nnue),
@@ -160,6 +199,23 @@ pub fn install_status() -> InstallStatus {
         engine_file,
         items,
     }
+}
+
+/// Un reseau KataGo pose a cote du binaire. Cherche par EXTENSION et non par
+/// nom : le nom exact vient du niveau du jeu cote jocly, qui peut changer, et
+/// ce rapport ne sert qu'a dire « il y en a un » ou « il n'y en a pas ».
+fn any_katago_net(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_file() {
+            let name = p.file_name()?.to_string_lossy().to_ascii_lowercase();
+            if name.ends_with(".bin.gz") || name.ends_with(".txt.gz") {
+                return Some(p);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

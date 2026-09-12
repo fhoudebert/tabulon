@@ -7,10 +7,10 @@ import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
-import { pickLocalized } from './localized-field.js';
+import { pickLocalized, gameTitle } from './localized-field.js';
 import { Matches } from './text-search.js';
 import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, FairyVariantAlias,
-         IsChuKif, ParseKif, IsShogiKif, ParseShogiKif,
+         IsChuKif, ParseKif, IsShogiKif, ParseShogiKif, IsSgf, ParseSgf,
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
@@ -42,6 +42,19 @@ let currentGame = null;     // gameName actuellement affiché dans le détail
 // l'ouverture d'un fichier).
 const g = () => currentGame;
 let visualTimer = null;     // interval de rotation des visuels 600x600
+/*
+ * Les visuels de fond sont-ils affiches ?
+ *
+ * Ce sont de grandes images livrees avec la ludotheque, et elles sont souvent
+ * les premieres supprimees quand la place manque. Le fond enchainait alors des
+ * fondus sur RIEN -- un defilement de vide, d'autant plus penible qu'il
+ * continue toutes les cinq secondes sans que rien ne l'explique.
+ *
+ * Le reglage vit dans le hub et non dans la fenetre « Options d'affichage » :
+ * celle-la est ouverte avec un numero de partie et dialogue avec sa fenetre de
+ * jeu (play-req:{id}), que le hub n'a pas.
+ */
+let showVisuals = true;
 // Passe à false si hub.html ne contient pas le panneau de détail (fichier
 // obsolète / cache) : le hub reste alors utilisable en mode dégradé (liste
 // + raccourcis) au lieu de planter avant ListGames().
@@ -49,7 +62,13 @@ let detailAvailable = true;
 
 const defaultFavorites = {
     'classic-chess': 100, 'draughts': 90, 'scrum': 80, 'reversi': 70,
-    '9-men-morris': 65, 'fourinarow': 60, 'tafl-hnefatafl': 55,
+    // 'morris9' et non '9-men-morris' : c'est le nom que porte le jeu dans le
+    // dist de jocly (ses voisins '6-men-morris' et '7-men-morris' ont garde
+    // l'ancienne forme, la ligne ci-dessous ne vaut donc que pour celui-ci).
+    // Un nom inconnu n'est pas une erreur -- InitGames() le retire de la liste
+    // -- mais il laissait la page d'accueil avec neuf favoris au lieu de dix,
+    // sans rien dire.
+    'morris9': 65, 'fourinarow': 60, 'tafl-hnefatafl': 55,
     'yohoho': 50, 'margo6': 40, 'pensoc': 30,
 };
 
@@ -134,7 +153,17 @@ async function ListGames() {
     // (qui fait .toLowerCase() dessus) -- manipule alors une vraie chaine.
     const loc = getLocale();
     for (const n of Object.keys(games)) {
-        games[n] = { ...games[n], summary: pickLocalized(games[n].summary, loc) };
+        // Le titre suit le meme chemin que le resume : le catalogue le porte
+        // tel que le manifeste le declare -- chaine ou objet par locale -- et
+        // on le reduit ICI, une fois. Tout ce qui suit (la liste, le tri par
+        // localeCompare, le filtre, les modeles de partie) manipule alors une
+        // vraie chaine, et aucun de ces endroits n'a a connaitre les deux
+        // formes.
+        games[n] = {
+            ...games[n],
+            title:   gameTitle(games[n], loc),
+            summary: pickLocalized(games[n].summary, loc),
+        };
     }
     gamesMap = games;
     allGameList = Object.keys(games)
@@ -146,6 +175,149 @@ async function ListGames() {
         if (!gamesMap[g]) delete defaultFavorites[g];
 
     await UpdateFavoriteGames();   // alimente favoritesMap pour les étoiles
+
+    /*
+     * Lu AVANT le premier affichage d'un jeu : SetupVisuals consulte
+     * showVisuals, et le lire trop tard ferait defiler une fois les images
+     * que l'on vient d'eteindre.
+     */
+    showVisuals = await store.get('hub-visuals') !== false;
+    const box = document.getElementById('display-visuals');
+    if (box) {
+        box.checked = showVisuals;
+        box.addEventListener('change', async () => {
+            showVisuals = box.checked;
+            await store.set('hub-visuals', showVisuals);
+            // Applique tout de suite, sans attendre le prochain jeu : le
+            // panneau ouvert est justement celui que l'on regarde.
+            if (currentGame) {
+                const cfg = await Jocly.getGameConfig(currentGame).catch(() => null);
+                if (cfg) SetupVisuals(cfg.view);
+            }
+        });
+    }
+
+    /*
+     * Les trousseaux de communaute : les secrets partages une fois avec les
+     * personnes avec qui on joue, et qui protegent ensuite toutes les parties.
+     *
+     * PLUSIEURS plutot qu'un seul, parce qu'une cle unique est partagee avec
+     * tout le monde : un club, une famille et une competition n'ont pas a
+     * pouvoir se lire les uns les autres. Celui qui est selectionne sert aux
+     * nouvelles invitations ; l'invite retrouve le bon par son EMPREINTE,
+     * calculee depuis la cle, donc independante du nom que chacun lui donne.
+     *
+     * Aucun ne part jamais vers un relai -- c'est toute leur raison d'etre.
+     */
+    {
+        const list = document.getElementById('prefs-key-list');
+        const nameField = document.getElementById('prefs-key-name');
+        const keyField = document.getElementById('prefs-community-key');
+        const status = document.getElementById('prefs-key-status');
+        const say = (key) => { if (status) status.textContent = key ? t(key) : ''; };
+
+        let keys = await store.get('community-keys') || [];
+        let current = await store.get('community-key-current') || (keys[0]?.id ?? null);
+
+        const selected = () => keys.find(k => k.id === current) || null;
+
+        function Refresh() {
+            if (!list) return;
+            list.innerHTML = '';
+            for (const k of keys) {
+                const opt = document.createElement('option');
+                opt.value = k.id;
+                opt.textContent = k.name || t('prefs.keyUnnamed');
+                list.appendChild(opt);
+            }
+            if (current) list.value = current;
+            const k = selected();
+            if (nameField) nameField.value = k?.name || '';
+            if (keyField) keyField.value = k?.key || '';
+        }
+        Refresh();
+
+        list?.addEventListener('change', async () => {
+            current = list.value;
+            await store.set('community-key-current', current);
+            say(null);
+            Refresh();
+        });
+
+        document.getElementById('prefs-key-add')?.addEventListener('click', async () => {
+            current = 'k-' + Date.now();
+            keys = [...keys, { id: current, name: '', key: '' }];
+            await store.set('community-keys', keys);
+            await store.set('community-key-current', current);
+            Refresh();
+            nameField?.focus();
+        });
+
+        document.getElementById('prefs-key-del')?.addEventListener('click', async () => {
+            if (!current) return;
+            keys = keys.filter(k => k.id !== current);
+            current = keys[0]?.id ?? null;
+            await store.set('community-keys', keys);
+            await store.set('community-key-current', current);
+            Refresh();
+            say('prefs.keyCleared');
+        });
+
+        document.getElementById('prefs-key-new')?.addEventListener('click', async () => {
+            const { generateChatKey } = await import('./remote-secret.js');
+            if (!keyField) return;
+            try { keyField.value = generateChatKey(); } catch (e) {
+                console.warn('[hub] pas de cle :', e.message || e);
+                return;
+            }
+            keyField.select();
+            // PAS enregistree tout de suite : tant qu'on ne l'a pas transmise,
+            // l'enregistrer rendrait nos messages illisibles pour les autres
+            // sans rien dire. C'est « Enregistrer » qui engage.
+            say('prefs.keySaved');
+        });
+
+        document.getElementById('prefs-key-save')?.addEventListener('click', async () => {
+            const { isChatKey } = await import('./remote-relay-protocol.js');
+            const key = (keyField?.value || '').trim().toLowerCase();
+            // Un format inattendu est refuse plutot qu'enregistre : une cle a
+            // moitie valide ne protege rien et en donne l'apparence.
+            if (key && !isChatKey(key)) { say('prefs.keyBad'); return; }
+            if (!current) {
+                current = 'k-' + Date.now();
+                keys = [...keys, { id: current, name: '', key: '' }];
+            }
+            keys = keys.map(k => k.id === current
+                ? { ...k, name: (nameField?.value || '').trim(), key }
+                : k);
+            await store.set('community-keys', keys);
+            await store.set('community-key-current', current);
+            Refresh();
+            say(key ? 'prefs.keySaved' : 'prefs.keyCleared');
+        });
+    }
+
+    /*
+     * Le chemin de ffmpeg. Vide = celui du PATH.
+     *
+     * Sous Linux, ffmpeg coexiste souvent en plusieurs exemplaires
+     * (distribution, snap, flatpak, compilation maison), et celui du PATH
+     * n'est pas forcement celui qui sait encoder en H.264. Pouvoir en designer
+     * un autre est le seul moyen de s'en sortir sans toucher au systeme.
+     */
+    {
+        const field = document.getElementById('prefs-ffmpeg-path');
+        const status = document.getElementById('prefs-ffmpeg-status');
+        if (field) field.value = await store.get('ffmpeg-path') || '';
+        document.getElementById('prefs-ffmpeg-save')?.addEventListener('click', async () => {
+            await store.set('ffmpeg-path', (field?.value || '').trim());
+            // Pas de verification ici : lancer ffmpeg pour voir demanderait de
+            // reproduire les options de l'enregistrement, et c'est la
+            // premiere capture qui dira la verite -- avec, desormais, le
+            // message de ffmpeg lui-meme.
+            if (status) status.textContent = t('prefs.videoSaved');
+        });
+    }
 
     const navLast = await store.get('nav-last') || 'games-fav';
     document.getElementById('nav-' + navLast)?.click();
@@ -185,7 +357,8 @@ async function SelectGame(gameName, opts = {}) {
     document.getElementById('game-detail-empty').style.display = 'none';
     document.getElementById('game-detail-body').style.display  = '';
 
-    document.querySelector('#game-detail .game-title').textContent = config.model['title-en'];
+    document.querySelector('#game-detail .game-title').textContent =
+        gameTitle(config.model, getLocale());
     document.querySelector('#game-detail .game-summary').textContent =
         pickLocalized(config.model.summary, getLocale());
     document.querySelector('#game-detail .game-thumbnail').style.backgroundImage =
@@ -205,6 +378,9 @@ function SetupVisuals(view) {
     const container = document.querySelector('#game-detail .visuals > div');
     container.innerHTML = '';
 
+    // Le minuteur est arrete ET le conteneur vide : eteindre le reglage doit
+    // rendre le fond au calme, pas seulement le rendre transparent.
+    if (!showVisuals) return;
     if (!view.visuals?.['600x600']) return;
     const visuals = [view.visuals['600x600']].flat().map(v => distURL(view.fullPath + '/' + v));
 
@@ -362,6 +538,61 @@ async function FairyMap() {
     return fairyMap;
 }
 
+/**
+ * Ouvre un SGF de go.
+ *
+ * CE QUI EST REFUSE, ET POURQUOI PLUTOT QUE DE CHARGER A MOITIE. Le go de
+ * jocly pose un goban vide et alterne strictement en commencant par Noir. Un
+ * fichier qui commence autrement ne se rejoue pas « presque » : les couleurs
+ * se decalent des le premier coup, les captures ne sont plus les memes, et ce
+ * qui s'affiche est une partie que personne n'a jouee. Un refus nomme vaut
+ * mieux qu'un plateau plausible et faux.
+ *
+ * C'est le cas des parties a handicap, qui posent des pierres avant le premier
+ * coup (AB) et font commencer Blanc -- soit, en pratique, une bonne part des
+ * parties enseignantes et des matchs contre un moteur.
+ *
+ * Les regles, elles, ne bloquent rien : elles ne changent pas le deroulement
+ * d'une partie deja jouee, seulement son comptage final et, a la marge, ce que
+ * le ko autorise. On le signale en console sans refuser le fichier.
+ */
+async function OpenSgf(text, fileName, selected) {
+    const sgf = ParseSgf(text);
+    if (!sgf) return Notify(t('hub.loadFailed'));
+
+    const name = 'go' + sgf.size;
+    if (sgf.height !== sgf.size || !gamesMap[name]) {
+        console.warn('[hub] SGF : goban', sgf.size + 'x' + sgf.height, '— aucun jeu correspondant');
+        return Notify(t('hub.sgfSize', { size: sgf.size + '\u00d7' + sgf.height }));
+    }
+
+    const stones = sgf.setup.black.length + sgf.setup.white.length;
+    if (sgf.handicap || stones || sgf.firstPlayer === 'W' || !sgf.alternates) {
+        console.warn('[hub] SGF : handicap', sgf.handicap, '— pierres posees', stones,
+            '— premier coup', sgf.firstPlayer, '— alternance', sgf.alternates);
+        return Notify(t('hub.sgfHandicap'));
+    }
+    if (!sgf.moves.length) return Notify(t('hub.loadFailed'));
+
+    // Les regles du fichier ne sont pas forcement celles que jocly arbitre.
+    // Elles ne changent pas les coups deja joues, donc la partie se rejoue ;
+    // c'est le score final qui differerait.
+    if (sgf.rules && !/^chinese|^tromp/i.test(sgf.rules))
+        console.info('[hub] SGF : regles', sgf.rules, '— rejouees sous celles du jeu');
+
+    const id = 'sgf-' + Date.now();
+    await store.set('fork:' + id, {
+        book: {
+            moves: sgf.moves,
+            sgf: true,
+            label: sgf.meta.name || sgf.meta.event
+                || (fileName || '').replace(/^.*[/\\]/, '').replace(/\.sgf$/i, '') || 'SGF',
+        },
+    });
+    console.info('[hub] SGF :', sgf.moves.length, 'coups sur', name);
+    return tRpc.call('new_match', name, null, id);
+}
+
 // Choisit le jeu d'un fichier : celui qu'il declare s'il existe dans le
 // catalogue, sinon celui de la fiche affichee. Le fichier fait autorite parce
 // que rejouer sa notation dans un AUTRE jeu ne peut pas marcher -- plateau et
@@ -386,7 +617,18 @@ async function OpenGameFile(text, fileName, hintGame) {
         if (!r.game) return Notify(t('hub.loadNoGame'));
         if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
         const id = 'sol-' + Date.now();
-        await store.set('fork:' + id, { solution });
+        /*
+         * SOLUTION DE PROBLEME ou PARTIE SAUVEGARDEE ? Les deux sont le meme
+         * JSON -- celui de joclyMatch.save() -- et rien dans le fichier ne les
+         * distingue. Ce qui les distingue, c'est d'ou il vient : `hintGame`
+         * n'est pose que pour les exemples de problems/.
+         *
+         * La difference compte : une solution s'ouvre EN PAUSE, pour que l'IA
+         * ne joue pas par-dessus ce qu'on vient d'afficher. Une partie qu'on
+         * recharge, elle, doit reprendre -- sinon personne n'a la main, et
+         * c'est ce qui arrivait a toute sauvegarde ouverte depuis le hub.
+         */
+        await store.set('fork:' + id, { solution, fromProblems: !!hintGame });
         return tRpc.call('new_match', r.game, null, id);
     }
 
@@ -426,6 +668,11 @@ async function OpenGameFile(text, fileName, hintGame) {
         return tRpc.call('new_match', r.game, null, id);
     }
 
+    // 2 quater. SGF : le format des parties de go. Comme les KIF il ne passe
+    //    pas par parse_pjn -- c'est un arbre de noeuds entre parentheses, pas
+    //    du PGN -- et la lecture vit dans book-format.js.
+    if (IsSgf(text)) return OpenSgf(text, fileName, selected);
+
     if (IsChuKif(text)) {
         const kif = ParseKif(text);
         if (!kif) return Notify(t('hub.loadFailed'));
@@ -451,6 +698,7 @@ async function OpenGameFile(text, fileName, hintGame) {
     //    ([JoclyGame] ecrit par Tabulon, [Game] a la main ou par des tiers,
     //    [Variant] par Fairy-Stockfish et les serveurs d'echecs).
     let declared = null;
+    let preludeSetup = null;
     try {
         const matches = await tRpc.call('parse_pjn', text);
         const tags = matches?.[0]?.tags;
@@ -467,11 +715,16 @@ async function OpenGameFile(text, fileName, hintGame) {
             // et le chu shogi n'est joue par aucune variante du moteur.
             const direct = VariantGame(raw);
             const variant = FairyVariantAlias(raw);
-            const mapped = (direct && gamesMap[direct]) ? direct
-                         : variant ? (await FairyMap())[variant] : null;
+            const hit = variant ? (await FairyMap())[variant] : null;
+            const mapped = (direct && gamesMap[direct]) ? direct : (hit?.game || null);
             if (mapped) {
-                console.info('[hub]', raw, '→ jeu Jocly :', mapped);
+                console.info('[hub]', raw, '→ jeu Jocly :', mapped
+                    + (Number.isInteger(hit?.setup) ? ' (arrangement ' + hit.setup + ')' : ''));
                 declared = mapped;
+                // L'arrangement, quand la variante en designe un : c'est la
+                // reponse au prelude, et sans elle la partie se rouvrirait sur
+                // le premier arrangement -- juste de jeu, fausse de regles.
+                preludeSetup = Number.isInteger(hit?.setup) ? hit.setup : null;
             }
         }
     } catch (e) { console.warn('[hub] parse_pjn:', e.message || e); }
@@ -479,7 +732,7 @@ async function OpenGameFile(text, fileName, hintGame) {
     const r = ResolveGame(declared, selected);
     if (!r.game) return Notify(r.unknown ? t('hub.loadUnknownGame') : t('hub.loadNoGame'));
     if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
-    await store.set('book:' + r.game, { fileName, data: text });
+    await store.set('book:' + r.game, { fileName, data: text, preludeSetup });
     tRpc.call('open_book', r.game, fileName, '');
 }
 
@@ -499,7 +752,7 @@ async function OpenVariantsIni(text, fileName) {
     const playable = variants.filter(v => map[v.name.toLowerCase()]);
     console.info('[hub] variants.ini :', variants.length, 'variantes,',
         playable.length, 'jouables par un jeu du catalogue :',
-        playable.map(v => v.name + ' -> ' + map[v.name.toLowerCase()]).join(', '));
+        playable.map(v => v.name + ' -> ' + map[v.name.toLowerCase()].game).join(', '));
 
     SetNav('loadgame');
     document.getElementById('loadgame-pane').style.display = '';
@@ -513,8 +766,11 @@ async function OpenVariantsIni(text, fileName) {
     // Les positions de depart des variantes reconnues deviennent des
     // vignettes lancables, au meme titre que les exemples livres.
     document.getElementById('loadgame-tabs').innerHTML = '';
+    // L'index rend { game, setup } : on ouvre une POSITION, pas une partie,
+    // donc seul le jeu importe ici -- l'arrangement ne sert qu'a rejouer un
+    // fichier de coups.
     RenderSamples(playable.slice(0, 12).map(v => ({
-        game: map[v.name.toLowerCase()],
+        game: map[v.name.toLowerCase()].game,
         kind: 'position',
         fileName: v.name + '.pjn',
         text: '[JoclyGame "' + map[v.name.toLowerCase()] + '"]\n[Event "' + v.name + '"]\n'
@@ -1087,6 +1343,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // courante ne change pas).
     document.getElementById('nav-extensions').addEventListener('click', () => {
         tRpc.call('open_extensions');
+    });
+
+    document.getElementById('nav-display').addEventListener('click', () => {
+        SetNav('display'); document.getElementById('display').style.display = '';
     });
 
     document.getElementById('nav-install').addEventListener('click', () => {

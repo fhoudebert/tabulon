@@ -51,6 +51,9 @@ const match = {
   async abortUserTurn()  { this.pendingUserTurn?.reject(new Error('User input aborted')); this.pendingUserTurn = null; },
   async abortMachineSearch() {},
   userTurn() { return new Promise((resolve, reject) => { this.pendingUserTurn = { resolve, reject }; }); },
+  async playMove(move) { this.played.push(move); this.playedMoves.push(move); this.turn = -this.turn;
+                         return { finished: false, winner: null }; },
+  played: [],
   async save() { return {}; }, async load() {}, async viewControl() { return null; },
 };
 
@@ -100,17 +103,58 @@ skinSel().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await waitFor(() => snap().disabled, 'retour 2D → regrisés');
 assert(video().disabled, 'garde suivie sur chaque changement de skin');
 
-// 4. Boutons rapides à côté des skins (masqués avec la barre, comme les selects)
+/*
+ * 4. Reprendre un coup et recommencer, dans le pied de page.
+ *
+ * Ils y étaient déjà, en DOUBLE : la barre repliable les cachait quand elle
+ * s'ouvrait, d'où une paire quick-* pour garder l'action accessible. La barre
+ * latérale a supprimé l'exclusion, donc le doublon : ce sont désormais les
+ * boutons du pied qui portent les identifiants principaux, et il n'y en a
+ * plus qu'un de chaque.
+ */
 const wrap = document.getElementById('quick-actions-wrap');
 assert(wrap && wrap.classList.contains('player-select-wrap'),
-  'actions rapides dans un player-select-wrap (exclusion barre/footer héritée)');
-document.getElementById('quick-restart').click();
+  'les deux actions restent groupées dans le pied de page');
+assert(!document.getElementById('quick-restart') && !document.getElementById('quick-takeback'),
+  'et les doublons de la barre ont disparu avec elle');
+document.getElementById('button-restart').click();
 await waitFor(() => match.rollbacks.includes(0), 'restart');
-assert(match.rollbacks.at(-1) === 0, 'quick Restart → rollback(0) via le handler de la barre');
+assert(match.rollbacks.at(-1) === 0, 'Recommencer → rollback(0)');
 match.playedMoves = ['a', 'b'];
-document.getElementById('quick-takeback').click();
+document.getElementById('button-takeback').click();
 await waitFor(() => match.rollbacks.length >= 2, 'takeback');
-assert(match.rollbacks.at(-1) === 1, 'quick Take back → rollback (reprise du dernier coup)');
+assert(match.rollbacks.at(-1) === 1, 'Reprendre un coup → rollback (dernier coup)');
+
+/*
+ * Rejouer le dernier coup : le montrer une seconde fois, et finir d'où l'on
+ * part.
+ *
+ * Le bouton ne faisait que RECULER d'un demi-coup. La pièce revenait en
+ * arrière, le coup n'était jamais rejoué, et la partie restait là — une
+ * position en arrière de ce que la boucle et les fenêtres satellites
+ * croyaient. D'où le désaccord constaté : le plateau montrait une position, le
+ * sélecteur de coup en proposait une autre.
+ */
+{
+  match.playedMoves = ['a', 'b', 'c'];
+  match.rollbacks = [];
+  match.played = [];
+  const before = [...match.playedMoves];
+
+  document.getElementById('button-replay').click();
+  await waitFor(() => match.played.length > 0, 'le coup est rejoué');
+
+  // Reculer JUSTE AVANT le dernier, puis le rejouer : c'est ce que « rejouer »
+  // veut dire, et l'animation est tout l'intérêt du bouton.
+  assert(match.rollbacks.at(-1) === before.length - 1, 'on recule juste avant le dernier coup');
+  assert(match.played.at(-1) === before.at(-1), 'et c’est bien lui qu’on rejoue');
+
+  // ET ON FINIT D'OÙ L'ON PART. C'était le défaut : la partie restait un
+  // demi-coup en arrière, sans que rien ne le signale.
+  assert(match.playedMoves.length === before.length,
+    `la partie retrouve sa longueur (${match.playedMoves.length} au lieu de ${before.length})`);
+  assert(match.playedMoves.at(-1) === before.at(-1), 'et son dernier coup');
+}
 
 console.log(`\n${passed} assertions OK — garde 2D + actions rapides validées.`);
 process.exit(0);

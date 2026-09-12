@@ -5,7 +5,7 @@
 
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
-import { BuildPJN, BuildPGN } from './book-format.js';
+import { BuildPJN, BuildPGN, BuildSGF } from './book-format.js';
 import { listen, emit, save as saveDialog, Store } from './tauri-bridge.js';
 import { initI18n, t } from './tabulon-i18n.js';
 
@@ -25,6 +25,12 @@ let moveStrings  = [];  // liste de chaines de coups (ex. ["e4", "e5", ...])
 let initialBoard = null;
 // Qui a joue et resultat, rapportes par play.js : tags [White]/[Black]/[Result].
 let white = null, black = null, result = null;
+// Le camp, et non la couleur : au go PLAYER_A joue les pierres NOIRES, alors
+// que `white` ci-dessus porte son libelle -- un heritage des echecs. L'export
+// SGF nomme des couleurs reelles et se sert de ceux-ci.
+let playerA = null, playerB = null;
+// Renseignes par le go seul (voir getBoardState('score') dans play.js).
+let komi = null, rules = null, margin = null;
 // Probleme de mat, rapporte par play.js : marque a la sauvegarde.
 let tsume = false;
 
@@ -68,6 +74,11 @@ function UpdateHistory(data) {
     white  = data.white  || null;
     black  = data.black  || null;
     result = data.result || null;
+    playerA = data.playerA || null;
+    playerB = data.playerB || null;
+    komi   = data.komi == null ? null : data.komi;
+    rules  = data.rules || null;
+    margin = data.margin == null ? null : data.margin;
     tsume  = !!data.tsume;
     moveStrings = moves.map(m => typeof m === 'string' ? m : (m.toString ? m.toString() : JSON.stringify(m)));
     moveCount   = moveStrings.length;
@@ -103,6 +114,45 @@ function RequestHistory() {
 // Demande a play.js la partie en notation occidentale. Elle se calcule en
 // rejouant la partie, d'ou l'aller-retour plutot qu'un champ joint a chaque
 // rafraichissement de l'Historique.
+/**
+ * Taille du goban d'un jeu de go, ou null si ce n'est pas un go.
+ *
+ * Lue dans le NOM du jeu ("go9", "go13", "go19") : l'Historique n'a pas le
+ * plateau sous la main, seulement la liste des coups, et le nom est la seule
+ * chose qui dise la taille. Un « go » sans chiffre n'existe pas au catalogue,
+ * et un nom qui commence par go sans etre un goban -- s'il en apparaissait un
+ * -- ne repondrait pas au motif.
+ */
+function GoBoardSize(name) {
+    const m = /^go(9|13|19)$/.exec(String(name || ''));
+    return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * Le resultat au format SGF : "B+3.5", "W+R", "0" pour un jigo.
+ *
+ * Tabulon note le resultat a la maniere du PGN ("1-0"), ou 1 est le joueur A
+ * -- c'est-a-dire NOIR au go. L'ecart vient du comptage quand la partie est
+ * allee jusqu'au bout ; sans lui on ecrit le camp seul, ce que le format
+ * accepte, plutot que d'inventer un nombre.
+ */
+function SgfResult(pgn, gap) {
+    if (!pgn || pgn === '*') return null;
+    if (pgn === '1/2-1/2') return '0';
+    const side = pgn === '1-0' ? 'B' : (pgn === '0-1' ? 'W' : null);
+    if (!side) return null;
+    return side + '+' + (gap ? Math.abs(gap) : '');
+}
+
+// Cette fenetre n'a pas de banniere : le titre porte le message le temps
+// qu'il soit lu, puis reprend sa valeur.
+function NoteInTitle(message) {
+    console.warn('[history]', message);
+    const previous = document.title;
+    document.title = message;
+    setTimeout(() => { document.title = previous; }, 6000);
+}
+
 function AskWesternMoves() {
     return new Promise((resolve) => {
         const timer = setTimeout(() => resolve(null), 5000);
@@ -130,16 +180,43 @@ async function SavePJN() {
     // Linux se contentent d'ajouter l'extension sans en retirer d'autre, d'ou
     // le controle ci-dessous qui se fie a ce que le chemin porte REELLEMENT,
     // et non au filtre qu'on croit avoir choisi.
-    const path = await saveDialog({
-        defaultPath: gameName,
-        filters: [
-            { name: 'PJN (Jocly)', extensions: ['pjn'] },
-            { name: 'PGN', extensions: ['pgn'] },
-        ],
-    }).catch(() => null);
+    // Le SGF n'est propose QUE pour le go : c'est le format de ce jeu-la et
+    // d'aucun autre, et l'offrir ailleurs promettrait un fichier qu'on ne
+    // saurait pas ecrire. Il passe en tete pour le go, ou c'est ce que le
+    // destinataire attend -- un PJN de go ne se relit que dans Tabulon.
+    const goSize = GoBoardSize(gameName);
+    const filters = [
+        { name: 'PJN (Jocly)', extensions: ['pjn'] },
+        { name: 'PGN', extensions: ['pgn'] },
+    ];
+    if (goSize) filters.unshift({ name: 'SGF (Go)', extensions: ['sgf'] });
+
+    const path = await saveDialog({ defaultPath: gameName, filters }).catch(() => null);
     if (!path) return;
 
     const event = path.replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, '');
+
+    if (/\.sgf$/i.test(path)) {
+        // Comme pour le PGN, c'est l'extension ECRITE qui decide et non le
+        // filtre : quelqu'un peut taper « partie.sgf » sous le filtre PJN.
+        if (!goSize) { NoteInTitle(t('history.noSgf')); return; }
+        const sgf = BuildSGF(moveStrings, goSize, {
+            komi, rules,
+            application: 'Tabulon',
+            event,
+            // PB est le joueur A -- c'est lui qui pose les pierres noires.
+            playerA, playerB,
+            date: new Date().toISOString().slice(0, 10),
+            result: SgfResult(result, margin),
+        });
+        // BuildSGF rend null sur un jeton qu'il ne sait pas ecrire. Ecrire un
+        // fichier tronque sous l'extension .sgf serait pire que de refuser :
+        // il s'ouvrirait, et montrerait une autre partie.
+        if (!sgf) { console.warn('[history] SGF : coup non convertible'); NoteInTitle(t('history.noSgf')); return; }
+        await tRpc.call('save_text_file', path, sgf)
+            .catch(e => console.warn('[history] save book (sgf) failed:', e));
+        return;
+    }
     if (/\.pgn$/i.test(path)) {
         // C'est l'extension ECRITE qui decide, pas le filtre : l'utilisateur
         // peut taper « partie.pgn » sous le filtre PJN, et c'est son nom qui
@@ -155,14 +232,28 @@ async function SavePJN() {
             console.warn('[history]', t('history.noPgn'));
             // Pas de banniere dans cette fenetre : le titre de la fenetre
             // porte le message le temps qu'il soit lu, puis reprend sa valeur.
-            const previous = document.title;
-            document.title = t('history.noPgn');
-            setTimeout(() => { document.title = previous; }, 6000);
+            NoteInTitle(t('history.noPgn'));
             return;
         }
+        /*
+         * LA BALISE [Variant], et c'est elle qui decide si le fichier sera
+         * relisible ailleurs.
+         *
+         * Le nom Jocly n'a de sens que pour Tabulon : « horde-chess » la ou un
+         * lecteur attend « horde ». play.js repond desormais avec le nom que
+         * declare le niveau Expert du jeu -- celui de Fairy-Stockfish -- et
+         * c'est celui-la qu'on ecrit.
+         *
+         * Faute de mieux on garde le nom Jocly et on le DIT : le fichier reste
+         * juste, ses coups sont bons, il faudra seulement corriger la balise a
+         * la main pour l'ouvrir ailleurs. Le refuser priverait d'export des
+         * parties qui n'ont rien de fautif.
+         */
+        const variant = gameName === 'chu-shogi' ? 'chu' : (data.variant || gameName);
+        if (!data.variant && gameName !== 'chu-shogi')
+            NoteInTitle(t('history.pgnVariant', { variant }));
         const pgn = BuildPGN(data.moves, data.sfen, {
-            event, white, black, result, tsume,
-            variant: gameName === 'chu-shogi' ? 'chu' : gameName,
+            event, white, black, result, tsume, variant,
         });
         await tRpc.call('save_text_file', path, pgn)
             .catch(e => console.warn('[history] save book (pgn) failed:', e));

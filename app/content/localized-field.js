@@ -47,3 +47,28 @@ export function pickLocalized(value, locale, fallback = 'en') {
     }
     return '';
 }
+
+/**
+ * Le titre d'un jeu, dans la langue de l'utilisateur.
+ *
+ * Le manifeste d'un jeu Jocly le declare sous l'une de deux formes :
+ *     "title-en": "10x8 Chess variants"
+ *     "title": { "en": "10x8 Chess variants", "fr": "Echecs en 10x8" }
+ *
+ * La premiere est celle des trois cents jeux existants et reste valable ; la
+ * seconde est celle de `summary` et de `rules`, deja indexees par locale. Les
+ * deux cohabitent, et l'anglais reste le repli.
+ *
+ * UNE FONCTION PLUTOT QU'UN pickLocalized A CHAQUE APPEL : le titre est lu a
+ * sept endroits dans Tabulon -- barres de titre des fenetres, panneau de
+ * detail, listes -- et chacun devait connaitre les DEUX orthographes. Un seul
+ * oubli laissait une fenetre en anglais sans que rien ne le signale.
+ *
+ * @param {Object} model  le `config.model` du jeu, ou une entree du catalogue
+ * @param {string} locale
+ */
+export function gameTitle(model, locale) {
+    if (!model || typeof model !== 'object') return '';
+    const raw = model.title != null ? model.title : model['title-en'];
+    return pickLocalized(raw, locale);
+}

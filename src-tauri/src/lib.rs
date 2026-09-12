@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{engine_cmds, scan_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, seal_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -96,6 +96,7 @@ pub fn run() {
             // ── Fenêtres secondaires ──────────────────────────────────────────
             window_cmds::open_history,
             window_cmds::open_clock,
+            window_cmds::open_chat,
             window_cmds::open_clock_setup,
             window_cmds::open_players,
             window_cmds::open_view_options,
@@ -145,12 +146,23 @@ pub fn run() {
             scan_cmds::scan_probe,
             scan_cmds::scan_search,
             scan_cmds::scan_stop,
+            katago_cmds::katago_probe,
+            katago_cmds::katago_search,
+            katago_cmds::katago_stop,
             peer_cmds::peer_host_start,
             peer_cmds::peer_connect,
             peer_cmds::peer_send,
             peer_cmds::peer_last_message,
             peer_cmds::peer_status,
             peer_cmds::peer_stop,
+            // ── Discussion a distance : sceller / ouvrir ──────────────────────
+            // Le chiffrement vit ici et non dans la webview : crypto.subtle
+            // exige un contexte securise, que rien ne garantit pour tauri://
+            // sous WebKitGTK. Voir seal_cmds.rs.
+            seal_cmds::seal_text,
+            seal_cmds::open_text,
+            seal_cmds::derive_chat_key,
+            seal_cmds::chat_key_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tabulon");

@@ -7,7 +7,8 @@
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
 import { listen, emit } from './tauri-bridge.js';
-import { initI18n, t } from './tabulon-i18n.js';
+import { initI18n, t, getLocale } from './tabulon-i18n.js';
+import { gameTitle } from './localized-field.js';
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);
@@ -21,7 +22,7 @@ const matchId = (function () {
 document.addEventListener('DOMContentLoaded', async () => {
     await initI18n();
     const config = await Jocly.getGameConfig(gameName);
-    await twu.init(`${config.model['title-en']} #${matchId}`);
+    await twu.init(`${gameTitle(config.model, getLocale())} #${matchId}`);
     document.getElementById('button-cancel').addEventListener('click', () => tRpc.close());
 
     if (matchId) {
