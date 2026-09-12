@@ -24,7 +24,7 @@ import {
 } from '../app/content/remote-chat-protocol.js';
 import {
     SEED_KEY, SEED_BYTES, generateSeed, generateChatKey, isSeed, getOrCreateSeed, rotateSeed,
-    makeSealer,
+    makeSealer, resolveInviteChatKey,
 } from '../app/content/remote-secret.js';
 import { isChatKey } from '../app/content/remote-relay-protocol.js';
 import { decodeEnvelope, encodeEnvelope, hasOpponentMoved } from '../app/content/remote-relay-protocol.js';
@@ -311,6 +311,50 @@ console.log('Le scelleur');
     // par l'utilisateur.
     for (const bad of ['', 'trop court', null])
         throws(() => makeSealer(bad, fakeRust), 'clé mal formée refusée : ' + JSON.stringify(bad));
+}
+
+console.log('');
+console.log('La clé d’une invitation reçue, quelle que soit la porte');
+{
+    /*
+     * MISE EN COMMUN, et c'est ce qui se teste ici. Il y a DEUX portes pour
+     * rejoindre une partie -- la fenêtre Invitation et le panneau du hub -- et
+     * une seule faisait ce travail. La même invitation donnait donc une
+     * discussion par l'une et rien par l'autre, sans que rien ne le dise.
+     */
+    const fakeRust = async (cmd, args) => {
+        if (cmd === 'chat_key_id') return args.master.slice(0, 16);
+        if (cmd === 'derive_chat_key') return 'd'.repeat(63) + (args.info === 'm-1' ? '1' : '2');
+        throw new Error('commande inattendue : ' + cmd);
+    };
+    const mine = generateChatKey(), other = generateChatKey();
+    const keyring = [{ key: other, name: 'club' }, { key: mine, name: 'famille' }];
+
+    // Cas 1 : le lien porte une clé (adversaire inconnu). Elle sert telle
+    // quelle, sans aller voir le trousseau.
+    ok(await resolveInviteChatKey({ chatKey: mine, matchId: 'm-1' }, keyring, fakeRust) === mine,
+       'une clé portée par le lien sert telle quelle');
+
+    // Cas 2 : le lien ne porte qu'une EMPREINTE. On retrouve la clé chez nous
+    // et on en dérive celle de la partie -- rien de secret n'a circulé.
+    const derived = await resolveInviteChatKey(
+        { chatKeyId: mine.slice(0, 16), matchId: 'm-1' }, keyring, fakeRust);
+    ok(derived === 'd'.repeat(63) + '1', 'une empreinte connue donne la clé dérivée de la partie');
+    ok(derived !== mine, 'et ce n’est pas la clé de communauté elle-même');
+
+    // La dérivation dépend de la PARTIE : deux parties du même groupe n'ont
+    // pas la même clé.
+    ok(await resolveInviteChatKey({ chatKeyId: mine.slice(0, 16), matchId: 'm-2' }, keyring, fakeRust)
+       !== derived, 'une autre partie du même groupe donne une autre clé');
+
+    // Cas 3 : groupe inconnu, trousseau vide, invitation d'avant cette
+    // version. Pas de discussion -- un état normal, pas une panne.
+    for (const [parsed, ring, what] of [
+        [{ chatKeyId: 'f'.repeat(16), matchId: 'm-1' }, keyring, 'une empreinte inconnue'],
+        [{ chatKeyId: mine.slice(0, 16), matchId: 'm-1' }, null, 'un trousseau absent'],
+        [{ matchId: 'm-1' }, keyring, 'une invitation sans clé ni empreinte'],
+        [null, keyring, 'une invitation illisible'],
+    ]) ok(await resolveInviteChatKey(parsed, ring, fakeRust) === null, what + ' ne donne pas de clé');
 }
 
 console.log('');

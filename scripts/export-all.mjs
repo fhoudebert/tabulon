@@ -33,9 +33,17 @@ export function planExport(index) {
     if (!byModule.has(decl.module)) byModule.set(decl.module, []);
     byModule.get(decl.module).push({
       name,
-      title: decl.title || name,
-      // Le resume peut etre une chaine ou un objet {locale: texte} : le
-      // catalogue est un artefact statique publie tel quel -> anglais.
+      /*
+       * Le titre AUSSI peut etre un objet {locale: texte}, depuis que les
+       * manifestes savent le traduire -- exactement comme le resume juste
+       * en dessous. Il etait pris tel quel, et le tri appelait alors
+       * localeCompare sur un objet : « a.title.localeCompare is not a
+       * function », et l'export s'arretait net.
+       *
+       * Meme regle que pour le resume : le catalogue est un artefact
+       * statique publie tel quel, donc anglais.
+       */
+      title: pickLocalized(decl.title, 'en') || name,
       summary: pickLocalized(decl.summary, 'en'),
     });
   }

@@ -200,16 +200,94 @@ console.log('Pair-à-pair : ne lire que ce qui nous concerne');
     await sleep(20);
     assert(conv.length === 1, 'un état inconnu est ignoré');
 
-    await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'salut' });
+    await chan.send({ kind: ENVELOPE_KIND.CHAT, quick: 'goodGame' });
     assert(sent.some(s => s.cmd === 'peer_send'), 'un message part sur la session TCP');
-    // Pas de scelleur ici, et c’est volontaire : rien ne transite par un
-    // serveur, donc encodeThread n’est pas sur ce chemin.
-    assert(chan.conversation.some(m => m.body === 'salut'), 'et s’affiche tout de suite chez nous');
+    assert(chan.conversation.some(m => m.quick === 'goodGame'), 'et s’affiche tout de suite chez nous');
 
     // Fermer la fenêtre de discussion ne doit PAS couper le lien par lequel
     // passent les coups.
     chan.stop();
     assert(!sent.some(s => s.cmd === 'peer_stop'), 'arrêter la discussion ne ferme pas la session de jeu');
+}
+
+// ── 4 bis. Pair-à-pair : le texte libre doit ARRIVER ─────────────────────────
+//
+// LA RÉGRESSION QUE CE FICHIER LAISSAIT PASSER. Les assertions ci-dessus ne
+// regardaient que l'expéditeur, qui voit toujours son propre message : le
+// trajet A -> B n'était vérifié pour aucun texte libre. Or PeerChatChannel
+// envoyait le corps tel quel, sans le marqueur `enc` que decodeThread exige --
+// donc en face, « message envoyé sans protection — non affiché », clé ou pas.
+// La conversation pair-à-pair était inutilisable là où le relai marchait.
+//
+// On branche ici les deux canaux l'un sur l'autre, ce qui est la seule façon
+// de le voir : le fil TCP est symétrique, chacun lit littéralement ce que
+// l'autre a écrit.
+console.log('');
+console.log('Pair-à-pair : un message scellé traverse le fil');
+{
+    const wire = [];                      // ce qui passe VRAIMENT sur le TCP
+    const listeners = [];
+    const invoke = async (cmd, args) => {
+        if (cmd !== 'peer_send') return;
+        wire.push(args.line);
+        listeners.forEach(cb => cb({ payload: args.line }));
+    };
+    const listen = async (name, cb) => {
+        if (name !== 'tabulon-peer://message') return () => {};
+        listeners.push(cb);
+        return () => { listeners.splice(listeners.indexOf(cb), 1); };
+    };
+
+    const alice = new PeerChatChannel({ side: A, sealer, invokeImpl: invoke, listenImpl: listen });
+    const bob   = new PeerChatChannel({ side: B, sealer, invokeImpl: invoke, listenImpl: listen });
+    await alice.start();
+    await bob.start();
+
+    await alice.send({ kind: ENVELOPE_KIND.CHAT, body: 'à toi de jouer' });
+    await waitFor(() => bob.conversation.length === 1, 'Bob reçoit le message');
+    const received = bob.conversation[0];
+    assert(received.body === 'à toi de jouer', 'Bob lit le texte, et non un cadenas');
+    assert(!received.locked, 'le message n’arrive pas marqué « envoyé sans protection »');
+
+    // Ce qui circule ne doit pas être le texte : le fil TCP n'a pas de TLS, et
+    // passe par autant de machines qu'un autre dès qu'il traverse Internet.
+    assert(!wire.some(l => l.includes('à toi de jouer')),
+        'et le texte n’apparaît pas en clair sur le fil');
+
+    // Un message rapide n'est qu'un identifiant : rien à sceller, et il doit
+    // rester lisible tel quel.
+    await bob.send({ kind: ENVELOPE_KIND.CHAT, quick: 'goodGame' });
+    await waitFor(() => alice.conversation.length === 2, 'le message rapide arrive');
+    assert(alice.conversation.some(m => m.quick === 'goodGame'),
+        'un message rapide traverse sans scellement');
+
+    alice.stop(); bob.stop();
+}
+
+// ── 4 ter. Pair-à-pair sans clé : pas de texte libre non plus ────────────────
+console.log('');
+console.log('Pair-à-pair : pas de clé, pas de texte libre');
+{
+    const sent = [];
+    const invoke = async (cmd, args) => { sent.push({ cmd, args }); };
+    const listen = async () => () => {};
+    const naked = new PeerChatChannel({ side: A, invokeImpl: invoke, listenImpl: listen });
+    await naked.start();
+
+    let failed = false;
+    try { await naked.send({ kind: ENVELOPE_KIND.CHAT, body: 'secret' }); }
+    catch { failed = true; }
+    // Même règle que sur le relai, et pour une raison plus forte encore : sans
+    // scelleur le message partirait en clair ET arriverait illisible. Échouer
+    // ici est la seule issue honnête -- play.js ferme d'ailleurs la saisie.
+    assert(failed, 'un texte libre sans scelleur échoue plutôt que de partir tel quel');
+    assert(!sent.some(s => s.cmd === 'peer_send'), 'et rien n’est envoyé');
+    assert(naked.conversation.length === 0, 'ni retenu dans notre propre fil');
+
+    // La présence, elle, ne porte aucun texte : elle passe sans clé.
+    await naked.send({ kind: ENVELOPE_KIND.PRESENCE, state: PRESENCE.PAUSED });
+    assert(sent.some(s => s.cmd === 'peer_send'), 'un état de présence passe sans clé');
+    naked.stop();
 }
 
 // ── 5. On ne prévient que quand quelque chose a changé ───────────────────────

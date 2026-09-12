@@ -14,6 +14,7 @@ import { ParseSolution, BookGame, BookVariant, VariantGame, FairyGameIndex, Fair
          StripBookMoves, BookCommentary } from './book-format.js';
 import { IsVariantsIni, ReadVariantsIni } from './fairy-variants.js';
 import { parseInvitationUrl } from './remote-relay-protocol.js';
+import { resolveInviteChatKey } from './remote-secret.js';
 import { joinPeerMatch } from './remote-peer-channel.js';
 
 // Réécrit un chemin d'asset vers le dist externe si actif (window.__distURL
@@ -1083,9 +1084,23 @@ function InitInvitationPane() {
 
     // Même dépôt "invite:{id}" + new_match(..., inviteId) que invitation.js :
     // play.js lit ce store au démarrage.
-    async function startMatch({ gameName, matchId, relayUrl, player, peer }) {
+    /*
+     * chatKey / chatKeyId VOYAGENT AUSSI.
+     *
+     * Ils ne le faisaient pas : ce panneau ne recopiait que le strict
+     * necessaire au jeu, et la cle de discussion -- pourtant presente dans le
+     * lien (fragment) comme dans le code pair-a-pair -- restait sur le pas de
+     * la porte. La partie demarrait donc sans discussion possible alors que
+     * l'hote en avait propose une, et la meme invitation ouverte depuis la
+     * FENETRE Invitation marchait alors qu'elle echouait depuis ici. Les deux
+     * portes doivent deposer la meme chose.
+     */
+    async function startMatch({ gameName, matchId, relayUrl, player, peer, chatKey = null, chatKeyId = null }) {
         const inviteId = 'inv-' + Date.now();
-        await store.set('invite:' + inviteId, { matchId, relayUrl, gameName, player, creator: false, peer: !!peer });
+        await store.set('invite:' + inviteId, {
+            matchId, relayUrl, gameName, player, creator: false, peer: !!peer,
+            chatKey: chatKey || null, chatKeyId: chatKeyId || null,
+        });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
     }
 
@@ -1093,7 +1108,12 @@ function InitInvitationPane() {
         const parsed = parseInvitationUrl(urlInput.value || '');
         if (!parsed) { setStatus(joinStatus, t('invitation.invalidLink'), 'fail'); return; }
         setStatus(joinStatus, '');
-        try { await startMatch(parsed); }
+        // Meme resolution que la fenetre Invitation : cle du fragment, ou cle
+        // de communaute designee par son empreinte et derivee ici.
+        try {
+            const keys = await store.get('community-keys').catch(() => null);
+            await startMatch({ ...parsed, chatKey: await resolveInviteChatKey(parsed, keys) });
+        }
         catch (e) {
             console.warn('[hub] join invitation failed:', e.message || e);
             setStatus(joinStatus, String(e.message || e), 'fail');
@@ -1105,8 +1125,9 @@ function InitInvitationPane() {
         if (!raw.trim()) { setStatus(peerStatus, t('invitation.peerInvalidCode'), 'fail'); return; }
         setStatus(peerStatus, t('invitation.peerConnecting'), '');
         try {
-            const { gameName, token } = await joinPeerMatch(raw);
-            await startMatch({ gameName, matchId: 'p2p:' + token.slice(0, 12), player: 'b', peer: true });
+            const { gameName, token, chatKey } = await joinPeerMatch(raw);
+            await startMatch({ gameName, matchId: 'p2p:' + token.slice(0, 12), player: 'b',
+                peer: true, chatKey });
             setStatus(peerStatus, '');
         } catch (e) {
             console.warn('[hub] peer join failed:', e.message || e);

@@ -183,14 +183,32 @@ export function newMessage({ kind, side, body = null, quick = null, state = null
 export async function encodeThread(messages, { sealer = null } = {}) {
     if (!Array.isArray(messages)) throw new Error('encodeThread: liste attendue');
     const out = [];
-    for (const m of messages) {
-        if (!requiresSeal(m)) { out.push(m); continue; }
-        if (!sealer)
-            throw new Error('encodeThread: un message de discussion ne peut pas partir en clair '
-                + '(aucun sealer fourni) -- voir remote-secret.js');
-        out.push({ ...m, body: await sealer.seal(m.body), enc: 1 });
-    }
+    for (const m of messages) out.push(await sealMessage(m, sealer));
     return JSON.stringify({ v: THREAD_VERSION, msgs: out });
+}
+
+/**
+ * La forme QUI CIRCULE d'un message : scellée si c'est du texte libre, telle
+ * quelle sinon.
+ *
+ * Sortie d'encodeThread parce que le pair-à-pair envoie ses messages UN PAR UN
+ * -- il n'a pas de fil à déposer -- et doit pourtant appliquer exactement la
+ * même règle. Deux règles de scellement écrites séparément finiraient par
+ * diverger, et la divergence a déjà eu lieu : un corps envoyé en clair sur le
+ * fil TCP arrive chez l'autre marqué `unsealed`, donc affiché « message envoyé
+ * sans protection », ce qui rendait le texte libre inutilisable en
+ * pair-à-pair.
+ *
+ * Le marqueur `enc` n'est pas décoratif : decodeThread refuse d'afficher un
+ * corps qui ne l'a pas. C'est voulu -- sans lui, rien ne distinguerait un
+ * correspondant mal configuré d'un message qu'on a le droit de lire.
+ */
+export async function sealMessage(message, sealer = null) {
+    if (!requiresSeal(message)) return message;
+    if (!sealer)
+        throw new Error('sealMessage: un message de discussion ne peut pas partir en clair '
+            + '(aucun sealer fourni) -- voir remote-secret.js');
+    return { ...message, body: await sealer.seal(message.body), enc: 1 };
 }
 
 /**

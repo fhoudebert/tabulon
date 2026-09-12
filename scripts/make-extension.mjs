@@ -128,6 +128,9 @@ export function buildManifest(gameName, collected, exportedBy = 'make-extension.
     type: 'game',
     game: gameName,
     module: collected.module,
+    // Le titre reste tel que le manifeste l'ecrit -- chaine ou objet par
+    // locale : ce fichier DECRIT une extension, il ne l'affiche pas, et
+    // reduire ici perdrait les traductions pour celui qui l'installera.
     title: collected.declaration.title || gameName,
     summary: collected.declaration.summary || '',
     declaration: collected.declaration,

@@ -194,3 +194,45 @@ export async function chatKeyId(master, invokeImpl = null) {
 export function isChatKeyId(value) {
     return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value);
 }
+
+/**
+ * La cle de discussion d'une invitation qu'on REJOINT.
+ *
+ * Une invitation porte l'un ou l'autre, jamais les deux : une cle (adversaire
+ * inconnu, tiree au hasard et transportee par le fragment du lien) ou
+ * l'EMPREINTE du trousseau a employer (adversaire de la meme communaute). Dans
+ * le second cas la cle ne circule pas du tout : on cherche parmi les notres
+ * celle qui porte cette empreinte -- le nom qu'on lui a donne n'a aucune
+ * importance, c'est la cle elle-meme qui la produit -- et on en derive celle de
+ * la partie.
+ *
+ * ICI PLUTOT QUE DANS LA FENETRE INVITATION parce qu'il y a DEUX portes pour
+ * rejoindre une partie : cette fenetre, et le panneau Invitation du hub. La
+ * seconde ne faisait pas ce travail, et une meme invitation ouverte par l'une
+ * donnait une discussion, par l'autre rien -- sans que rien ne le dise.
+ *
+ * Le trousseau est passe en ARGUMENT plutot que relu ici : ce module ne connait
+ * pas le store, et une fonction qui ne lit rien se teste sans en simuler un.
+ *
+ * @param {{chatKey?:string, chatKeyId?:string, matchId:string}} parsed
+ * @param {Array<{key:string}>} communityKeys - contenu de la preference
+ *   `community-keys`, tel quel.
+ * @returns {Promise<string|null>} null = pas de discussion pour cette partie,
+ *   ce qui est un etat normal (invitation ancienne, groupe inconnu).
+ */
+export async function resolveInviteChatKey(parsed, communityKeys, invokeImpl = null) {
+    if (!parsed) return null;
+    if (parsed.chatKey) return parsed.chatKey;
+    if (!parsed.chatKeyId || !Array.isArray(communityKeys)) return null;
+    for (const entry of communityKeys) {
+        if (!entry?.key) continue;
+        try {
+            if (await chatKeyId(entry.key, invokeImpl) !== parsed.chatKeyId) continue;
+            return await deriveChatKey(entry.key, parsed.matchId, invokeImpl);
+        } catch (e) {
+            console.warn('[remote-secret] trousseau illisible :', e.message || e);
+        }
+    }
+    console.info('[remote-secret] aucune cle de communaute ne correspond a cette invitation');
+    return null;
+}
