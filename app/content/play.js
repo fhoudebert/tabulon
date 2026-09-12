@@ -2057,11 +2057,49 @@ document.addEventListener('DOMContentLoaded', async () => {
         DeclarePresence(PRESENCE.BACK);
     });
 
+    /*
+     * REJOUER LE DERNIER COUP : le montrer une seconde fois, et rien d'autre.
+     *
+     * Ce bouton ne faisait que RECULER d'un demi-coup. La piece revenait en
+     * arriere, le coup n'etait jamais rejoue, et la partie restait la -- une
+     * position en arriere de ce que la boucle et les fenetres satellites
+     * croyaient. D'ou le desaccord constate : le plateau montrait une position,
+     * le selecteur de coup en proposait une autre.
+     *
+     * Deux choses manquaient, et la seconde est celle qui abime la partie :
+     *
+     *   1. le coup n'etait pas REJOUE. « Rejouer » veut dire le remontrer,
+     *      donc revenir juste avant puis le jouer de nouveau, animation
+     *      comprise -- et finir exactement d'ou l'on partait.
+     *   2. rien n'etait REARME. Un tour humain en cours pointe sur la position
+     *      qu'il a recue ; la deplacer sous lui laisse une machine a etats
+     *      accrochee a un plateau qui n'existe plus. C'est ce que takeback et
+     *      restart font depuis toujours, et que celui-ci ne faisait pas.
+     *
+     * Le nombre de coups est le meme au depart et a l'arrivee : rien a
+     * resynchroniser cote distant, et rien a annoncer aux satellites.
+     */
     btn('button-replay', async () => {
         if (!joclyMatch) return;
-        const moves = await joclyMatch.getPlayedMoves();
-        if (moves?.length > 0)
-            await joclyMatch.rollback(moves.length - 1).catch(() => {});
+        const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+        const n = moves?.length || 0;
+        if (n === 0) return;
+
+        // La recherche machine d'abord : reculer sous une recherche en cours
+        // la ferait aboutir sur une position qui n'est plus la.
+        await joclyMatch.abortMachineSearch().catch(() => {});
+        await joclyMatch.abortUserTurn().catch(() => {});
+
+        await joclyMatch.rollback(n - 1).catch(() => {});
+        // Et on le rejoue : c'est tout l'objet du bouton. En cas d'echec, on
+        // ne laisse PAS la partie un demi-coup en arriere -- mieux vaut une
+        // animation manquee qu'une position fausse.
+        await joclyMatch.playMove(moves[n - 1]).catch(async (e) => {
+            console.warn('[play] rejeu impossible :', e.message || e);
+            await joclyMatch.rollback(n).catch(() => {});
+        });
+
+        await rearmAfterPositionChange();
     });
 
     // Save : équivalent du download JSON de JoclyBoard. Le `data:` URI +

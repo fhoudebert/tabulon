@@ -51,6 +51,9 @@ const match = {
   async abortUserTurn()  { this.pendingUserTurn?.reject(new Error('User input aborted')); this.pendingUserTurn = null; },
   async abortMachineSearch() {},
   userTurn() { return new Promise((resolve, reject) => { this.pendingUserTurn = { resolve, reject }; }); },
+  async playMove(move) { this.played.push(move); this.playedMoves.push(move); this.turn = -this.turn;
+                         return { finished: false, winner: null }; },
+  played: [],
   async save() { return {}; }, async load() {}, async viewControl() { return null; },
 };
 
@@ -121,6 +124,37 @@ match.playedMoves = ['a', 'b'];
 document.getElementById('button-takeback').click();
 await waitFor(() => match.rollbacks.length >= 2, 'takeback');
 assert(match.rollbacks.at(-1) === 1, 'Reprendre un coup → rollback (dernier coup)');
+
+/*
+ * Rejouer le dernier coup : le montrer une seconde fois, et finir d'où l'on
+ * part.
+ *
+ * Le bouton ne faisait que RECULER d'un demi-coup. La pièce revenait en
+ * arrière, le coup n'était jamais rejoué, et la partie restait là — une
+ * position en arrière de ce que la boucle et les fenêtres satellites
+ * croyaient. D'où le désaccord constaté : le plateau montrait une position, le
+ * sélecteur de coup en proposait une autre.
+ */
+{
+  match.playedMoves = ['a', 'b', 'c'];
+  match.rollbacks = [];
+  match.played = [];
+  const before = [...match.playedMoves];
+
+  document.getElementById('button-replay').click();
+  await waitFor(() => match.played.length > 0, 'le coup est rejoué');
+
+  // Reculer JUSTE AVANT le dernier, puis le rejouer : c'est ce que « rejouer »
+  // veut dire, et l'animation est tout l'intérêt du bouton.
+  assert(match.rollbacks.at(-1) === before.length - 1, 'on recule juste avant le dernier coup');
+  assert(match.played.at(-1) === before.at(-1), 'et c’est bien lui qu’on rejoue');
+
+  // ET ON FINIT D'OÙ L'ON PART. C'était le défaut : la partie restait un
+  // demi-coup en arrière, sans que rien ne le signale.
+  assert(match.playedMoves.length === before.length,
+    `la partie retrouve sa longueur (${match.playedMoves.length} au lieu de ${before.length})`);
+  assert(match.playedMoves.at(-1) === before.at(-1), 'et son dernier coup');
+}
 
 console.log(`\n${passed} assertions OK — garde 2D + actions rapides validées.`);
 process.exit(0);
