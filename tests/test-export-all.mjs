@@ -39,6 +39,35 @@ assert(plan.groups[1].games.map(g => g.name).join(',') === 'beta,gamma,zeta',
   'jeux triés par titre (insensible à la casse), départagés par nom');
 assert(plan.groups[0].games[0].summary === '', 'summary absent → chaîne vide');
 
+/*
+ * LE TITRE PEUT ÊTRE UN OBJET, depuis que les manifestes savent le traduire —
+ * exactement comme le résumé. Il était repris tel quel, et le tri appelait
+ * alors localeCompare dessus : « a.title.localeCompare is not a function », et
+ * l'export entier s'arrêtait.
+ *
+ * Le catalogue est un artefact statique publié tel quel : anglais, comme le
+ * résumé.
+ */
+{
+  const localized = planExport({
+    delta:   { title: { en: 'Delta chess', fr: 'Échecs Delta' }, module: 'm3' },
+    epsilon: { title: 'Epsilon',                                 module: 'm3' },
+    zeta2:   { title: { fr: 'Zêta' },                            module: 'm3' },
+  });
+  const games = localized.groups[0].games;
+  assert(games.find(g => g.name === 'delta').title === 'Delta chess',
+    'un titre traduit est réduit à l’anglais');
+  assert(games.find(g => g.name === 'epsilon').title === 'Epsilon',
+    'un titre simple passe inchangé');
+  // Sans anglais, on retombe sur ce qu'il y a plutôt que sur rien : une ligne
+  // de catalogue sans titre serait pire qu'une ligne dans une autre langue.
+  assert(games.find(g => g.name === 'zeta2').title === 'Zêta',
+    'à défaut d’anglais, la langue disponible');
+  // Et le tri fonctionne, ce qui était tout le problème.
+  assert(games.map(g => g.name).join(',') === 'delta,epsilon,zeta2',
+    'le tri par titre ne casse plus');
+}
+
 // ── 2. Briques HTML pures ────────────────────────────────────────────────────
 assert(escapeHtml(`<a b="c&'d">`) === '&lt;a b=&quot;c&amp;&#39;d&quot;&gt;', 'escapeHtml : 5 caractères');
 assert(formatSize(512) === '512 o' && formatSize(2048) === '2.0 Ko'

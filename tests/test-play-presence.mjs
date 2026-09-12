@@ -199,7 +199,11 @@ assert(true, 'le bouton Reprendre annonce le retour');
     await mockTauri.event.emit(`play-req:9:get-chat`, {});
     await waitFor(() => pushed !== null, 'la fenêtre reçoit la conversation');
     assert(Array.isArray(pushed.conversation), 'avec le fil');
-    assert(pushed.canWrite === true, 'et le droit d’écrire — ici pair-à-pair, rien ne transite par un serveur');
+    // Le droit d'écrire tient à la CLE, pair-à-pair compris : le fil TCP n'a
+    // pas de TLS, et surtout un corps non scellé arrive en face marqué
+    // « envoyé sans protection » et ne s'y lit jamais. Cette invitation en
+    // porte une, donc la saisie est ouverte.
+    assert(pushed.canWrite === true, 'et le droit d’écrire, puisque l’invitation porte une clé');
 }
 
 // 6. La pastille de messages non lus.

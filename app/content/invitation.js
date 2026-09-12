@@ -20,7 +20,7 @@ import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, httpFetch } from './tauri-bridge.js';
 import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
-import { generateChatKey, deriveChatKey, chatKeyId } from './remote-secret.js';
+import { generateChatKey, deriveChatKey, chatKeyId, resolveInviteChatKey } from './remote-secret.js';
 import { hostPeerMatch, joinPeerMatch } from './remote-peer-channel.js';
 
 const selectedGame = new URLSearchParams(window.location.search).get('game') || null;
@@ -147,24 +147,12 @@ document.addEventListener('DOMContentLoaded', async () => {
      * de coller une cle a la main si besoin.
      */
     async function joinChatKey(parsed) {
-        if (parsed.chatKey) return parsed.chatKey;
-        if (!parsed.chatKeyId) return null;
         const keys = await store?.get('community-keys').catch(() => null);
-        if (!Array.isArray(keys)) return null;
-        for (const entry of keys) {
-            if (!entry?.key) continue;
-            try {
-                if (await chatKeyId(entry.key) !== parsed.chatKeyId) continue;
-                return await deriveChatKey(entry.key, parsed.matchId);
-            } catch (e) {
-                console.warn('[invitation] trousseau illisible :', e.message || e);
-            }
-        }
-        console.info('[invitation] aucune cle de communaute ne correspond a cette invitation');
-        return null;
+        return resolveInviteChatKey(parsed, keys);
     }
 
-    async function startMatch({ gameName, matchId, relayUrl, player, creator, peer, chatKey = null }) {
+    async function startMatch({ gameName, matchId, relayUrl, player, creator, peer,
+                               chatKey = null, chatKeyId: kid = null }) {
         const inviteId = 'inv-' + Date.now();
         /*
          * La cle de discussion est rangee AVEC l'invitation, et nulle part
@@ -174,10 +162,18 @@ document.addEventListener('DOMContentLoaded', async () => {
          * Absente = pas de discussion pour cette partie. C'est un etat normal,
          * pas une panne : une invitation d'avant cette version, ou un hote qui
          * n'en a pas voulu.
+         *
+         * chatKeyId, l'EMPREINTE du trousseau employe, est rangee a cote :
+         * play.js la lit deja (invite.chatKeyId) pour dire a la fenetre de
+         * discussion LAQUELLE des cles de communaute sert a cette partie.
+         * Personne ne l'ecrivait, donc la liste ne preselectionnait jamais
+         * rien -- alors que c'est exactement la question qu'on se pose quand
+         * on ne lit pas son adversaire.
          */
         await store.set('invite:' + inviteId, {
             matchId, relayUrl, gameName, player,
             creator: !!creator, peer: !!peer, chatKey: chatKey || null,
+            chatKeyId: kid || null,
         });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
         tRpc.close();
@@ -219,7 +215,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b',
             chatKey: derived ? null : chatKey, chatKeyId: derived ? kid : null });
         if (!link) { setStatus(createStatus, t('players.testFail'), 'fail'); return; }
-        created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true, chatKey };
+        created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true,
+            chatKey, chatKeyId: derived ? kid : null };
         // Le lien s'est construit, donc l'adresse du relai est au moins bien
         // formee. On la retient pour la prochaine partie.
         await remember({ relayUrl });

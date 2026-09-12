@@ -241,15 +241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     $('chat-key-new')?.addEventListener('click', async () => {
         const { generateChatKey } = await import('./remote-secret.js');
-        // Les deux boutons ne servent que faute de mieux : quand aucune cle de
-    // communaute n'est enregistree, il ne reste qu'a en fabriquer une et a la
-    // transmettre a la main. Des qu'un trousseau existe, la liste au-dessus
-    // fait le travail, et deux boutons de plus ne feraient qu'inviter a
-    // casser ce qui marche.
-    const manual = $('chat-key-row');
-    if (manual) manual.style.display = ($('chat-keyring')?.options.length ? 'none' : '');
-
-    const field = $('chat-key-input');
+        const field = $('chat-key-input');
         if (!field) return;
         try { field.value = generateChatKey(); } catch (e) {
             console.warn('[chat] pas de cle :', e.message || e);

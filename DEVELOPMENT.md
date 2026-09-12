@@ -303,6 +303,57 @@ the development history.
   gates access, the moves travel in clear. The host's public IP, when
   provided, is embedded in the code — share it accordingly.
 
+### Which way the board faces
+
+A remote match is opened **seen from the side you play**: the invitation
+says which one (`player` is the *local* side), and `play.js` reads it
+*before* `attachElement()` so the view is built the right way round
+rather than flipped afterwards — a post-attach flip is visible on screen
+and leaves the pending turn armed on the old view. It overrides the
+per-game stored `viewAs` (the side you play is a fact of *this* match,
+the preference talks about local games) and is deliberately **not**
+written back to `view-options:<game>`, so the next local game of that
+game is unaffected. Jocly ignores `viewAs` for games whose view is not
+`switchable`, so nothing special is needed for those. Fixture:
+`tests/test-play-viewas.mjs`.
+
+### Conversation (chat, presence, nudge)
+
+- A **separate channel** from the move channel (`ChatChannel`, with
+  `RelayChatChannel` and `PeerChatChannel`): both relays are
+  last-write-wins on a match id, so a message written into the same key
+  would overwrite a move not yet read. On a relay each player writes
+  **only their own thread** (`chatMidFor` → `<matchId>-ca` / `-cb`) and
+  reads only the other's, which removes concurrency entirely; threads are
+  merged and deduplicated by message id (`mergeThreads`).
+- **Free text is sealed, on both transports.** `sealMessage()` is the
+  single rule: a chat message carrying a `body` travels sealed and
+  carries `enc:1`, and `decodeThread()` refuses to display a body
+  lacking that marker (it shows as a locked message, `reason:'unsealed'`,
+  rather than silently vanishing). Peer-to-peer used to skip sealing on
+  the grounds that nothing transits a server — which made free text
+  **unusable** there, key or not: every message arrived at the other end
+  as "sent unprotected". It is sealed there too now, and the reasoning
+  was wrong in the first place: the TCP stream has no TLS, so over the
+  Internet it is the transport that protects least. Sealing itself is in
+  Rust (`seal_cmds.rs`): `crypto.subtle` needs a secure context, which
+  `tauri://` under WebKitGTK does not guarantee.
+- Consequently **no key means no free text** on either transport: the
+  input is closed and says why, rather than letting the player type
+  messages the opponent would never read. Quick messages and presence
+  flags travel as *identifiers* translated by the reader, carry nothing
+  personal, and therefore need no key — they work in a keyless match,
+  which is the point of "I'm taking a break".
+- **Where the key comes from**: the fragment of the invitation link, or
+  the peer invitation code, or a *community key* designated by its
+  fingerprint (`chatKeyId`) — the key itself never circulates then, both
+  sides derive the match key from what they already have.
+  `resolveInviteChatKey()` (in `remote-secret.js`) does that resolution
+  and is shared by **both** doors into a match, the Invitation window and
+  the hub's Invitation panel; the panel used to drop the key entirely, so
+  the same invitation gave a conversation through one door and nothing
+  through the other.
+
 ### Validation and open items
 
 The Rust transport is exercised by `cargo test` with a **real TCP

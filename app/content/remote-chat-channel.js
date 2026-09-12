@@ -30,15 +30,23 @@
 // ── En pair-à-pair : rien à stocker ──────────────────────────────────────────
 //
 // PeerChatChannel envoie la ligne sur la session TCP et garde localement ce
-// qu'il a vu passer. Rien ne transite par un serveur, donc la question du
-// chiffrement ne se pose pas -- mais le flux est en clair (pas de TLS), ce que
-// remote-peer-channel.js documente déjà : hors réseau de confiance, une
-// conversation pair-à-pair n'est pas confidentielle non plus.
+// qu'il a vu passer. Rien ne transite par un serveur -- mais le flux est en
+// clair (pas de TLS), ce que remote-peer-channel.js documente déjà : sur
+// Internet, à travers une redirection de port, une conversation pair-à-pair
+// traverse autant de machines qu'une autre.
+//
+// LE TEXTE LIBRE EST DONC SCELLÉ ICI AUSSI, par la même règle que sur le relai
+// (sealMessage). Ce n'était pas le cas : le message partait tel quel, et comme
+// decodeThread refuse un corps sans marqueur `enc`, il s'affichait en face
+// « message envoyé sans protection — non affiché ». Le texte libre était donc
+// inutilisable en pair-à-pair, clé ou pas -- alors qu'il marchait par relai.
+// Le scellement n'est pas un supplément : c'est ce que le format exige, et le
+// pair-à-pair est précisément le cas où le transport ne protège rien.
 
 import { httpFetch, invoke as tauriInvoke, listen as tauriListen } from './tauri-bridge.js';
 import { buildSaveBody, buildLoadBody, ENVELOPE_KIND } from './remote-relay-protocol.js';
 import {
-    chatMidFor, newMessage, encodeThread, decodeThread, mergeThreads,
+    chatMidFor, newMessage, encodeThread, decodeThread, mergeThreads, sealMessage,
 } from './remote-chat-protocol.js';
 
 /**
@@ -190,12 +198,18 @@ export class PeerChatChannel extends ChatChannel {
     /**
      * @param {object} opts
      * @param {1|-1} opts.side
+     * @param {{seal:Function,open:Function}} [opts.sealer] - MÊME rôle que sur
+     *   le relai : sans lui, un message de texte libre est refusé à l'envoi
+     *   plutôt que d'arriver illisible en face. La clé vient du code
+     *   d'invitation pair-à-pair, qui la transporte déjà (voir
+     *   remote-peer-protocol.js).
      * @param {Function} [opts.invokeImpl] / [opts.listenImpl] - injectables
      *   pour les tests, comme PeerChannel.
      */
-    constructor({ side, invokeImpl = tauriInvoke, listenImpl = tauriListen }) {
+    constructor({ side, sealer = null, invokeImpl = tauriInvoke, listenImpl = tauriListen }) {
         super();
         this._side = side;
+        this._sealer = sealer;
         this._invoke = invokeImpl;
         this._listen = listenImpl;
         this._unlisteners = [];
@@ -222,11 +236,18 @@ export class PeerChatChannel extends ChatChannel {
 
     async send({ kind, body = null, quick = null, state = null }) {
         const msg = newMessage({ kind, side: this._side, body, quick, state });
-        this._mine = [...this._mine, msg];
+        /*
+         * SCELLER D'ABORD, RETENIR ENSUITE, même raisonnement que sur le relai
+         * : un message que le scellement refuse ne doit laisser aucune trace
+         * dans notre fil, sinon il s'afficherait chez nous comme s'il était
+         * parti.
+         */
+        const wire = await sealMessage(msg, this._sealer);
+        this._mine = [...this._mine, msg];   // en clair CHEZ NOUS : c'est ce qu'on relit
         this._publish();
         // Un message par ligne, comme les coups : le transport Rust relaie des
         // lignes et ne regarde pas ce qu'elles contiennent.
-        await this._invoke('peer_send', { line: JSON.stringify(msg) });
+        await this._invoke('peer_send', { line: JSON.stringify(wire) });
         return msg;
     }
 
@@ -243,7 +264,8 @@ export class PeerChatChannel extends ChatChannel {
         // Relu par decodeThread pour n'accepter qu'un message bien formé --
         // la même porte que sur le relai, plutôt qu'une seconde validation
         // écrite à part qui divergerait.
-        const [msg] = await decodeThread(JSON.stringify({ msgs: [data] }));
+        const [msg] = await decodeThread(JSON.stringify({ msgs: [data] }),
+            { sealer: this._sealer });
         if (!msg) return;
         // Un message que NOUS avons écrit ne revient pas : le transport est
         // direct, chacun n'entend que l'autre. Le filtre est là par sûreté --

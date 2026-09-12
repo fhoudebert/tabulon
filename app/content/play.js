@@ -282,11 +282,22 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
         catch (e) { console.warn('[play] cle de discussion inutilisable :', e.message || e); }
     }
     chatChannel = peer
-        ? new PeerChatChannel({ side: localSide })
+        ? new PeerChatChannel({ side: localSide, sealer })
         : new RelayChatChannel({
             relayUrl, matchId: remoteMatchId, side: localSide, sealer,
         });
-    chatSealed = !!sealer || !!peer;   // en pair-a-pair, rien ne transite par un serveur
+    /*
+     * LE TEXTE LIBRE DEMANDE UNE CLE, PAIR-A-PAIR COMPRIS.
+     *
+     * Le pair-a-pair en etait dispense -- « rien ne transite par un serveur ».
+     * C'etait faux deux fois : le fil TCP n'a pas de TLS, et surtout le format
+     * refuse en face un corps non scelle (decodeThread le marque `unsealed`).
+     * Ouvrir la saisie sans cle revenait donc a laisser taper des messages que
+     * l'autre voyait « envoyes sans protection » et ne lisait jamais. En
+     * pair-a-pair la cle vient du code d'invitation, donc le cas normal en a
+     * une ; s'il n'y en a pas, mieux vaut fermer la saisie en le disant.
+     */
+    chatSealed = !!sealer;
     chatChannel.onConversation(OnConversation);
     chatChannel.start().catch(e => console.warn('[play] discussion indisponible :', e.message || e));
     // Le bouton n'apparait qu'ici : en partie locale il n'y a personne a qui
@@ -2270,6 +2281,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             .catch(e => console.warn('[play] snapshot save failed:', e));
     });
 
+    /*
+     * L'INVITATION EST RELUE ICI, AVANT QUE LA VUE EXISTE.
+     *
+     * Elle ne servait que tout en bas, une fois le plateau deja dessine -- or
+     * c'est elle qui dit quel camp on joue, et un plateau se regarde de SON
+     * cote. Le joueur B ouvrait donc sa partie vue de chez A : les pieces qui
+     * avancent vont vers lui, ce qui est exactement le contraire de ce qu'on
+     * attend, et il fallait passer par « Options de vue > Voir en tant que »
+     * a chaque partie.
+     *
+     * Relue et non consommee : l'entree du store n'est effacee qu'au bout du
+     * chemin, la ou elle l'a toujours ete.
+     */
+    const invite = inviteId
+        ? await store?.get('invite:' + inviteId).catch(() => null) : null;
+    const inviteValid = !!(invite?.matchId && (invite?.relayUrl || invite?.peer));
+    // 'player' est le cote qu'on joue LOCALEMENT (voir invitation.js).
+    const inviteLocalSide = inviteValid
+        ? (invite.player === 'b' ? Jocly.PLAYER_B : Jocly.PLAYER_A) : null;
+
     // Init Jocly
     console.info('[play] creating Jocly match for', gameName);
     joclyMatch = await Jocly.createMatch(gameName);
@@ -2289,6 +2320,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, fullConfig?.view?.defaultOptions || {}, storedOptions || {}, viewOptionsFromUrl || {});
     if (defaultSkin && !skins.find(s => s.name === viewOptions.skin))
         viewOptions.skin = defaultSkin;
+    /*
+     * EN PARTIE A DISTANCE, ON REGARDE DE SON COTE.
+     *
+     * Pose APRES tout le reste, donc au-dessus de l'option enregistree pour ce
+     * jeu : le camp qu'on joue est un fait de CETTE partie, et il l'emporte sur
+     * une preference qui, elle, parle des parties locales. Le cas A est pose
+     * comme le cas B -- sans quoi un « voir en tant que B » garde d'une partie
+     * precedente ferait jouer A depuis la place de son adversaire.
+     *
+     * Et ce n'est PAS reecrit dans le store : la partie suivante, locale,
+     * retrouverait sinon une orientation qu'elle n'a jamais demandee. Jocly
+     * ignore viewAs pour un jeu dont la vue n'est pas retournable
+     * (config.view.switchable), donc rien a garder de ce cote non plus.
+     */
+    if (inviteLocalSide !== null) viewOptions.viewAs = inviteLocalSide;
 
     const gameArea = document.querySelector('.game-area');
     if (!gameArea) throw new Error('[play] .game-area not found in DOM');
@@ -2617,11 +2663,12 @@ async function BookReplay(book) {
     // est donc distant, avec le codec compatible control.js.
     console.info('[play] inviteId depuis l\'URL :', inviteId);
     if (inviteId) {
-        const invite = await store?.get('invite:' + inviteId).catch(() => null);
+        // Deja lue avant la creation de la vue : c'est elle qui a decide de
+        // quel cote le plateau se regarde (voir inviteLocalSide).
         console.info('[play] invite lu depuis le store :', invite);
-        if (invite?.matchId && (invite?.relayUrl || invite?.peer)) {
-            const remoteSide = invite.player === 'b' ? Jocly.PLAYER_A : Jocly.PLAYER_B;
-            const localSide  = invite.player === 'b' ? Jocly.PLAYER_B : Jocly.PLAYER_A;
+        if (inviteValid) {
+            const localSide  = inviteLocalSide;
+            const remoteSide = -localSide;
             players[localSide] = null;
             await activateRemoteSide(remoteSide, invite.peer ? {
                 // Pair-a-pair : la session est deja etablie (voir
