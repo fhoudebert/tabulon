@@ -154,17 +154,33 @@ function SetKeyring(keyring, current) {
     }
 }
 
-function SetCanWrite(canWrite, chatKey) {
+function SetCanWrite(canWrite, chatKey, full) {
     const input = $('chat-input'), send = $('chat-send'), status = $('chat-status');
     if (input) input.disabled = !canWrite;
     if (send) send.disabled = !canWrite;
-    if (status) status.textContent = canWrite ? '' : t('chat.noKey');
+    /*
+     * Deux raisons de fermer la saisie, et elles ne se corrigent pas de la
+     * meme facon : sans cle, il faut en poser une ; fil plein, il n'y a rien a
+     * faire, la conversation reste lisible mais ne s'allonge plus. Un seul
+     * message pour les deux enverrait chercher une cle qui ne changerait rien.
+     */
+    if (status) status.textContent = canWrite ? '' : t(full ? 'chat.full' : 'chat.noKey');
 
     // Les deux boutons ne servent que faute de mieux : quand aucune cle de
     // communaute n'est enregistree, il ne reste qu'a en fabriquer une et a la
     // transmettre a la main. Des qu'un trousseau existe, la liste au-dessus
     // fait le travail, et deux boutons de plus ne feraient qu'inviter a
     // casser ce qui marche.
+    if (full) {
+        // Ni le trousseau ni la saisie de cle n'y peuvent quelque chose.
+        const row = $('chat-keyring-row');
+        if (row) row.style.display = 'none';
+        const man = $('chat-key-row');
+        if (man) man.style.display = 'none';
+        const hint = $('chat-key-hint');
+        if (hint) hint.textContent = '';
+        return;
+    }
     const manual = $('chat-key-row');
     if (manual) manual.style.display = ($('chat-keyring')?.options.length ? 'none' : '');
 
@@ -197,7 +213,7 @@ function Apply(payload) {
     if (!payload) return;
     if (payload.sides) sides = payload.sides;
     SetKeyring(payload.keyring || [], payload.keyringId || null);
-    SetCanWrite(!!payload.canWrite, payload.chatKey || null);
+    SetCanWrite(!!payload.canWrite, payload.chatKey || null, !!payload.chatFull);
     conversation = payload.conversation || [];
     Render(conversation);
     MarkSeen();

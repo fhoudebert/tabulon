@@ -346,7 +346,11 @@ function disposeChatChannel() {
 function PushChat() {
     emit(`play-event:${matchId}:chat`, {
         conversation: chatChannel ? chatChannel.conversation : [],
-        canWrite: !!chatSealed,
+        // Le relai plafonne le fil : quand il refuse, on peut encore LIRE mais
+        // plus ecrire. C'est un etat prevu, pas une panne -- la fenetre ferme
+        // la saisie en le disant, au lieu de laisser taper pour rien.
+        canWrite: !!chatSealed && !chatChannel?.full,
+        chatFull: !!chatChannel?.full,
         /*
          * LA CLE ELLE-MEME, pour que la fenetre puisse l'AFFICHER.
          *
@@ -1157,6 +1161,10 @@ function initSatelliteListeners() {
             : { kind: ENVELOPE_KIND.CHAT, body: String(payload.body || '') };
         await chatChannel.send(msg).catch(e => {
             console.warn('[play] message non transmis :', e.message || e);
+            // Le fil plein change l'etat de la fenetre : elle doit fermer sa
+            // saisie et dire pourquoi, sans quoi le joueur retape le meme
+            // message indefiniment.
+            if (e && e.code === 'chat-full') PushChat();
         });
     });
 

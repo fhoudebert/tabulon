@@ -30,12 +30,19 @@ const writes = [];                // trace des clés écrites, pour l'assertion
  * clés — et c'est ce que ce mock doit reproduire fidèlement.
  */
 const chatLog = new Map();       // gameid -> [ligne, …] (le fichier -chat.txt)
+let chatCap = null;              // plafond du fichier, comme $chatMaxBytes
 async function mockFetch(url, init) {
     const params = new URLSearchParams(init.body);
     const chat = params.get('chatioaction');
     const gameid = params.get('gameid');
     if (chat === 'save') {
         const line = params.get('chatmsg');
+        // Le vrai serveur plafonne le fichier ($chatMaxBytes) et REFUSE
+        // au-delà, avec un 413. Ce n'est pas une panne réseau : réessayer n'y
+        // changerait rien.
+        const size = (chatLog.get(gameid) || []).join('\n').length;
+        if (chatCap !== null && size + line.length > chatCap)
+            return { status: 413, text: async () => '{"error":"chat log full"}' };
         // Le vrai serveur refuse (400) un message multiligne : il relit le
         // fichier ligne par ligne.
         if (/[\r\n]/.test(line)) return { status: 400, text: async () => 'single line' };
@@ -384,6 +391,60 @@ console.log('Pas de réveil pour rien');
     // le seul endroit où les deux formats se rejoignaient déjà.
     assert(line.data.player === A, 'le camp s’écrit `player`, aux mêmes valeurs');
     nokey.stop();
+}
+
+// ── 7. Le fil plein est un ÉTAT, pas une panne ─────────────────────────────
+//
+// fileio.php plafonne le fichier de conversation par partie et refuse au-delà.
+// Cela arrive à deux joueurs bavards sur une partie par correspondance, et
+// c'est définitif : réessayer n'y changerait rien.
+//
+// Le plafond est désormais PARTAGÉ — un seul fichier pour les deux joueurs, là
+// où chacun avait le sien. Le traiter comme une erreur réseau ferait retaper le
+// même message indéfiniment.
+console.log('');
+console.log('Relai : le fil plein');
+{
+    chatCap = 400;              // quelques messages, pas plus
+    const chan = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: 'plein-0001', side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await chan.start();
+    await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'premier' });
+    await waitFor(() => chan.conversation.length === 1, 'le premier message passe');
+    assert(!chan.full, 'et le fil n’est pas encore plein');
+
+    let code = null;
+    for (let k = 0; k < 12 && !code; k++)
+        try { await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'message numéro ' + k }); }
+        catch (e) { code = e.code; }
+
+    assert(code === 'chat-full', 'le refus porte un code nommé : ' + code);
+    assert(chan.full, 'et le canal retient l’état');
+
+    /*
+     * LE MESSAGE REFUSÉ NE DOIT PAS RESTER AFFICHÉ. Il est ajouté localement
+     * avant l'envoi, pour s'afficher sans attendre l'aller-retour ; le laisser
+     * après un refus serait un mensonge — l'autre joueur ne le verra jamais, et
+     * rien à l'écran ne le dirait.
+     */
+    await waitFor(() => chan.conversation.length === (chatLog.get('plein-0001') || []).length,
+        'le fil affiché rejoint le fil déposé');
+    assert(chan.conversation.length === (chatLog.get('plein-0001') || []).length,
+        `rien d’affiché qui ne soit sur le relai (${chan.conversation.length} = ${(chatLog.get('plein-0001') || []).length})`);
+
+    // ET LA LECTURE CONTINUE : un fil plein reste lisible. Couper la
+    // conversation entière parce qu'on ne peut plus y ajouter serait
+    // disproportionné.
+    const before = chan.conversation.length;
+    chatCap = null;
+    chatLog.get('plein-0001').push(JSON.stringify({ data: {
+        msg: 'venu d’en face', player: B, time: Date.now(), key: 'zz' } }));
+    await waitFor(() => chan.conversation.length > before, 'un message d’en face arrive encore');
+    assert(chan.conversation.some(m => m.body === 'venu d’en face'), 'et s’affiche');
+    chan.stop();
+    chatCap = null;
 }
 
 console.log(`\n${passed} assertions OK — transport de la discussion validé.`);

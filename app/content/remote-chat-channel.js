@@ -64,11 +64,24 @@ export class ChatChannel {
     constructor() {
         this._onConversation = null;
         this._mine = [];       // ce que NOUS avons écrit
+        /*
+         * Le fil du relai est-il plein ?
+         *
+         * fileio.php plafonne le fichier de conversation (256 Ko par defaut) et
+         * REFUSE au-dela. Ce n'est pas une panne : c'est une fin de course
+         * prevue, et elle arrive a deux joueurs bavards sur une partie par
+         * correspondance. Un etat, donc, et pas une erreur reseau -- il ne
+         * disparaitra pas en reessayant.
+         */
+        this._full = false;
         this._theirs = [];     // ce que nous avons reçu
         this._lastError = null;
     }
 
     get lastError() { return this._lastError; }
+
+    /** Le relai refuse-t-il d'en accepter davantage ? */
+    get full() { return this._full; }
 
     /** La conversation telle qu'elle doit s'afficher. */
     get conversation() { return mergeThreads(this._mine, this._theirs); }
@@ -191,7 +204,28 @@ export class RelayChatChannel extends ChatChannel {
         // rapportera aussi, et mergeThreads le dedupliquera par identifiant.
         this._mine = [...this._mine, msg];
         this._publish();
-        await this._post(buildChatSaveBody(this._mid, line));
+
+        const res = await this._post(buildChatSaveBody(this._mid, line));
+        if (res && res.status === 413) {
+            /*
+             * LE FIL EST PLEIN, et le message n'est PAS parti.
+             *
+             * Le laisser affiche chez nous serait un mensonge : l'autre joueur
+             * ne le verra jamais, et rien a l'ecran ne le dirait. On le retire
+             * donc, et on leve avec un code que l'interface sait nommer --
+             * « reessayez » n'aurait aucun sens, le refus est definitif.
+             *
+             * La LECTURE continue : un fil plein reste lisible, et couper la
+             * conversation entiere parce qu'on ne peut plus y ajouter serait
+             * disproportionne.
+             */
+            this._full = true;
+            this._mine = this._mine.filter(m => m.id !== msg.id);
+            this._publish();
+            const err = new Error('le fil de conversation du relai est plein');
+            err.code = 'chat-full';
+            throw err;
+        }
         return msg;
     }
 
