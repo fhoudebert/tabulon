@@ -322,10 +322,30 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
 - A **separate channel** from the move channel (`ChatChannel`, with
   `RelayChatChannel` and `PeerChatChannel`): both relays are
   last-write-wins on a match id, so a message written into the same key
-  would overwrite a move not yet read. On a relay each player writes
-  **only their own thread** (`chatMidFor` → `<matchId>-ca` / `-cb`) and
-  reads only the other's, which removes concurrency entirely; threads are
-  merged and deduplicated by message id (`mergeThreads`).
+  would overwrite a move not yet read.
+- **On a relay the thread is joclymatch's own** (`chatioaction=save/load`
+  on the match id): the server *appends* one line per message, both
+  players write into the same file, so there is no concurrency to avoid
+  and nothing to rewrite. This replaced an earlier form — two ordinary
+  match keys, `<matchId>-ca` / `-cb`, each rewritten whole — which
+  avoided concurrency without asking anything of the server but left
+  Tabulon **alone**: a joclymatch player in the same match saw nothing of
+  what was said, and vice versa. Messages are still merged and
+  deduplicated by id (`mergeThreads`); the whole thread comes back on
+  every read, so catching up after a reconnection is unchanged.
+- **The wire envelope is joclymatch's, plus optional fields** (`kind`,
+  `quick`, `state`, `enc`) — see `toRelayMessage` / `fromRelayMessage`.
+  A client that ignores them is not harmed: `kind` absent means `chat`,
+  and joclymatch skips what it cannot render instead of showing it
+  wrong. Two details are only visible when the two applications actually
+  talk: `msg` carries the **translated label** of a quick message so the
+  other end does not display an empty bubble, and joclymatch's `pseudo`
+  is carried through `decodeThread` so the correspondent keeps the name
+  they chose. Both are covered in `tests/test-remote-chat-protocol.mjs`.
+- The relay bounds the chat file (`$chatMaxBytes`, 256 KB) and answers
+  **413** beyond it. That is a foreseen end of the road, not a network
+  failure: the message is removed from our own thread rather than left
+  showing as if it had gone, and the window closes the input saying why.
 - **Free text is sealed, on both transports.** `sealMessage()` is the
   single rule: a chat message carrying a `body` travels sealed and
   carries `enc:1`, and `decodeThread()` refuses to display a body
@@ -338,12 +358,38 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   Internet it is the transport that protects least. Sealing itself is in
   Rust (`seal_cmds.rs`): `crypto.subtle` needs a secure context, which
   `tauri://` under WebKitGTK does not guarantee.
-- Consequently **no key means no free text** on either transport: the
-  input is closed and says why, rather than letting the player type
-  messages the opponent would never read. Quick messages and presence
-  flags travel as *identifiers* translated by the reader, carry nothing
-  personal, and therefore need no key — they work in a keyless match,
-  which is the point of "I'm taking a break".
+- **Two regimes, and the invitation link decides which.** A link with
+  `#k=` (or `#kid=`) means sealed; a joclymatch link, which has no
+  fragment, means clear. The fragment reaches no server, so both clients
+  reach the same conclusion without negotiating anything. Clear is an
+  **explicit permission** passed by the caller (`allowClear`), never
+  inferred from the absence of a sealer: a sealer that failed to build —
+  damaged key, Rust command unavailable — must not amount to permission
+  to write in the clear. That is exactly how a protection gets lost
+  without anyone deciding it.
+- Peer-to-peer has no clear regime: it only exists between two Tabulon
+  instances and its invitation code always carries a key, so free text
+  without a sealer is a programming error there, not a configuration.
+- **The awkward case, and its answer.** A Tabulon link carries a key but
+  points at `index.php`, so it can be opened in joclymatch — which
+  ignores the fragment and writes in the clear. The conversation was then
+  one-way in both directions: their messages showed as "sent
+  unprotected — not shown", ours were unreadable to them. A
+  **"continue without protection"** button appears *only* once that has
+  actually happened (an incoming message locked with `reason:'unsealed'`
+  from the opponent's side), because offering to give up a protection
+  nothing says is in the way would be the wrong question. Accepting is
+  remembered per match — the link still carries the key, so every
+  reopening would otherwise hide the messages again — and what is stored
+  is a **list of match ids, never a key**. The sealer is kept so that
+  what was already said under protection stays readable; only later
+  messages travel clear. There is no way back: text left in the clear on
+  a relay is there for good, and offering to "restore protection" would
+  suggest otherwise. `allowClearFrom()` in the channel,
+  `AcceptChatClear()` in `play.js`.
+- Quick messages and presence flags travel as *identifiers* translated by
+  the reader, carry nothing personal, and therefore need no key — they
+  work in a keyless match, which is the point of "I'm taking a break".
 - **Where the key comes from**: the fragment of the invitation link, or
   the peer invitation code, or a *community key* designated by its
   fingerprint (`chatKeyId`) — the key itself never circulates then, both
@@ -366,11 +412,26 @@ and `scripts/check-jocly-compat.mjs`. The full two-machine flow (two
 Tabulon instances exchanging a code over a real network) is the part only
 a manual test exercises.
 
+The **cross-application** path has its own probe: Tabulon's real
+`RelayChatChannel` run under Node with an injected `fetchImpl`, against a
+live joclymatch `fileio.php`, with a joclymatch page in a browser at the
+other end. That is what turned up the empty quick-message bubble, the
+dropped `pseudo` and a duplicated seal in `PeerChatChannel` — none of
+which any single-application test could see.
+
 Open items, from the design comparison below: push/WebSocket instead of
 polling for the relay transport; a saved-contact address book for
 peer-to-peer; a match-resume story (persist `matchId` + side + transport
 with the game, piggybacking on the existing Save/Load format rather than
 inventing a new one); and the WebRTC re-evaluation noted above.
+
+One more, on the relay dialects: Tabulon speaks
+`gameioaction/gameid/gamedata` only. A joclymatch server now also accepts
+mogichex's `action/mid/data`, so one server serves all three — but the
+reverse is not true, and a mogichex `match.php` does not understand what
+Tabulon sends. Either `match.php` learns the aliases, or Tabulon learns
+the second dialect; until then the comment claiming the same code works
+on both relays is an intention, not a fact.
 
 ### Design background
 
