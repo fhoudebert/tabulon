@@ -155,6 +155,16 @@ export class RelayChatChannel extends ChatChannel {
          * traduire, parce que c'est lui qui connait la langue.
          */
         this._quickText = typeof quickText === 'function' ? quickText : null;
+        /*
+         * SCELLE-T-ON CE QUI PART ? Distinct de « a-t-on un scelleur ».
+         *
+         * Apres une bascule en clair (voir allowClearFrom), le scelleur RESTE
+         * -- il sert a rouvrir ce qui a deja ete dit sous protection -- mais
+         * les messages suivants partent en clair, sans quoi le correspondant
+         * qui ne peut pas chiffrer continuerait de ne rien lire. Les deux
+         * questions sont donc separees.
+         */
+        this._sealOutgoing = !!sealer;
         this._pollIntervalMs = pollIntervalMs;
         this._fetch = fetchImpl;
         // UNE seule cle, celle de la partie : le serveur AJOUTE, donc il n'y a
@@ -165,6 +175,40 @@ export class RelayChatChannel extends ChatChannel {
         this._timer = null;
         this._side = side;
     }
+
+    /**
+     * Bascule explicite en regime clair, a la demande de l'utilisateur.
+     *
+     * LE CAS : une partie creee par Tabulon porte une cle, mais son lien pointe
+     * vers index.php -- il peut donc etre ouvert dans joclymatch, qui ignore le
+     * fragment et ecrit en clair. Tabulon refusait alors d'afficher ces
+     * messages (`locked`, raison `unsealed`) et continuait de sceller les
+     * siens : conversation a sens unique, des deux cotes.
+     *
+     * Trois issues etaient possibles -- accepter en silence, refuser, ou
+     * demander. C'est la troisieme : l'utilisateur voit qu'on ne lui montre
+     * rien, comprend pourquoi, et decide. Les deux autres decidaient a sa
+     * place, l'une en silence, l'autre en bloquant.
+     *
+     * Le scelleur n'est PAS jete : ce qui a deja ete dit sous protection reste
+     * lisible. Seuls les messages a venir partent en clair.
+     *
+     * SANS RETOUR EN ARRIERE dans cette session : un texte en clair est
+     * irrattrapable une fois depose sur le relai, et proposer de « remettre la
+     * protection » laisserait croire le contraire.
+     */
+    allowClearFrom() {
+        this._allowClear = true;
+        this._sealOutgoing = false;
+        // Le fil d'en face est redecode a chaque sondage : le prochain rendra
+        // lisibles les messages jusque-la verrouilles. On le declenche tout de
+        // suite plutot que d'attendre trois secondes devant un ecran inchange.
+        this._lastStamp = null;
+        if (this._polling) this._scheduleNext(0);
+    }
+
+    /** Le texte libre part-il encore scelle ? Pour l'affichage, pas pour decider. */
+    get sealing() { return this._sealOutgoing && !!this._sealer; }
 
     async start() {
         if (this._polling) return;
@@ -195,7 +239,7 @@ export class RelayChatChannel extends ChatChannel {
             // porte la garde (requiresSeal) et qui pose le marqueur `enc`.
             // Lui passer une chaine le faisait rendre cette chaine telle
             // quelle -- du clair, sous couvert de scellement.
-            if (this._sealer) seal = (await sealMessage(msg, this._sealer)).body;
+            if (this._sealOutgoing && this._sealer) seal = (await sealMessage(msg, this._sealer)).body;
             else if (!this._allowClear)
                 throw new Error('RelayChatChannel: un message de discussion ne peut pas partir '
                     + 'en clair sur une partie protegee (aucun scelleur)');

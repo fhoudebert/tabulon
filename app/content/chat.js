@@ -154,6 +154,25 @@ function SetKeyring(keyring, current) {
     }
 }
 
+/**
+ * Le bouton « continuer sans protection ».
+ *
+ * Il ne se propose pas d'avance : renoncer a une protection dont rien ne dit
+ * qu'elle gene serait une mauvaise question. Il apparait quand le probleme
+ * EXISTE et qu'il est a l'ecran -- des messages marques « non montres » --
+ * et il repond a ce que le joueur se demande en les voyant.
+ *
+ * Le texte dit ce qu'on perd AVANT de cliquer, pas apres : la confirmation qui
+ * suit ne fait que demander si on l'a bien lu.
+ */
+function SetClearOffer(canClear) {
+    const row = $('chat-clear-row');
+    if (!row) return;
+    row.style.display = canClear ? '' : 'none';
+    const why = $('chat-clear-why');
+    if (why) why.textContent = canClear ? t('chat.clearWhy') : '';
+}
+
 function SetCanWrite(canWrite, chatKey, full) {
     const input = $('chat-input'), send = $('chat-send'), status = $('chat-status');
     if (input) input.disabled = !canWrite;
@@ -214,6 +233,7 @@ function Apply(payload) {
     if (payload.sides) sides = payload.sides;
     SetKeyring(payload.keyring || [], payload.keyringId || null);
     SetCanWrite(!!payload.canWrite, payload.chatKey || null, !!payload.chatFull);
+    SetClearOffer(!!payload.canClear);
     conversation = payload.conversation || [];
     Render(conversation);
     MarkSeen();
@@ -278,6 +298,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('chat-key-apply')?.addEventListener('click', () => {
         const key = ($('chat-key-input')?.value || '').trim().toLowerCase();
         emit(`play-req:${matchId}:set-chat-key`, { key }).catch(() => {});
+    });
+
+    $('chat-clear-accept')?.addEventListener('click', () => {
+        // UNE confirmation, et une seule : le texte du bouton et la phrase
+        // au-dessus disent deja ce qu'on perd. Ce qui est demande ici est
+        // seulement de confirmer qu'on l'a lu -- et c'est sans retour, un
+        // message depose en clair sur le relai l'etant pour de bon.
+        if (!window.confirm(t('chat.clearConfirm'))) return;
+        emit(`play-req:${matchId}:chat-allow-clear`, {}).catch(() => {});
     });
 
     // Revenir sur la fenetre vaut lecture : un message arrive pendant qu'elle

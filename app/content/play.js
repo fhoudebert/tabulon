@@ -271,6 +271,21 @@ let remotePresence = null;   // dernier etat declare par l'adversaire
 let chatConfig = null;      // la derniere configuration, pour rouvrir le canal
 let chatKeyring = [];       // [{id, name}] -- les cles de communaute, SANS les cles
 let chatKeyringId = null;   // celle qui sert a cette partie, si on la reconnait
+/*
+ * PARTIES OU L'UTILISATEUR A ACCEPTE LE CLAIR.
+ *
+ * Memorise, et pas seulement pour la session : le lien d'invitation porte
+ * toujours la cle, donc a chaque ouverture la partie repartirait protegee et
+ * les messages du correspondant redeviendraient « non affiches ». Il faudrait
+ * reaccepter a chaque fois, devant un ecran qui ressemble a une panne.
+ *
+ * Ce qui est range est une LISTE D'IDENTIFIANTS DE PARTIE, jamais une cle :
+ * savoir qu'on a renonce a proteger une partie n'apprend rien a qui lirait ce
+ * fichier. Bornee, pour ne pas croitre indefiniment.
+ */
+const CHAT_CLEAR_KEY = 'chat-clear-matches';
+const CHAT_CLEAR_MAX = 100;
+let chatClearAccepted = false;
 
 function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: kid = null }, localSide) {
     disposeChatChannel();
@@ -296,6 +311,7 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
      * personne l'ait decide.
      */
     const allowClear = !chatKey;
+    chatClearAccepted = false;
     chatChannel = peer
         ? new PeerChatChannel({ side: localSide, sealer })
         : new RelayChatChannel({
@@ -322,6 +338,11 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
     chatSealed = !!sealer || (!peer && allowClear);
     chatChannel.onConversation(OnConversation);
     chatChannel.start().catch(e => console.warn('[play] discussion indisponible :', e.message || e));
+    // La bascule deja acceptee pour CETTE partie est reappliquee sans rien
+    // redemander : on ne fait reconsentir a une perte que la premiere fois.
+    if (chatKey && !peer) {
+        RestoreChatClear(remoteMatchId).catch(() => {});
+    }
     // Le bouton n'apparait qu'ici : en partie locale il n'y a personne a qui
     // ecrire, et une fenetre vide est une promesse non tenue.
     const chatBtn = document.getElementById('button-chat');
@@ -349,8 +370,29 @@ function disposeChatChannel() {
  * le champ en disant pourquoi. Les messages rapides, eux, restent disponibles.
  */
 function PushChat() {
+    const conv = chatChannel ? chatChannel.conversation : [];
+    /*
+     * PROPOSE-T-ON DE CONTINUER SANS PROTECTION ?
+     *
+     * Seulement quand le cas s'est REELLEMENT presente : au moins un message
+     * du correspondant arrive en clair alors que nous attendons du scelle.
+     * C'est la signature d'un lien Tabulon ouvert dans joclymatch, qui ignore
+     * le fragment et n'a donc pas la cle.
+     *
+     * Proposer la bascule d'emblee serait offrir de renoncer a une protection
+     * dont rien ne dit qu'elle gene. On attend que le probleme existe et qu'il
+     * soit visible a l'ecran -- l'utilisateur voit des messages « non
+     * affiches », et le bouton repond a la question qu'il se pose.
+     */
+    const canClear = !!chatChannel?.allowClearFrom && !chatClearAccepted
+        // `=== remoteChannelKey` et non « pas nous » : le camp 0 existe, c'est
+        // celui des messages de service de joclymatch, et il ne dit rien de la
+        // capacite du correspondant a chiffrer.
+        && conv.some(m => m.locked && m.reason === 'unsealed' && m.side === remoteChannelKey);
     emit(`play-event:${matchId}:chat`, {
-        conversation: chatChannel ? chatChannel.conversation : [],
+        conversation: conv,
+        canClear,
+        sealing: chatChannel?.sealing !== false,
         // Le relai plafonne le fil : quand il refuse, on peut encore LIRE mais
         // plus ecrire. C'est un etat prevu, pas une panne -- la fenetre ferme
         // la saisie en le disant, au lieu de laisser taper pour rien.
@@ -396,6 +438,40 @@ function PushChat() {
  * donne -- c'est ce qui permet a la fenetre de preselectionner la bonne ligne
  * sans rien demander a personne.
  */
+/** A-t-on deja renonce a proteger cette partie ? */
+async function RestoreChatClear(remoteMatchId) {
+    const list = (await store?.get(CHAT_CLEAR_KEY).catch(() => null)) || [];
+    if (!list.includes(remoteMatchId)) return;
+    chatClearAccepted = true;
+    chatChannel?.allowClearFrom?.();
+    chatSealed = true;   // on peut ecrire : en clair, mais on peut
+    PushChat();
+}
+
+/**
+ * L'utilisateur accepte de continuer sans protection.
+ *
+ * Irreversible, et c'est voulu : un texte depose en clair sur le relai l'est
+ * pour de bon, et proposer de « remettre la protection » laisserait croire le
+ * contraire. Ce qui a deja ete dit sous protection reste lisible -- le
+ * scelleur n'est pas jete.
+ */
+async function AcceptChatClear() {
+    if (!chatChannel || chatClearAccepted) return;
+    chatClearAccepted = true;
+    chatChannel.allowClearFrom?.();
+    chatSealed = true;
+    const mid = chatConfig?.matchId;
+    if (mid) {
+        const list = (await store?.get(CHAT_CLEAR_KEY).catch(() => null)) || [];
+        if (!list.includes(mid)) {
+            list.push(mid);
+            await store?.set(CHAT_CLEAR_KEY, list.slice(-CHAT_CLEAR_MAX)).catch(() => {});
+        }
+    }
+    PushChat();
+}
+
 async function RefreshChatKeyring() {
     chatKeyring = [];
     chatKeyringId = null;
@@ -1145,6 +1221,8 @@ function initSatelliteListeners() {
             ensureChatChannel({ ...chatConfig, chatKey: derived, chatKeyId: wanted }, -remoteChannelKey);
         PushChat();
     });
+
+    listen(prefix + 'chat-allow-clear', () => { AcceptChatClear().catch(() => {}); });
 
     listen(prefix + 'chat-seen', ({ payload }) => {
         if (!payload?.id) return;

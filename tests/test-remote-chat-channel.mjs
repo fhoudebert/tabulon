@@ -447,5 +447,55 @@ console.log('Relai : le fil plein');
     chatCap = null;
 }
 
+// ── Bascule explicite en clair ───────────────────────────────────────────────
+//
+// LE CAS : une partie creee par Tabulon porte une cle, mais son lien pointe
+// vers index.php et peut donc etre ouvert dans joclymatch, qui ignore le
+// fragment et ecrit en clair. Sans bascule, la conversation est a sens unique
+// des deux cotes -- ses messages « non montres » chez nous, les notres
+// illisibles chez lui.
+{
+    const sealer = {
+        seal: (t) => 'S:' + t,
+        open: (s) => (String(s).startsWith('S:') ? String(s).slice(2) : null),
+    };
+    const mid = 'bascule-0001';
+    const chan = new RelayChatChannel({
+        relayUrl: 'http://relai/fileio.php', matchId: mid, side: A,
+        sealer, pollIntervalMs: 20, fetchImpl: mockFetch,
+    });
+    await chan.start();
+
+    // Le correspondant ecrit en clair : refuse, mais VISIBLE.
+    chatLog.set(mid, [JSON.stringify({ data: {
+        msg: 'bonjour en clair', player: B, time: Date.now(), key: 'cc' } })]);
+    await waitFor(() => chan.conversation.length > 0, 'le message en clair arrive');
+    const avant = chan.conversation.find(m => m.side === B);
+    assert(avant.locked === true && avant.reason === 'unsealed',
+        'avant la bascule : garde, marque « sans protection », corps masque');
+    assert(avant.body === null, 'et son texte n’est pas affiche');
+    assert(chan.sealing === true, 'ce qui part est encore scelle');
+
+    // L'utilisateur accepte.
+    chan.allowClearFrom();
+    await waitFor(() => chan.conversation.some(m => m.body === 'bonjour en clair'),
+        'apres la bascule : le message devient lisible');
+    assert(chan.sealing === false, 'et ce qui part ne l’est plus');
+
+    // Ce qui a deja ete dit sous protection reste lisible : le scelleur n'est
+    // pas jete, il ne sert plus qu'a ouvrir.
+    chatLog.get(mid).push(JSON.stringify({ data: {
+        msg: 'S:dit avant la bascule', player: B, time: Date.now() + 1, key: 'dd', enc: 1 } }));
+    await waitFor(() => chan.conversation.some(m => m.body === 'dit avant la bascule'),
+        'un message scelle reste ouvrable apres la bascule');
+
+    // Et le texte libre part desormais en clair, donc lisible par l'autre.
+    await chan.send({ kind: 'chat', body: 'et voila' });
+    const depose = JSON.parse(chatLog.get(mid).at(-1)).data;
+    assert(depose.msg === 'et voila', 'le texte libre part en clair');
+    assert(depose.enc === undefined, 'et sans marqueur de scellement');
+    chan.stop();
+}
+
 console.log(`\n${passed} assertions OK — transport de la discussion validé.`);
 process.exit(0);
