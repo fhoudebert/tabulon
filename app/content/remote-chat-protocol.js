@@ -154,11 +154,94 @@ export function newMessage({ kind, side, body = null, quick = null, state = null
     if (kind === ENVELOPE_KIND.PRESENCE && !PRESENCE_VALUES.includes(state))
         throw new Error('newMessage: état de présence inconnu : ' + state);
 
-    const msg = { v: THREAD_VERSION, kind, side, at, id: messageId(rand) };
+    /*
+     * L'identifiant est « horodatage-alea », et non un alea seul : c'est la
+     * forme que joclymatch construit de son cote (time + "-" + key). Les deux
+     * applications relisent le MEME fil ; si elles n'y calculaient pas le meme
+     * identifiant, chacune dedupliquerait dans son coin et un message relu
+     * apparaitrait deux fois chez l'une, une seule chez l'autre.
+     */
+    const msg = { v: THREAD_VERSION, kind, side, at, id: at + '-' + messageId(rand) };
     if (kind === ENVELOPE_KIND.CHAT && quick) msg.quick = String(quick);
     else if (kind === ENVELOPE_KIND.CHAT) msg.body = String(body);
     if (kind === ENVELOPE_KIND.PRESENCE) msg.state = state;
     return msg;
+}
+
+// ── L'enveloppe de joclymatch ────────────────────────────────────────────────
+
+/**
+ * Traduit un message vers la forme que joclymatch depose et relit.
+ *
+ * LES DEUX FORMATS SE REJOIGNAIENT DEJA SUR L'ESSENTIEL : le camp s'y ecrit
+ * `1` / `-1` des deux cotes. Le reste est un changement de nom -- `body` ->
+ * `msg`, `at` -> `time` -- plus une part aleatoire `key`, dont joclymatch fait
+ * son identifiant en la collant a l'horodatage.
+ *
+ * C'est pourquoi notre `id` PREND cette forme (« time-key ») au lieu d'etre un
+ * aleatoire independant : les deux applications relisent le meme fil, et il
+ * faut qu'elles y dedupliquent les memes messages. Deux schemas d'identifiant
+ * donneraient un message affiche deux fois chez l'un et une seule chez
+ * l'autre.
+ *
+ * Les champs que joclymatch ne connait pas -- `kind`, `quick`, `state`, `enc`
+ * -- voyagent a cote : il les ignore, et son durcissement garantit qu'il ne
+ * s'y casse pas.
+ *
+ * @param {object} msg    - un message produit par newMessage()
+ * @param {string} [seal] - le corps SCELLE, quand il doit l'etre
+ */
+export function toRelayMessage(msg, seal = null) {
+    const [time, key] = String(msg.id).split('-');
+    const out = {
+        msg: seal !== null ? seal : (msg.body ?? ''),
+        player: msg.side,
+        time: Number(time) || msg.at,
+        key: key || '',
+    };
+    if (seal !== null) out.enc = 1;
+    // `chat` est le defaut cote joclymatch : ne pas l'ecrire evite un champ
+    // inutile sur chaque ligne d'un fichier plafonne a 256 Ko.
+    if (msg.kind !== ENVELOPE_KIND.CHAT) out.kind = msg.kind;
+    if (msg.quick) out.quick = msg.quick;
+    if (msg.state) out.state = msg.state;
+    return out;
+}
+
+/**
+ * Relit une ligne deposee par l'une ou l'autre application.
+ *
+ * Rend null pour tout ce qui n'est pas exploitable, plutot que de lever : un
+ * fil partage contient des lignes ecrites par un client qu'on ne connait pas,
+ * et une seule d'entre elles ne doit pas emporter la conversation.
+ *
+ * LE CAMP 0 EXISTE : joclymatch s'en sert pour ses messages de service. Il est
+ * conserve, parce qu'un message qui disparait sans laisser de trace est pire
+ * qu'un message qu'on ne sait pas attribuer.
+ */
+export function fromRelayMessage(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const data = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+    if (typeof data.msg !== 'string') return null;
+    const side = data.player;
+    if (side !== 1 && side !== -1 && side !== 0) return null;
+    const at = Number(data.time);
+    if (!Number.isFinite(at)) return null;
+    const out = {
+        v: THREAD_VERSION,
+        kind: typeof data.kind === 'string' ? data.kind : ENVELOPE_KIND.CHAT,
+        side, at,
+        id: at + '-' + (data.key ?? ''),
+        body: data.msg,
+    };
+    if (data.enc) out.enc = 1;
+    if (typeof data.quick === 'string') out.quick = data.quick;
+    if (typeof data.state === 'string') out.state = data.state;
+    // Le pseudo de joclymatch : conserve pour l'affichage, jamais emis par
+    // nous -- en regime scelle il annoncerait une protection que le fil n'a
+    // pas.
+    if (typeof data.pseudo === 'string') out.pseudo = data.pseudo;
+    return out;
 }
 
 // ── Fils ─────────────────────────────────────────────────────────────────────
@@ -221,7 +304,7 @@ export async function sealMessage(message, sealer = null) {
  * l'utilisateur voit qu'un message existe et qu'il lui manque la clé, ce qui
  * vaut mieux qu'un trou silencieux dans la conversation.
  */
-export async function decodeThread(text, { sealer = null } = {}) {
+export async function decodeThread(text, { sealer = null, allowClear = false } = {}) {
     if (typeof text !== 'string' || !text.trim()) return [];
     let data;
     try { data = JSON.parse(text); } catch { return []; }
@@ -231,7 +314,13 @@ export async function decodeThread(text, { sealer = null } = {}) {
     for (const m of data.msgs) {
         if (!m || typeof m !== 'object') continue;
         if (typeof m.id !== 'string' || !m.id) continue;
-        if (m.side !== 1 && m.side !== -1) continue;
+        /*
+         * LE CAMP 0 EST CELUI DES MESSAGES DE SERVICE de joclymatch. Il est
+         * accepte plutot qu'ecarte : un message qui disparait sans laisser de
+         * trace est pire qu'un message qu'on ne sait pas attribuer, et les deux
+         * applications relisent desormais le meme fil.
+         */
+        if (m.side !== 1 && m.side !== -1 && m.side !== 0) continue;
         if (!Number.isFinite(m.at)) continue;
         if (m.kind === ENVELOPE_KIND.PRESENCE) {
             if (!PRESENCE_VALUES.includes(m.state)) continue;
@@ -248,6 +337,21 @@ export async function decodeThread(text, { sealer = null } = {}) {
             }
             if (typeof m.body !== 'string') continue;
             if (!m.enc) {
+                /*
+                 * REGIME CLAIR ASSUME : la partie n'a pas de cle, l'autre bout
+                 * n'en a pas non plus, et le texte circule en clair parce que
+                 * c'est le seul regime possible -- typiquement une partie
+                 * rejointe par un lien joclymatch. On l'affiche.
+                 *
+                 * La permission vient de l'APPELANT, jamais de l'absence de
+                 * scelleur : un scelleur qui n'a pas pu se construire ne doit
+                 * pas valoir permission de lire du clair sur une partie
+                 * protegee.
+                 */
+                if (allowClear) {
+                    out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body: m.body });
+                    continue;
+                }
                 // En clair alors que le genre exige un scellement : on le
                 // garde, verrouillé. Refuser l'affichage effacerait la trace
                 // d'un correspondant mal configuré ; l'afficher tel quel

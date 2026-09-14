@@ -149,6 +149,43 @@ export function buildLoadBody(gameId) {
 }
 
 /**
+ * Corps d'un POST "chat" vers fileio.php : le serveur AJOUTE la ligne.
+ *
+ * Point d'entree distinct de celui des coups, et fichier distinct
+ * (`<gameid>-chat.txt`) : ecrire une conversation dans la cle de la partie
+ * ecraserait le coup qui n'a pas encore ete lu.
+ *
+ * C'est le point d'entree de joclymatch, et c'est tout l'objet du
+ * demenagement : deux applications qui partagent un plateau partagent
+ * desormais aussi le fil.
+ *
+ * UN MESSAGE EST UNE LIGNE. Le serveur refuse (400) un `chatmsg` contenant un
+ * saut de ligne, parce qu'il relit le fichier ligne par ligne : un message
+ * multiligne couperait le JSON de son auteur en fragments invalides et
+ * rendrait le fil illisible POUR LES DEUX joueurs, durablement. JSON.stringify
+ * n'en emet jamais -- a condition de ne pas indenter.
+ */
+export function buildChatSaveBody(gameId, line) {
+    if (!gameId) throw new Error('buildChatSaveBody: gameId requis');
+    if (/[\r\n]/.test(line))
+        throw new Error('buildChatSaveBody: un message est une ligne (le relai refuse les sauts de ligne)');
+    const p = new URLSearchParams();
+    p.set('chatioaction', 'save');
+    p.set('gameid', gameId);
+    p.set('chatmsg', line);
+    return p;
+}
+
+/** Corps d'un POST "chat load" : rend TOUT le fil, les deux joueurs meles. */
+export function buildChatLoadBody(gameId) {
+    if (!gameId) throw new Error('buildChatLoadBody: gameId requis');
+    const p = new URLSearchParams();
+    p.set('chatioaction', 'load');
+    p.set('gameid', gameId);
+    return p;
+}
+
+/**
  * Identifiant de partie non-devinable (UUID v4 si dispo, sinon repli).
  * jocly-simple-match n'a AUCUNE authentification réelle -- toute la
  * "sécurité" tient au fait que l'identifiant de partie n'est pas devinable.

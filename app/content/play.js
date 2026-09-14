@@ -281,10 +281,25 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
         try { sealer = makeSealer(chatKey); }
         catch (e) { console.warn('[play] cle de discussion inutilisable :', e.message || e); }
     }
+    /*
+     * REGIME CLAIR : uniquement quand la partie n'a AUCUNE cle.
+     *
+     * Une partie creee par Tabulon en porte toujours une, et son texte libre
+     * reste scelle -- le demenagement du transport vers le point d'entree de
+     * joclymatch n'y change rien. Une partie rejointe par un lien joclymatch
+     * n'en a pas : l'autre bout non plus, il n'y a rien a chiffrer avec, et le
+     * clair est le seul regime possible.
+     *
+     * `chatKey` et non `sealer` : un scelleur qui n'a pas pu se construire --
+     * cle abimee, commande Rust indisponible -- ne doit surtout pas ouvrir le
+     * regime clair. C'est le chemin par lequel une protection se perd sans que
+     * personne l'ait decide.
+     */
+    const allowClear = !chatKey;
     chatChannel = peer
         ? new PeerChatChannel({ side: localSide, sealer })
         : new RelayChatChannel({
-            relayUrl, matchId: remoteMatchId, side: localSide, sealer,
+            relayUrl, matchId: remoteMatchId, side: localSide, sealer, allowClear,
         });
     /*
      * LE TEXTE LIBRE DEMANDE UNE CLE, PAIR-A-PAIR COMPRIS.
@@ -297,7 +312,9 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
      * pair-a-pair la cle vient du code d'invitation, donc le cas normal en a
      * une ; s'il n'y en a pas, mieux vaut fermer la saisie en le disant.
      */
-    chatSealed = !!sealer;
+    // Le texte libre est possible si la partie est protegee, ou si elle assume
+    // le clair -- pas entre les deux.
+    chatSealed = !!sealer || (!peer && allowClear);
     chatChannel.onConversation(OnConversation);
     chatChannel.start().catch(e => console.warn('[play] discussion indisponible :', e.message || e));
     // Le bouton n'apparait qu'ici : en partie locale il n'y a personne a qui

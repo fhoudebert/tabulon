@@ -44,9 +44,10 @@
 // pair-à-pair est précisément le cas où le transport ne protège rien.
 
 import { httpFetch, invoke as tauriInvoke, listen as tauriListen } from './tauri-bridge.js';
-import { buildSaveBody, buildLoadBody, ENVELOPE_KIND } from './remote-relay-protocol.js';
+import { buildChatSaveBody, buildChatLoadBody, ENVELOPE_KIND } from './remote-relay-protocol.js';
 import {
-    chatMidFor, newMessage, encodeThread, decodeThread, mergeThreads, sealMessage,
+    newMessage, decodeThread, mergeThreads, sealMessage,
+    toRelayMessage, fromRelayMessage, requiresSeal,
 } from './remote-chat-protocol.js';
 
 /**
@@ -101,16 +102,39 @@ export class RelayChatChannel extends ChatChannel {
      * @param {{seal:Function,open:Function}} [opts.sealer] - sans lui, un
      *   message de discussion sera REFUSÉ à l'envoi (voir encodeThread).
      */
-    constructor({ relayUrl, matchId, side, sealer = null, pollIntervalMs = 3000, fetchImpl = httpFetch }) {
+    constructor({ relayUrl, matchId, side, sealer = null, allowClear = false,
+                  pollIntervalMs = 3000, fetchImpl = httpFetch }) {
         super();
         if (!relayUrl) throw new Error('RelayChatChannel: relayUrl requis');
         if (!matchId) throw new Error('RelayChatChannel: matchId requis');
         this._relayUrl = relayUrl;
         this._sealer = sealer;
+        /*
+         * LE REGIME CLAIR EST UNE AUTORISATION EXPLICITE, PAS UNE CONSEQUENCE.
+         *
+         * Une partie creee par Tabulon porte toujours une cle ; le texte libre
+         * y est scelle, et un envoi sans scelleur ECHOUE. C'est ce refus qui
+         * rend la protection honnete, et le demenagement ne doit rien lui
+         * retirer.
+         *
+         * Une partie rejointe par un lien joclymatch, elle, n'a pas de cle --
+         * l'autre bout n'en a pas non plus, et rien a chiffrer avec. Le clair
+         * y est le seul regime possible, et il est celui que l'autre joueur
+         * attend.
+         *
+         * D'ou un drapeau POSE PAR L'APPELANT plutot que deduit de l'absence
+         * de scelleur : un scelleur qui n'a pas pu se construire -- cle
+         * abimee, commande Rust indisponible -- ne doit surtout pas valoir
+         * permission d'ecrire en clair. C'est exactement le chemin par lequel
+         * une protection se perd sans que personne l'ait decide.
+         */
+        this._allowClear = !!allowClear;
         this._pollIntervalMs = pollIntervalMs;
         this._fetch = fetchImpl;
-        this._mineMid = chatMidFor(matchId, side);
-        this._theirsMid = chatMidFor(matchId, side === 1 ? -1 : 1);
+        // UNE seule cle, celle de la partie : le serveur AJOUTE, donc il n'y a
+        // plus de concurrence a eviter et plus de fil a reecrire. Les deux
+        // joueurs ecrivent dans le meme fichier, comme joclymatch.
+        this._mid = matchId;
         this._polling = false;
         this._timer = null;
         this._side = side;
@@ -119,13 +143,9 @@ export class RelayChatChannel extends ChatChannel {
     async start() {
         if (this._polling) return;
         this._polling = true;
-        /*
-         * On relit d'abord NOTRE fil : une fenêtre rouverte, ou une partie
-         * reprise sur une autre machine, doit retrouver ce qu'elle a dit --
-         * sinon le premier message réécrirait la clé et effacerait tout
-         * l'historique, puisqu'un fil est déposé en entier.
-         */
-        this._mine = await this._read(this._mineMid);
+        // Plus besoin de relire notre propre fil avant d'ecrire : on n'ecrase
+        // plus rien, on ajoute. Le premier sondage rapporte tout, y compris ce
+        // que nous avions dit lors d'une session precedente.
         this._scheduleNext(0);
     }
 
@@ -136,6 +156,25 @@ export class RelayChatChannel extends ChatChannel {
 
     async send({ kind, body = null, quick = null, state = null }) {
         const msg = newMessage({ kind, side: this._side, body, quick, state });
+
+        /*
+         * Le texte libre est scelle, ou refuse -- sauf permission explicite.
+         * Les messages rapides et la presence ne portent aucun texte : ils
+         * passent dans les deux regimes, et c'est ce qui permet de dire « je
+         * fais une pause » a un joueur joclymatch.
+         */
+        let seal = null;
+        if (requiresSeal(msg)) {
+            // sealMessage prend le MESSAGE, pas son texte : c'est lui qui
+            // porte la garde (requiresSeal) et qui pose le marqueur `enc`.
+            // Lui passer une chaine le faisait rendre cette chaine telle
+            // quelle -- du clair, sous couvert de scellement.
+            if (this._sealer) seal = (await sealMessage(msg, this._sealer)).body;
+            else if (!this._allowClear)
+                throw new Error('RelayChatChannel: un message de discussion ne peut pas partir '
+                    + 'en clair sur une partie protegee (aucun scelleur)');
+        }
+        const line = JSON.stringify({ data: toRelayMessage(msg, seal) });
         /*
          * ENCODER D'ABORD, RETENIR ENSUITE.
          *
@@ -148,11 +187,11 @@ export class RelayChatChannel extends ChatChannel {
          * L'encodage est synchrone : l'affichage local reste immédiat, sans
          * attendre l'aller-retour réseau.
          */
-        const next = [...this._mine, msg];
-        const payload = await encodeThread(next, { sealer: this._sealer });
-        this._mine = next;
+        // Retenu localement pour l'affichage immediat ; le sondage le
+        // rapportera aussi, et mergeThreads le dedupliquera par identifiant.
+        this._mine = [...this._mine, msg];
         this._publish();
-        await this._post(buildSaveBody(this._mineMid, payload));
+        await this._post(buildChatSaveBody(this._mid, line));
         return msg;
     }
 
@@ -166,7 +205,7 @@ export class RelayChatChannel extends ChatChannel {
     async _pollOnce() {
         if (!this._polling) return;
         try {
-            this._theirs = await this._read(this._theirsMid);
+            this._theirs = await this._readThread();
             this._lastError = null;
             this._publish();
         } catch (e) {
@@ -178,9 +217,22 @@ export class RelayChatChannel extends ChatChannel {
         this._scheduleNext(this._pollIntervalMs);
     }
 
-    async _read(mid) {
-        const res = await this._post(buildLoadBody(mid));
-        return await decodeThread(await res.text(), { sealer: this._sealer });
+    /**
+     * Relit le fil entier -- les deux joueurs meles, dans l'ordre du fichier.
+     *
+     * Chaque ligne est traduite puis passee a decodeThread, qui reste la SEULE
+     * porte de validation : c'est elle qui ecarte un message mal forme et qui
+     * ouvre les sceaux. Ecrire ici un second controle le ferait diverger du
+     * premier.
+     */
+    async _readThread() {
+        const res = await this._post(buildChatLoadBody(this._mid));
+        let payload;
+        try { payload = JSON.parse(await res.text()); } catch { return []; }
+        const raw = Array.isArray(payload?.messages) ? payload.messages : [];
+        const msgs = raw.map(fromRelayMessage).filter(Boolean);
+        return await decodeThread(JSON.stringify({ msgs }),
+            { sealer: this._sealer, allowClear: this._allowClear });
     }
 
     async _post(body) {
@@ -236,6 +288,25 @@ export class PeerChatChannel extends ChatChannel {
 
     async send({ kind, body = null, quick = null, state = null }) {
         const msg = newMessage({ kind, side: this._side, body, quick, state });
+
+        /*
+         * Le texte libre est scelle, ou refuse -- sauf permission explicite.
+         * Les messages rapides et la presence ne portent aucun texte : ils
+         * passent dans les deux regimes, et c'est ce qui permet de dire « je
+         * fais une pause » a un joueur joclymatch.
+         */
+        let seal = null;
+        if (requiresSeal(msg)) {
+            // sealMessage prend le MESSAGE, pas son texte : c'est lui qui
+            // porte la garde (requiresSeal) et qui pose le marqueur `enc`.
+            // Lui passer une chaine le faisait rendre cette chaine telle
+            // quelle -- du clair, sous couvert de scellement.
+            if (this._sealer) seal = (await sealMessage(msg, this._sealer)).body;
+            else if (!this._allowClear)
+                throw new Error('RelayChatChannel: un message de discussion ne peut pas partir '
+                    + 'en clair sur une partie protegee (aucun scelleur)');
+        }
+        const line = JSON.stringify({ data: toRelayMessage(msg, seal) });
         /*
          * SCELLER D'ABORD, RETENIR ENSUITE, même raisonnement que sur le relai
          * : un message que le scellement refuse ne doit laisser aucune trace

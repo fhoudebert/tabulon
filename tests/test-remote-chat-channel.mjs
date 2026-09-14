@@ -22,10 +22,33 @@
 // ── Mock relai (équivalent en mémoire de fileio.php) ─────────────────────────
 const store = new Map();          // gameid -> texte brut
 const writes = [];                // trace des clés écrites, pour l'assertion
+/*
+ * Le relai en mémoire imite désormais `chatioaction` de fileio.php : c'est le
+ * SERVEUR qui ajoute une ligne au fichier `<gameid>-chat.txt`, là où Tabulon
+ * réécrivait deux fichiers entiers. La différence est le fond du
+ * déménagement — plus de concurrence à éviter, donc plus de dispositif à deux
+ * clés — et c'est ce que ce mock doit reproduire fidèlement.
+ */
+const chatLog = new Map();       // gameid -> [ligne, …] (le fichier -chat.txt)
 async function mockFetch(url, init) {
     const params = new URLSearchParams(init.body);
-    const action = params.get('gameioaction');
+    const chat = params.get('chatioaction');
     const gameid = params.get('gameid');
+    if (chat === 'save') {
+        const line = params.get('chatmsg');
+        // Le vrai serveur refuse (400) un message multiligne : il relit le
+        // fichier ligne par ligne.
+        if (/[\r\n]/.test(line)) return { status: 400, text: async () => 'single line' };
+        writes.push(gameid);
+        if (!chatLog.has(gameid)) chatLog.set(gameid, []);
+        chatLog.get(gameid).push(line);
+        return { status: 200, text: async () => '{"ok":true}' };
+    }
+    if (chat === 'load') {
+        const lines = chatLog.get(gameid) || [];
+        return { status: 200, text: async () => '{"messages":[' + lines.join(',') + ']}' };
+    }
+    const action = params.get('gameioaction');
     if (action === 'save') {
         writes.push(gameid);
         store.set(gameid, params.get('gamedata'));
@@ -40,7 +63,7 @@ globalThis.window = { __TAURI__: { http: { fetch: mockFetch } } };
 
 const { RelayChatChannel, PeerChatChannel } =
     await import('../app/content/remote-chat-channel.js');
-const { ENVELOPE_KIND, PRESENCE, chatMidFor } =
+const { ENVELOPE_KIND, PRESENCE } =
     await import('../app/content/remote-chat-protocol.js');
 const { encodeEnvelope } = await import('../app/content/remote-relay-protocol.js');
 
@@ -66,8 +89,14 @@ const sealer = {
 const A = 1, B = -1;
 const MATCH = 'match-0001-abcd';
 
-// ── 1. Deux joueurs, deux clés ───────────────────────────────────────────────
-console.log('Relai : chacun n’écrit que dans son fil');
+// ── 1. Un seul fil, partagé — et c'est le point du déménagement ─────────────
+//
+// Les deux joueurs écrivaient chacun dans SA clé, et chacun réécrivait son fil
+// entier à chaque message : un fil de 200 messages coûtait 200 écritures de
+// taille croissante. Le serveur AJOUTE désormais une ligne, sous la clé de la
+// partie — celle que joclymatch emploie déjà. Plus de concurrence à éviter,
+// donc plus de dispositif à deux clés.
+console.log('Relai : un seul fil, que le serveur complète');
 {
     const alice = new RelayChatChannel({
         relayUrl: 'https://relai.test/fileio.php', matchId: MATCH, side: A,
@@ -84,53 +113,53 @@ console.log('Relai : chacun n’écrit que dans son fil');
     await bob.start();
 
     await alice.send({ kind: ENVELOPE_KIND.CHAT, body: 'bonjour' });
-    assert(writes.every(w => w === chatMidFor(MATCH, A)),
-        'Alice n’a écrit que dans sa clé : ' + [...new Set(writes)].join(', '));
-    assert(store.has(chatMidFor(MATCH, A)) && !store.has(chatMidFor(MATCH, B)),
-        'et la clé de Bob n’a pas été touchée');
-
+    assert(writes.every(w => w === MATCH),
+        'tout part sous la clé de la partie : ' + [...new Set(writes)].join(', '));
     // Ce que voit le serveur : rien de lisible.
-    assert(!store.get(chatMidFor(MATCH, A)).includes('bonjour'),
+    assert(!(chatLog.get(MATCH) || []).join('').includes('bonjour'),
         'le texte n’apparaît pas dans ce qui est déposé sur le relai');
 
     await waitFor(() => seenByBob.some(m => m.body === 'bonjour'), 'Bob reçoit le message');
-    assert(true, 'Bob le lit dans le fil d’Alice');
+    assert(true, 'Bob le lit dans le fil commun');
 
-    // Les deux écrivent « en même temps » : sur une clé commune, l’un des deux
-    // messages serait perdu. Sur deux clés, il n’y a pas de concurrence.
+    // Les deux écrivent « en même temps ». Sur une clé commune RÉÉCRITE, l'un
+    // des deux messages serait perdu ; sur un fichier que le serveur complète,
+    // il n'y a rien à perdre.
     await Promise.all([
         alice.send({ kind: ENVELOPE_KIND.CHAT, body: 'moi d’abord' }),
         bob.send({ kind: ENVELOPE_KIND.CHAT, body: 'non, moi' }),
     ]);
     await waitFor(() => bob.conversation.length === 3, 'les trois messages arrivent chez Bob');
     assert(bob.conversation.length === 3, 'aucun message perdu malgré l’écriture simultanée');
+    // Un message écrit ET relu ne doit apparaître qu'une fois : c'est
+    // l'identifiant partagé « horodatage-aléa » qui le garantit.
+    assert(new Set(alice.conversation.map(m => m.id)).size === alice.conversation.length,
+        'et aucun doublon, le fil étant relu en entier à chaque sondage');
 
     alice.stop(); bob.stop();
 }
 
-// ── 2. Une fenêtre rouverte ne s’efface pas elle-même ────────────────────────
+// ── 2. Une fenêtre rouverte retrouve le fil ────────────────────────────────
+//
+// Elle devait auparavant relire son propre fil AVANT d'écrire, sous peine
+// d'écraser son historique au premier message — le fil étant déposé en entier.
+// Le serveur complétant le fichier, cette précaution n'a plus d'objet : il n'y
+// a plus rien à écraser, et le premier sondage rapporte tout.
 console.log('');
-console.log('Relai : relire son propre fil avant d’y écrire');
+console.log('Relai : rouvrir ne perd rien');
 {
-    // Le fil est déposé ENTIER à chaque message. Une fenêtre qui repartirait
-    // d’une liste vide écraserait tout son historique dès le premier envoi.
     const again = new RelayChatChannel({
         relayUrl: 'https://relai.test/fileio.php', matchId: MATCH, side: A,
         sealer, pollIntervalMs: 20,
     });
     await again.start();
-    assert(again.conversation.length === 2, 'au démarrage, Alice retrouve ses deux messages');
+    await waitFor(() => again.conversation.length === 3, 'le fil revient au premier sondage');
+    assert(again.conversation.length === 3, 'les trois messages sont là');
 
-    await again.send({ kind: ENVELOPE_KIND.CHAT, body: 'et de trois' });
-    const reread = await (async () => {
-        const probe = new RelayChatChannel({
-            relayUrl: 'https://relai.test/fileio.php', matchId: MATCH, side: A,
-            sealer, pollIntervalMs: 20,
-        });
-        await probe.start(); probe.stop();
-        return probe.conversation;
-    })();
-    assert(reread.length === 3, 'et son ancien fil n’a pas été écrasé');
+    await again.send({ kind: ENVELOPE_KIND.CHAT, body: 'et de quatre' });
+    await waitFor(() => again.conversation.length === 4, 'le nouveau message s’ajoute');
+    assert((chatLog.get(MATCH) || []).length === 4,
+        'et le fichier compte quatre lignes, pas un fil réécrit');
     again.stop();
 }
 
@@ -147,16 +176,39 @@ console.log('Relai : pas de clé, pas de texte libre');
     try { await naked.send({ kind: ENVELOPE_KIND.CHAT, body: 'secret' }); }
     catch { failed = true; }
     assert(failed, 'un message de discussion sans scelleur échoue plutôt que de partir en clair');
-    assert(!store.has(chatMidFor('nu-0001-abcd', A)), 'et rien n’est déposé');
-    // Le fil est déposé ENTIER à chaque message : un message refusé qui
-    // resterait dans la liste serait réencodé à chaque envoi et les ferait
-    // tous échouer ensuite, y compris ceux qui n’ont rien à se reprocher.
+    assert(!chatLog.has('nu-0001-abcd'), 'et rien n’est déposé');
     assert(naked.conversation.length === 0, 'et le refus ne laisse aucune trace dans le fil');
 
     // La présence, elle, ne porte aucun texte : elle passe sans clé. C’est ce
-    // qui permet de dire « je fais une pause » même discussion désactivée.
+    // qui permet de dire « je fais une pause » à un joueur joclymatch.
     await naked.send({ kind: ENVELOPE_KIND.PRESENCE, state: PRESENCE.PAUSED });
-    assert(store.has(chatMidFor('nu-0001-abcd', A)), 'un état de présence passe sans clé');
+    assert(chatLog.has('nu-0001-abcd'), 'un état de présence passe sans clé');
+
+    /*
+     * LE RÉGIME CLAIR EST UNE PERMISSION EXPLICITE, PAS UNE CONSÉQUENCE.
+     *
+     * Sans scelleur, le refus ci-dessus est le comportement voulu : une partie
+     * créée par Tabulon porte une clé, et un scelleur manquant signale une
+     * panne — clé abîmée, commande Rust indisponible. Le laisser valoir
+     * permission d'écrire en clair serait exactement le chemin par lequel une
+     * protection se perd sans que personne l'ait décidé.
+     *
+     * Une partie rejointe par un lien joclymatch, elle, n'a AUCUNE clé : le
+     * clair y est le seul régime possible, et c'est celui que l'autre joueur
+     * attend. L'appelant le dit, et seulement dans ce cas.
+     */
+    const open = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: 'clair-0001', side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await open.start();
+    await open.send({ kind: ENVELOPE_KIND.CHAT, body: 'bonjour joclymatch' });
+    assert((chatLog.get('clair-0001') || []).join('').includes('bonjour joclymatch'),
+        'régime clair assumé : le texte part, lisible, comme joclymatch l’attend');
+    await waitFor(() => open.conversation.some(m => m.body === 'bonjour joclymatch'),
+        'et se relit sans cadenas');
+    assert(open.conversation.every(m => !m.locked), 'aucun message verrouillé en régime clair');
+    open.stop();
     naked.stop();
 }
 
@@ -322,9 +374,15 @@ console.log('Pas de réveil pour rien');
     });
     await nokey.start();
     await nokey.send({ kind: ENVELOPE_KIND.CHAT, quick: 'wellPlayed' });
-    const stored = JSON.parse(store.get(chatMidFor('rapide-0001', A)));
-    assert(stored.msgs[0].quick === 'wellPlayed', 'un message rapide passe sans scelleur');
-    assert(!('body' in stored.msgs[0]), 'et ne dépose aucun texte');
+    const line = JSON.parse((chatLog.get('rapide-0001') || [])[0]);
+    assert(line.data.quick === 'wellPlayed', 'un message rapide passe sans scelleur');
+    // `msg` vide et non absent : joclymatch ignore une ligne sans `msg`, et
+    // c'est ainsi qu'un message rapide y reste invisible au lieu d'y afficher
+    // « undefined ».
+    assert(line.data.msg === '', 'et ne dépose aucun texte');
+    // Le camp voyage sous le nom de joclymatch, avec les mêmes valeurs : c'est
+    // le seul endroit où les deux formats se rejoignaient déjà.
+    assert(line.data.player === A, 'le camp s’écrit `player`, aux mêmes valeurs');
     nokey.stop();
 }
 
