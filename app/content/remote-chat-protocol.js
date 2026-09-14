@@ -191,10 +191,30 @@ export function newMessage({ kind, side, body = null, quick = null, state = null
  * @param {object} msg    - un message produit par newMessage()
  * @param {string} [seal] - le corps SCELLE, quand il doit l'etre
  */
-export function toRelayMessage(msg, seal = null) {
+export function toRelayMessage(msg, seal = null, quickText = null) {
     const [time, key] = String(msg.id).split('-');
+    /*
+     * UN MESSAGE RAPIDE DOIT RESTER LISIBLE PAR QUI NE CONNAIT PAS `quick`.
+     *
+     * Le champ `quick` est un identifiant que Tabulon traduit chez le lecteur.
+     * joclymatch ne le connait pas : il affiche `msg`, qui valait la chaine
+     * vide -- donc une BULLE VIDE dans le fil, mesuree telle quelle. On y met
+     * donc le libelle traduit, dans la langue de celui qui l'envoie : imparfait
+     * si les deux joueurs n'ont pas la meme, mais infiniment mieux qu'une bulle
+     * sans contenu.
+     *
+     * Rien n'est perdu pour autant : `quick` part AUSSI, et un client qui le
+     * comprend continue de traduire chez lui. `msg` n'est qu'un repli.
+     *
+     * Et rien n'est trahi : un message rapide ne porte aucun texte personnel
+     * -- c'est precisement ce qui lui permet de circuler dans une partie sans
+     * cle.
+     */
+    let corps = seal !== null ? seal : (msg.body ?? '');
+    if (seal === null && msg.quick && typeof quickText === 'string' && quickText.length)
+        corps = quickText;
     const out = {
-        msg: seal !== null ? seal : (msg.body ?? ''),
+        msg: corps,
         player: msg.side,
         time: Number(time) || msg.at,
         key: key || '',
@@ -304,6 +324,23 @@ export async function sealMessage(message, sealer = null) {
  * l'utilisateur voit qu'un message existe et qu'il lui manque la clé, ce qui
  * vaut mieux qu'un trou silencieux dans la conversation.
  */
+/**
+ * Reporte le pseudo de joclymatch sur le message reconstruit.
+ *
+ * decodeThread rebatit chaque message a partir d'une liste FIXE de champs --
+ * c'est ce qui empeche un client inconnu d'injecter n'importe quoi. Mais
+ * `pseudo`, que fromRelayMessage prend soin de conserver, tombait dans ce
+ * filtre : le joueur joclymatch qui s'etait donne un nom s'affichait
+ * « Joueur B » chez son correspondant Tabulon.
+ *
+ * Il est recopie ici, et nulle part ailleurs, pour que la liste fixe reste la
+ * seule porte d'entree.
+ */
+function avecPseudo(out, source) {
+    if (typeof source.pseudo === 'string' && source.pseudo.length) out.pseudo = source.pseudo;
+    return out;
+}
+
 export async function decodeThread(text, { sealer = null, allowClear = false } = {}) {
     if (typeof text !== 'string' || !text.trim()) return [];
     let data;
@@ -332,7 +369,8 @@ export async function decodeThread(text, { sealer = null, allowClear = false } =
             // ouvrir, rien à sceller -- il passe dans une partie sans clé.
             if (typeof m.quick === 'string') {
                 if (!/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(m.quick)) continue;
-                out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, quick: m.quick });
+                out.push(avecPseudo(
+                    { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, quick: m.quick }, m));
                 continue;
             }
             if (typeof m.body !== 'string') continue;
@@ -349,23 +387,24 @@ export async function decodeThread(text, { sealer = null, allowClear = false } =
                  * protegee.
                  */
                 if (allowClear) {
-                    out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body: m.body });
+                    out.push(avecPseudo(
+                        { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body: m.body }, m));
                     continue;
                 }
                 // En clair alors que le genre exige un scellement : on le
                 // garde, verrouillé. Refuser l'affichage effacerait la trace
                 // d'un correspondant mal configuré ; l'afficher tel quel
                 // laisserait croire que le canal protège quelque chose.
-                out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id,
-                    body: null, locked: true, reason: 'unsealed' });
+                out.push(avecPseudo({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id,
+                    body: null, locked: true, reason: 'unsealed' }, m));
                 continue;
             }
             let body = null;
             try { body = sealer ? await sealer.open(m.body) : null; } catch { body = null; }
-            out.push(body === null
+            out.push(avecPseudo(body === null
                 ? { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id,
                     body: null, locked: true, reason: sealer ? 'badKey' : 'noKey' }
-                : { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body });
+                : { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body }, m));
         }
         // Genre inconnu : ignoré en silence. C'est ce qui permettra d'ajouter
         // un quatrième genre sans casser les clients d'aujourd'hui.

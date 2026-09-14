@@ -14,18 +14,22 @@
 // défaut sous une autre forme -- peer_last_message ne garde QU'UNE ligne pour
 // le rattrapage.
 //
-// ── Sur relai : deux clés, un seul écrivain chacune ──────────────────────────
+// ── Sur relai : le point d'entrée chatioaction, partagé avec joclymatch ──────
 //
-// RelayChatChannel n'utilise PAS le point d'entrée chatioaction de joclymatch.
-// Chaque joueur dépose son propre fil sous une clé de partie ordinaire
-// (chatMidFor), n'écrit que dans la sienne et ne lit que celle d'en face. Il
-// n'y a donc aucune concurrence -- un seul écrivain par fichier -- et le
-// dernier-écrit-gagne devient exact au lieu d'être dangereux.
+// RelayChatChannel écrit UN MESSAGE dans le fil commun de la partie
+// (chatioaction=save), et le serveur l'AJOUTE. Les deux joueurs écrivent dans
+// le même fichier, comme joclymatch, et se lisent donc l'un l'autre.
 //
-// Le bénéfice qui a décidé de cette forme : le MÊME code marche sur fileio.php
-// (joclymatch) et sur match.php (mogichex), sans branche particulière, et les
-// deux savent désormais effacer leurs fichiers tout seuls -- expiration par
-// ancienneté, plus une action de suppression explicite.
+// C'est ce qui a remplacé la forme précédente -- deux clés de partie
+// ordinaires, un fil par joueur réécrit en entier à chaque message. Cette
+// forme évitait la concurrence sans rien demander au serveur, mais elle
+// isolait Tabulon : un joueur joclymatch sur la même partie ne voyait rien de
+// ce qui s'y disait, et réciproquement. Le serveur sachant ajouter, il n'y a
+// plus de concurrence à éviter -- et plus de raison d'être seul.
+//
+// Le format des lignes est celui de joclymatch, enrichi de champs FACULTATIFS
+// (kind, quick, state, enc) : voir toRelayMessage / fromRelayMessage. Un
+// client qui les ignore n'en souffre pas.
 //
 // ── En pair-à-pair : rien à stocker ──────────────────────────────────────────
 //
@@ -116,7 +120,7 @@ export class RelayChatChannel extends ChatChannel {
      *   message de discussion sera REFUSÉ à l'envoi (voir encodeThread).
      */
     constructor({ relayUrl, matchId, side, sealer = null, allowClear = false,
-                  pollIntervalMs = 3000, fetchImpl = httpFetch }) {
+                  quickText = null, pollIntervalMs = 3000, fetchImpl = httpFetch }) {
         super();
         if (!relayUrl) throw new Error('RelayChatChannel: relayUrl requis');
         if (!matchId) throw new Error('RelayChatChannel: matchId requis');
@@ -142,6 +146,15 @@ export class RelayChatChannel extends ChatChannel {
          * une protection se perd sans que personne l'ait decide.
          */
         this._allowClear = !!allowClear;
+        /*
+         * Traduction d'un message rapide, pour le champ `msg` du fil commun.
+         *
+         * Sans elle, `msg` vaut la chaine vide et joclymatch affiche une BULLE
+         * VIDE -- constate en faisant dialoguer les deux applications. Le
+         * module de protocole reste pur : c'est l'appelant qui fournit de quoi
+         * traduire, parce que c'est lui qui connait la langue.
+         */
+        this._quickText = typeof quickText === 'function' ? quickText : null;
         this._pollIntervalMs = pollIntervalMs;
         this._fetch = fetchImpl;
         // UNE seule cle, celle de la partie : le serveur AJOUTE, donc il n'y a
@@ -187,18 +200,16 @@ export class RelayChatChannel extends ChatChannel {
                 throw new Error('RelayChatChannel: un message de discussion ne peut pas partir '
                     + 'en clair sur une partie protegee (aucun scelleur)');
         }
-        const line = JSON.stringify({ data: toRelayMessage(msg, seal) });
+        const repli = msg.quick && this._quickText ? this._quickText(msg.quick) : null;
+        const line = JSON.stringify({ data: toRelayMessage(msg, seal, repli) });
         /*
-         * ENCODER D'ABORD, RETENIR ENSUITE.
+         * SCELLER D'ABORD, RETENIR ENSUITE.
          *
-         * Le fil est déposé en ENTIER à chaque message, donc un message que
-         * l'encodage refuse -- un texte libre sans scelleur -- empoisonnerait
-         * tout ce qui suit : il serait réencodé à chaque envoi et les ferait
-         * tous échouer, y compris ceux qui n'ont rien à se reprocher. On le
-         * valide donc avant de l'ajouter, et un refus ne laisse aucune trace.
-         *
-         * L'encodage est synchrone : l'affichage local reste immédiat, sans
-         * attendre l'aller-retour réseau.
+         * Le fil n'est plus déposé en entier -- une ligne est ajoutée -- donc
+         * un message refusé n'empoisonne plus les suivants. La règle tient
+         * quand même, et pour une meilleure raison : un message que le
+         * scellement refuse ne doit laisser AUCUNE trace dans notre fil,
+         * sinon il s'afficherait chez nous comme s'il était parti.
          */
         // Retenu localement pour l'affichage immediat ; le sondage le
         // rapportera aussi, et mergeThreads le dedupliquera par identifiant.
@@ -329,23 +340,23 @@ export class PeerChatChannel extends ChatChannel {
          * passent dans les deux regimes, et c'est ce qui permet de dire « je
          * fais une pause » a un joueur joclymatch.
          */
-        let seal = null;
-        if (requiresSeal(msg)) {
-            // sealMessage prend le MESSAGE, pas son texte : c'est lui qui
-            // porte la garde (requiresSeal) et qui pose le marqueur `enc`.
-            // Lui passer une chaine le faisait rendre cette chaine telle
-            // quelle -- du clair, sous couvert de scellement.
-            if (this._sealer) seal = (await sealMessage(msg, this._sealer)).body;
-            else if (!this._allowClear)
-                throw new Error('RelayChatChannel: un message de discussion ne peut pas partir '
-                    + 'en clair sur une partie protegee (aucun scelleur)');
-        }
-        const line = JSON.stringify({ data: toRelayMessage(msg, seal) });
         /*
          * SCELLER D'ABORD, RETENIR ENSUITE, même raisonnement que sur le relai
          * : un message que le scellement refuse ne doit laisser aucune trace
          * dans notre fil, sinon il s'afficherait chez nous comme s'il était
          * parti.
+         *
+         * ICI, CONTRAIREMENT AU RELAI, IL N'Y A PAS DE REGIME CLAIR. Le
+         * pair-a-pair n'existe qu'entre deux Tabulon, et son code d'invitation
+         * porte toujours une cle : un texte libre sans scelleur est donc une
+         * erreur de programmation, pas une configuration possible. C'est
+         * sealMessage qui le refuse, en un seul endroit.
+         *
+         * Le corps de cette methode dupliquait celui du relai : il calculait
+         * un `seal` et une `line` au format joclymatch -- inutiles, le
+         * pair-a-pair transportant le format Tabulon -- puis appelait
+         * sealMessage une SECONDE fois. Deux scellements du meme texte, deux
+         * nonces, et un message compose a partir du second.
          */
         const wire = await sealMessage(msg, this._sealer);
         this._mine = [...this._mine, msg];   // en clair CHEZ NOUS : c'est ce qu'on relit

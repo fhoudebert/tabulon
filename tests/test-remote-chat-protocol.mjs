@@ -21,6 +21,7 @@ import {
     ENVELOPE_KIND, PRESENCE, THREAD_VERSION, NUDGE_MIN_INTERVAL_MS,
     chatMidFor, newMessage, encodeThread, decodeThread, mergeThreads,
     presenceOf, canNudge, requiresSeal,
+    toRelayMessage, fromRelayMessage,
 } from '../app/content/remote-chat-protocol.js';
 import {
     SEED_KEY, SEED_BYTES, generateSeed, generateChatKey, isSeed, getOrCreateSeed, rotateSeed,
@@ -416,6 +417,44 @@ console.log('L’enveloppe de joclymatch');
                        { data: { msg: 'x', player: 7, time: 1 } },
                        { data: { msg: 'x', player: 1, time: 'hier' } }])
         ok(fromRelayMessage(bad) === null, 'ligne inexploitable ignorée : ' + JSON.stringify(bad));
+}
+
+console.log('');
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Interoperabilite mesuree contre un serveur joclymatch reel : deux defauts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+{
+    // UN MESSAGE RAPIDE NE DOIT PAS ARRIVER VIDE. joclymatch affiche `msg` et
+    // ne connait pas `quick` : sans repli, la bulle etait vide dans son fil.
+    const m = newMessage({ kind: 'chat', side: 1, quick: 'wellPlayed' });
+    ok(toRelayMessage(m).msg === '', 'sans repli, le corps reste vide (etat d avant)');
+    const avec = toRelayMessage(m, null, 'Bien joué');
+    ok(avec.msg === 'Bien joué', 'avec repli, le corps porte le libelle');
+    ok(avec.quick === 'wellPlayed', 'et `quick` part quand meme, pour qui sait le lire');
+
+    // Le repli ne doit JAMAIS ecraser un corps scelle.
+    const libre = newMessage({ kind: 'chat', side: 1, body: 'secret' });
+    const scelle = toRelayMessage(libre, 'c2NlbGxl', 'Bien joué');
+    ok(scelle.msg === 'c2NlbGxl', 'un corps scelle n est pas remplace par le repli');
+    ok(scelle.enc === 1, 'et il porte enc');
+}
+
+{
+    // LE PSEUDO DE JOCLYMATCH DOIT SURVIVRE. fromRelayMessage le conservait,
+    // decodeThread le jetait : le correspondant s'affichait « Joueur B » alors
+    // qu'il s'etait donne un nom.
+    const interne = fromRelayMessage(
+        { data: { msg: 'bonjour', player: -1, pseudo: 'Ada', time: 1000, key: 'zzzz' } });
+    ok(interne.pseudo === 'Ada', 'fromRelayMessage garde le pseudo');
+    const [relu] = await decodeThread(JSON.stringify({ v: 1, msgs: [interne] }), { allowClear: true });
+    ok(relu && relu.pseudo === 'Ada', 'decodeThread le garde aussi');
+    ok(relu && relu.body === 'bonjour', 'et le corps reste lisible');
+
+    const sans = fromRelayMessage({ data: { msg: 'x', player: 1, time: 2000, key: 'yyyy' } });
+    const [relu2] = await decodeThread(JSON.stringify({ v: 1, msgs: [sans] }), { allowClear: true });
+    ok(relu2 && relu2.pseudo === undefined, 'pas de pseudo inutile quand il n y en a pas');
 }
 
 console.log('');

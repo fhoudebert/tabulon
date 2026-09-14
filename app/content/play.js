@@ -300,6 +300,11 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
         ? new PeerChatChannel({ side: localSide, sealer })
         : new RelayChatChannel({
             relayUrl, matchId: remoteMatchId, side: localSide, sealer, allowClear,
+            // Le fil est PARTAGE avec joclymatch, qui ne connait pas `quick` :
+            // sans repli lisible, un message rapide y apparait comme une bulle
+            // vide. On lui donne le libelle traduit -- dans notre langue,
+            // faute de connaitre la sienne, ce qui vaut mieux que rien.
+            quickText: (id) => t('chat.' + id),
         });
     /*
      * LE TEXTE LIBRE DEMANDE UNE CLE, PAIR-A-PAIR COMPRIS.
