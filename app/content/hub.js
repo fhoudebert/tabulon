@@ -731,7 +731,19 @@ async function OpenGameFile(text, fileName, hintGame) {
     } catch (e) { console.warn('[hub] parse_pjn:', e.message || e); }
 
     const r = ResolveGame(declared, selected);
-    if (!r.game) return Notify(r.unknown ? t('hub.loadUnknownGame') : t('hub.loadNoGame'));
+    /*
+     * UN JEU DECLARE ET INTROUVABLE EST UN REFUS, pas un repli.
+     *
+     * On ouvrait alors le jeu SELECTIONNE dans la fiche -- Ultima, parce que
+     * c'est la derniere fiche consultee -- avec les coups d'un fichier qui
+     * parle d'autre chose. La fenetre s'ouvrait, la position etait refusee en
+     * console, et rien a l'ecran ne disait ce qui s'etait passe.
+     *
+     * Le repli sur le jeu selectionne garde son sens pour un fichier qui ne
+     * declare RIEN : c'est alors a l'utilisateur de choisir, et il l'a fait.
+     */
+    if (r.unknown) return Notify(t('hub.loadUnknownNamed', { game: declared }));
+    if (!r.game) return Notify(t('hub.loadNoGame'));
     if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
     await store.set('book:' + r.game, { fileName, data: text, preludeSetup });
     tRpc.call('open_book', r.game, fileName, '');
@@ -774,7 +786,11 @@ async function OpenVariantsIni(text, fileName) {
         game: map[v.name.toLowerCase()].game,
         kind: 'position',
         fileName: v.name + '.pjn',
-        text: '[JoclyGame "' + map[v.name.toLowerCase()] + '"]\n[Event "' + v.name + '"]\n'
+        // `.game` : l'index rend { game, setup }, et l'objet entier s'ecrivait
+        // « [object Object] » dans le tag. Le repli sur la fiche selectionnee
+        // le masquait ; depuis qu'un jeu declare et introuvable est refuse,
+        // la vignette n'ouvrait plus rien.
+        text: '[JoclyGame "' + map[v.name.toLowerCase()].game + '"]\n[Event "' + v.name + '"]\n'
             + (v.startFen ? '[FEN "' + v.startFen.replace(/"/g, "'") + '"]\n[SetUp "1"]\n' : '')
             + '[PlyCount "0"]\n\n',
     })));

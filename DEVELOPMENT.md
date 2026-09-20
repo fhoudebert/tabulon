@@ -1112,12 +1112,18 @@ other chess variant Tabulon reads or writes.
   Tabulon and the engine understand.
 - *The [FEN] of a PyChess file* carries the waiting pieces in a pocket and
   the still-open gating squares in the castling field
-  (`…/RNBQKBNR[HEhe] w KQBCDFGkqbcdfg - 0 1`). jocly has neither: its waiting
-  pieces sit on off-board columns. `SChessFen()` recognises the **starting**
-  position and returns null — nothing to load, the prelude already puts it
-  there — and hands any other position back untouched, so jocly refuses it
-  loudly instead of replaying the moves from a wrong position. It runs before
-  `PgnFenToShogiSfen`, which would otherwise read that pocket as a shogi hand.
+  (`…/RNBQKBNR[HEhe] w KQBCDFGkqbcdfg - 0 1`). **jocly now reads and writes
+  that same shape** for this game (its old grid FEN lost the gating rights
+  altogether, so a saved middlegame reopened with all sixteen gates reopened).
+  What is left to Tabulon is the *alphabet*: `SChessFen()` turns the file's
+  letters into jocly's through the arrangement's `pieceMap` (`H`→`C`,
+  `E`→`M`). That is not cosmetic — `H` and `E` also exist here, as the chu
+  phoenix and the shako elephant, so an untranslated pocket would name two
+  pieces from two different arrangements; jocly refuses such a pocket rather
+  than open a plausible, wrong game. Starting position or middlegame, the same
+  path applies. `NormalizeBookFen()` holds the order of the dialects in one
+  place (S-Chess before `PgnFenToShogiSfen`, which would read that pocket as a
+  shogi hand) and is used by play.js, the hub and the book window alike.
 - *Older files.* A jocly predating the fix wrote a fake promotion when a
   back-rank move gave check (`Qd1-h5=Q+`, `Qd1-h5=C+/C`).
   `NormalizeSChessNatural()` puts those PJN tokens back into today's form
@@ -1126,7 +1132,20 @@ other chess variant Tabulon reads or writes.
 
 Covered end to end by `tests/import/test-seirawan.mjs` (the PyChess fixture
 replayed and rewritten token for token, PGN and PJN round trips in two
-arrangements).
+arrangements, a middlegame position translated and reloaded).
+
+**A file that cannot be opened says so, and opens nothing.** Two refusals used
+to be silent, and both ended the same way — a window opened on the wrong game
+or on an empty board, with the reason in the console only:
+
+- the hub fell back to the *selected* game whenever a file declared a game or
+  variant it could not map, so a PyChess file dropped while an Ultima card was
+  on screen opened Ultima. A file that declares nothing still falls back (the
+  user chose), but a declared-and-unknown one is now refused by name;
+- the book window opened the match before knowing whether its `[FEN]` loads.
+  It now tries the position first — `NormalizeBookFen()` then a throwaway
+  `Jocly.createMatch().load()` — and shows the engine's own reason in place,
+  keeping the list visible, since the other games in the file may be fine.
 
 ### The clock (JoclyBoard model, ported)
 

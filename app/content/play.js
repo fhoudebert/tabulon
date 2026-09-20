@@ -14,9 +14,8 @@ import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel, getLocale } from './tabulon-i18n.js';
 import { gameTitle } from './localized-field.js';
 import { installNativeEngine } from './engine-native.js';
-import { SChessFen, NormalizeSChessNatural } from './book-format.js';
-import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
-         
+import { NormalizeBookFen, NormalizeSChessNatural } from './book-format.js';
+import { ReplayBookMoves, MoveFormat, FlipSfenTurn,
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove,
          ParseWxfMove, WxfMatches, ParseSanMove, SanMatches, BuildSanMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
@@ -1759,14 +1758,23 @@ function FairyVariantName(played) {
  * et parle de « Mf3 » n'est pas du Fairy-Stockfish, c'est du jocly deguise.
  */
 function FairyProfile(played) {
+    const answer = (played || []).find(m => m && m.setup !== undefined);
+    return FairySetupProfile(answer ? answer.setup : null);
+}
+
+/**
+ * Le meme profil, a partir du NUMERO d'arrangement plutot que des coups
+ * joues : avant le prelude il n'y a rien a lire dans la partie, et c'est
+ * pourtant la que le [FEN] d'un fichier doit etre traduit.
+ */
+function FairySetupProfile(setup) {
     const empty = { variant: null, pieceMap: null };
     const level = (levels || []).find(l => l && l.ai === 'fairy-stockfish');
     if (!level) return empty;
     if (level.variant) return { variant: level.variant, pieceMap: level.pieceMap || null };
     if (!Array.isArray(level.variants)) return empty;
-    const answer = (played || []).find(m => m && m.setup !== undefined);
-    if (!answer) return empty;
-    const match = level.variants.find(v => v && v.setup === answer.setup);
+    if (!Number.isInteger(setup)) return empty;
+    const match = level.variants.find(v => v && v.setup === setup);
     if (!match || !match.variant) return empty;
     // `pgnVariant` : le nom STANDARD de l'arrangement, quand il en a un
     // (« seirawan » pour l'arrangement 0 du Seirawan++). C'est lui que
@@ -2683,15 +2691,19 @@ async function BookReplay(book) {
         // shogi (cinq champs) et celui du shogi de PyChess (reserve entre
         // crochets, a la maniere du crazyhouse). L'ordre importe peu, les deux
         // formes s'excluent.
-        if (book.initialBoard) {
-            // Le S-Chess d'abord : son FEN a poche ressemble a celui du shogi
-            // de PyChess, et PgnFenToShogiSfen le prendrait pour tel.
-            const schess = SChessFen(book.initialBoard, gameName);
-            book.initialBoard = schess !== undefined ? schess
-                : (PgnFenToJocly(book.initialBoard)
-                   || PgnFenToShogiSfen(book.initialBoard)
-                   || VariantFen(book.initialBoard, gameName));
-        }
+        /*
+         * L'ARRANGEMENT AVANT LA POSITION. Les lettres d'un [FEN] dependent de
+         * la paire choisie -- le « H » de PyChess est notre cardinal -- et le
+         * fichier ne dit la paire que dans [Variant], que le hub a ramene a un
+         * numero d'arrangement. Il faut donc le lire AVANT de traduire la
+         * position, et pas apres le prelude : sur une position chargee, jocly
+         * ne rejoue pas le prelude, la paire se lisant dans la poche.
+         */
+        const bookSetup = Array.isArray(book.prelude) && /^#\d+$/.test(book.prelude[0] || '')
+            ? parseInt(String(book.prelude[0]).slice(1), 10) : null;
+        if (book.initialBoard)
+            book.initialBoard = NormalizeBookFen(book.initialBoard, gameName,
+                FairySetupProfile(bookSetup).pieceMap);
         // `tsume` accompagne la position partout ou elle est rechargee : la
         // fenetre Historique fait revenir play.js a la position de depart pour
         // rejouer jusqu'au coup demande, et sans l'option ce rechargement

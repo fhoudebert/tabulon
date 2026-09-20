@@ -168,6 +168,10 @@ console.log('Jeu declare non installe');
   assert(!invokeCalls.slice(before).some(c => c.cmd === 'open_book'),
     'pas d\'ouverture dans un jeu au hasard');
   assert(/not installed/i.test(notifierText()), 'la banniere distingue ce cas du precedent');
+  // Et elle NOMME ce que le fichier declare : sans le nom, l'utilisateur ne
+  // sait pas s'il lui manque un jeu ou s'il s'est trompe de fichier.
+  assert(/jeu-inexistant/.test(notifierText()),
+    'et nomme le jeu introuvable — trouve : "' + notifierText().slice(0, 70) + '"');
 }
 
 console.error = realError;

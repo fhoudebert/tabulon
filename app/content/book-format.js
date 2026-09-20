@@ -1122,36 +1122,58 @@ export function VariantFen(fen, game) {
 }
 
 /**
- * Le [FEN] d'un PGN de S-Chess (Seirawan), ramene a ce que Tabulon sait
- * ouvrir -- ou `undefined` si le jeu n'est pas concerne.
+ * Le [FEN] d'un PGN de S-Chess (Seirawan), dans l'alphabet de jocly -- ou
+ * `undefined` si le jeu n'est pas concerne.
  *
- * PyChess ecrit la position de depart MEME quand elle est standard :
+ * PyChess ecrit la position avec les pieces en attente EN POCHE et les cases
+ * encore ouvertes a l'entree dans le champ du roque :
  *
  *   rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[HEhe] w KQBCDFGkqbcdfg - 0 1
  *
- * les pieces en attente en poche, et les cases encore ouvertes a l'entree
- * dans le champ du roque. Rien de cela n'a d'equivalent direct dans le FEN de
- * jocly, dont les pieces en attente sont sur des colonnes hors jeu -- et ce
- * FEN tomberait sinon dans PgnFenToShogiSfen, qui le lirait comme un shogi.
+ * jocly lit cette forme (famous/seirawan-model.js), mais avec SES lettres :
+ * le faucon y est le cardinal (« C ») et l'elephant le marshall (« M »).
+ * Traduire n'est pas cosmetique -- « H » et « E » designent chez lui le
+ * phenix du chu et l'elephant du shako, donc deux pieces d'arrangements
+ * differents. Il refuse d'ailleurs une telle poche plutot que d'ouvrir une
+ * partie plausible et fausse ; c'est ici que la traduction se fait.
  *
- * La position de DEPART n'a pas besoin d'etre traduite : c'est celle que le
- * prelude pose, et la paire en poche est celle que [Variant] designe deja.
- * On rend donc null (« pas de position a charger »). Toute autre position
- * est rendue telle quelle : jocly la refusera, et la lecture s'arretera sur
- * un message plutot que de rejouer les coups depuis une position fausse.
+ * `pieceMap` est la correspondance du manifeste (jocly -> fichier), celle de
+ * l'ARRANGEMENT joue. Sans elle, les lettres passent telles quelles : c'est
+ * le cas des arrangements qui n'en ont pas, dont les PGN viennent de Tabulon.
  */
-export function SChessFen(fen, game) {
+export function SChessFen(fen, game, pieceMap) {
     if (game !== 'seirawan-chess') return undefined;
     const text = String(fen || '').trim();
     const f = text.split(/\s+/);
-    const m = /^(.*)\[([A-Za-z]*)\]$/.exec(f[0] || '');
-    const board = m ? m[1] : f[0];
-    const pocket = m ? m[2] : '';
-    const upper = pocket.replace(/[a-z]/g, ''), lower = pocket.replace(/[A-Z]/g, '');
-    const standard = board === 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR'
-        && (f[1] || 'w') === 'w'
-        && upper.length === 2 && upper.toLowerCase().split('').sort().join('') === lower.split('').sort().join('');
-    return standard ? null : text;
+    // Pas de poche : c'est la forme de la grille interne (dix colonnes), que
+    // jocly lit telle quelle.
+    if (!/\[[A-Za-z]*\]$/.test(f[0] || '')) return text;
+    const back = {};
+    for (const [jocly, file] of Object.entries(pieceMap || {})) back[file.toUpperCase()] = jocly;
+    if (!Object.keys(back).length) return text;
+    // Seules les lettres de la correspondance changent, dans les deux casses.
+    f[0] = f[0].replace(/[A-Za-z]/g, (ch) => {
+        const up = back[ch.toUpperCase()];
+        if (!up) return ch;
+        return ch === ch.toUpperCase() ? up.toUpperCase() : up.toLowerCase();
+    });
+    return f.join(' ');
+}
+
+/**
+ * Le [FEN] d'un fichier, ramene a ce que jocly lit pour CE jeu.
+ *
+ * Les dialectes ne se distinguent pas toujours l'un de l'autre -- la poche du
+ * S-Chess ressemble a la main du shogi de PyChess -- donc l'ordre compte, et
+ * il vaut mieux qu'un seul endroit le tienne : play.js le chargeait, le hub
+ * et la fenetre livre n'en savaient rien, et personne ne pouvait dire avant
+ * d'ouvrir une fenetre si la position passerait.
+ */
+export function NormalizeBookFen(fen, game, pieceMap) {
+    if (!fen) return fen;
+    const schess = SChessFen(fen, game, pieceMap);
+    if (schess !== undefined) return schess;
+    return PgnFenToJocly(fen) || PgnFenToShogiSfen(fen) || VariantFen(fen, game);
 }
 
 /**

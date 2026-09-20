@@ -33,21 +33,32 @@ const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAI
 // d'accord qu'avec elle-même. play.js n'est pas importable sous Node (il touche
 // au DOM au chargement), d'où l'extraction par équilibrage d'accolades — le
 // même procédé que tests/test-thinking-clock.mjs.
-function lift(name) {
+function body(name) {
     const at = src.indexOf('function ' + name);
     if (at < 0) throw new Error('introuvable : ' + name);
     let depth = 0;
     for (let j = src.indexOf('{', at); j < src.length; j++) {
         if (src[j] === '{') depth++;
-        else if (src[j] === '}' && --depth === 0) {
-            // `levels` est une variable de module : on la fournit par une
-            // fermeture, ce qui permet de la changer d'un cas à l'autre.
-            return (0, eval)('(function (levels) { return (' + src.slice(at, j + 1) + '); })');
-        }
+        else if (src[j] === '}' && --depth === 0) return src.slice(at, j + 1);
     }
     throw new Error('accolades déséquilibrées : ' + name);
 }
-const make = lift('FairyProfile');
+
+/**
+ * Une fonction de play.js, avec CELLES QU'ELLE APPELLE.
+ *
+ * FairyProfile ne fait plus que traduire les coups joués en numéro
+ * d'arrangement : le profil lui-même vient de FairySetupProfile, parce qu'un
+ * [FEN] doit être traduit AVANT le prélude, quand aucun coup n'est encore
+ * joué. Prise seule, la première lève une ReferenceError.
+ */
+function lift(...names) {
+    const declared = names.map(body).join('\n');
+    // `levels` est une variable de module : on la fournit par une fermeture,
+    // ce qui permet de la changer d'un cas à l'autre.
+    return (0, eval)('(function (levels) { ' + declared + '\nreturn ' + names[names.length - 1] + '; })');
+}
+const make = lift('FairySetupProfile', 'FairyProfile');
 const letters = lift('FairyLetters')();
 
 console.log('Un nom unique : les variantes sans prélude');

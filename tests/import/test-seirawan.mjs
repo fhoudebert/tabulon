@@ -24,7 +24,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { BookFen, BookVariant, ExtractMoves, MoveFormat, FairyVariantAlias, FairyGameIndex,
          ParseSanMove, SanMatches, BuildSanMove, ParseNaturalMove, ReplayBookMoves,
-         SChessFen, NormalizeSChessNatural, BuildPJN } from '../../app/content/book-format.js';
+         SChessFen, NormalizeBookFen, NormalizeSChessNatural, BuildPJN } from '../../app/content/book-format.js';
 
 const require = createRequire(import.meta.url);
 const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
@@ -125,10 +125,24 @@ async function sanWrite(m, index, pieceMap) {
     ok(hit?.game === GAME && hit?.setup === 0,
        '[Variant "Seirawan"] designe ' + hit?.game + ', arrangement ' + hit?.setup);
 
-    // Le [FEN] de PyChess : la position de DEPART, poche comprise. Rien a
-    // charger -- c'est celle que le prelude pose.
-    ok(SChessFen(BookFen(tags), GAME) === null,
-       'le [FEN] de depart du S-Chess ne demande aucun chargement');
+    // Le [FEN] de PyChess : la poche « [HEhe] » est dans SON alphabet. jocly
+    // lit cette forme, mais avec ses lettres a lui.
+    const { pieceMap: mapped } = profile(hit.setup);
+    const board = NormalizeBookFen(BookFen(tags), GAME, mapped);
+    ok(/\[CMcm\]/.test(board), 'le [FEN] de PyChess est traduit dans l\'alphabet de jocly');
+    const loaded = await J.createMatch(GAME);
+    await loaded.load({ game: GAME, initialBoard: board, playedMoves: [] });
+    ok((await loaded.getBoardState()).startsWith('rnbqkbnr/pppppppp'),
+       'et jocly l\'ouvre tel quel, sans repasser par le prelude');
+    // Sans traduction, « H » et « E » sont le phenix du chu et l'elephant du
+    // shako : deux arrangements differents. jocly refuse plutot que d'ouvrir
+    // une partie plausible et fausse.
+    let refused = null;
+    try {
+        const trial = await J.createMatch(GAME);
+        await trial.load({ game: GAME, initialBoard: BookFen(tags), playedMoves: [] });
+    } catch (e) { refused = e; }
+    ok(!!refused, 'le meme [FEN] non traduit est refuse, et non ouvert de travers');
 
     const tokens = ExtractMoves(text);
     ok(MoveFormat(tokens) === 'san', 'les coups sont lus comme du SAN (' + tokens.length + ' jetons)');
@@ -262,11 +276,37 @@ for (const spec of GAMES) {
     ok(names2[0] === 'Qd1-h5/C+', 'et l\'ancien jeton rejoue le bon coup : ' + names2[0]);
 }
 
-// ── 4. Le FEN : seule la position de depart est acceptee ────────────────────
+// ── 4. Une position de MILIEU de partie, traduite et rechargee ──────────────
 {
-    const mid = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQ1RK1[HEhe] b KQkq - 0 4';
-    ok(SChessFen(mid, GAME) === mid, 'une position de milieu de partie est rendue telle quelle (jocly tranchera)');
-    ok(SChessFen('whatever', 'chess') === undefined, 'et les autres jeux ne sont pas concernes');
+    // Une vraie position avancee, ecrite comme PyChess l'ecrirait : on joue,
+    // on exporte, et on remet les lettres de SON alphabet (C -> H, M -> E).
+    const src = await started(0);
+    for (const want of ['g2-g3', 'b7-b6', 'Ng1-f3', 'Bc8-b7/M', 'Bf1-g2', 'Ng8-f6/C', 'O-O/Ce1']) {
+        const mv = await src.getPossibleMoves();
+        const nat = await src.getMoveString(mv);
+        await src.playMove(mv[nat.indexOf(want)]);
+    }
+    const jocly = await src.getBoardState();
+    const mid = jocly.replace(/\[([A-Za-z]*)\]/, (all, pocket) =>
+        '[' + pocket.replace(/[CM]/g, (c) => (c === 'C' ? 'H' : 'E'))
+                    .replace(/[cm]/g, (c) => (c === 'c' ? 'h' : 'e')) + ']');
+    const board = NormalizeBookFen(mid, GAME, { C: 'H', M: 'E' });
+    ok(board === jocly, 'la poche d\'une position avancee retrouve les lettres de jocly');
+    const m = await J.createMatch(GAME);
+    await m.load({ game: GAME, initialBoard: board, playedMoves: [] });
+    const here = (await m.getMoveString(await m.getPossibleMoves())).sort();
+    const there = (await src.getMoveString(await src.getPossibleMoves())).sort();
+    ok(JSON.stringify(here) === JSON.stringify(there),
+       'et la position rechargee offre exactement les memes coups');
+    // Les deux pieces des Noirs sont entrees, et c'est a eux de jouer : aucune
+    // entree ne doit etre proposee. La poche l'a dit, et elle a traverse.
+    ok(!here.some(x => /\//.test(x)), 'un camp sans piece en poche n\'en fait entrer aucune');
+    ok(/\[M\]/.test(await m.getBoardState()), 'celle de l\'adversaire attend toujours');
+
+    ok(SChessFen('whatever', 'chess') === undefined, 'les autres jeux ne sont pas concernes');
+    ok(NormalizeBookFen('rnbqkbnrc!m!/pppppppp2/10/10/10/10/PPPPPPPP2/RNBQKBNRC!M! w KQkq - 0 2',
+        GAME, { C: 'H', M: 'E' }).indexOf('c!m!') > 0,
+       'et l\'ancienne forme de jocly passe sans traduction');
 }
 
 console.log('');
