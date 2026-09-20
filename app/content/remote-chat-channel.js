@@ -71,13 +71,24 @@ export class ChatChannel {
         /*
          * Le fil du relai est-il plein ?
          *
-         * fileio.php plafonne le fichier de conversation (256 Ko par defaut) et
-         * REFUSE au-dela. Ce n'est pas une panne : c'est une fin de course
-         * prevue, et elle arrive a deux joueurs bavards sur une partie par
-         * correspondance. Un etat, donc, et pas une erreur reseau -- il ne
-         * disparaitra pas en reessayant.
+         * fileio.php plafonne le fichier de conversation (256 Ko par defaut).
+         * Il RETIRE desormais les plus anciens messages pour loger les
+         * nouveaux : la conversation ne se ferme plus, et ce drapeau ne se
+         * leve que face a un relai qui a garde l'ancien refus
+         * ($chatTrimOldest = false) ou qui n'a pas ete mis a jour. Ce n'est
+         * alors pas une panne mais une fin de course -- elle ne disparaitra
+         * pas en reessayant.
          */
         this._full = false;
+        /*
+         * Ce que le relai a retire pour faire de la place, en messages.
+         *
+         * Notre fenetre, elle, garde tout ce qu'elle a vu passer (voir
+         * _readThread) : le retrait ne fait donc rien disparaitre sous les
+         * yeux du joueur. Il change ce que verrait quelqu'un qui OUVRE la
+         * partie maintenant -- et c'est a ce titre qu'on le compte.
+         */
+        this._trimmed = 0;
         this._theirs = [];     // ce que nous avons reçu
         this._lastError = null;
     }
@@ -86,6 +97,9 @@ export class ChatChannel {
 
     /** Le relai refuse-t-il d'en accepter davantage ? */
     get full() { return this._full; }
+
+    /** Messages retires du relai pour faire de la place depuis l'ouverture. */
+    get trimmed() { return this._trimmed; }
 
     /** La conversation telle qu'elle doit s'afficher. */
     get conversation() { return mergeThreads(this._mine, this._theirs); }
@@ -261,6 +275,21 @@ export class RelayChatChannel extends ChatChannel {
         this._publish();
 
         const res = await this._post(buildChatSaveBody(this._mid, line));
+        let answer = null;
+        try { answer = JSON.parse(await res.text()); } catch { answer = null; }
+        /*
+         * CE MESSAGE-CI est trop gros pour le fil entier : aucun retrait n'y
+         * changerait rien, et ce n'est pas le fil qui est ferme. Le dire
+         * autrement qu'un fil plein, parce que la reaction n'est pas la meme --
+         * raccourcir, ou renoncer.
+         */
+        if (res && res.status === 413 && answer && answer.error === 'chat message too large') {
+            this._mine = this._mine.filter(m => m.id !== msg.id);
+            this._publish();
+            const err = new Error('ce message est plus long que le fil de conversation du relai');
+            err.code = 'chat-too-long';
+            throw err;
+        }
         if (res && res.status === 413) {
             /*
              * LE FIL EST PLEIN, et le message n'est PAS parti.
@@ -281,6 +310,12 @@ export class RelayChatChannel extends ChatChannel {
             err.code = 'chat-full';
             throw err;
         }
+        // Le relai dit ce qu'il a retire pour loger ce message-ci.
+        if (answer && Number.isInteger(answer.trimmed) && answer.trimmed > 0) {
+            this._trimmed += answer.trimmed;
+            console.info('[remote-chat] le relai a retire', answer.trimmed,
+                'message(s) parmi les plus anciens pour faire de la place');
+        }
         return msg;
     }
 
@@ -294,7 +329,33 @@ export class RelayChatChannel extends ChatChannel {
     async _pollOnce() {
         if (!this._polling) return;
         try {
-            this._theirs = await this._readThread();
+            const read = await this._readThread();
+            /*
+             * ON GARDE CE QU'ON A DEJA VU.
+             *
+             * Le relai retire les plus anciens messages quand le fichier est
+             * plein : remplacer notre fil par ce qu'il reste ferait
+             * DISPARAITRE de la fenetre des messages deja lus, sans que
+             * personne n'ait rien fait. On fusionne donc, comme le panneau de
+             * joclymatch qui n'enleve jamais ce qu'il a affiche.
+             *
+             * Le doublon n'est pas un risque : mergeThreads deduplique par
+             * identifiant, et c'est deja lui qui recolle nos messages avec
+             * ceux d'en face.
+             */
+            const known = new Set(read.map(m => m.id));
+            /*
+             * CE QU'ON VIENT DE LIRE PASSE DEVANT : mergeThreads garde la
+             * PREMIERE version d'un identifiant, et la relecture est la
+             * bonne. Un message peut changer entre deux tours sans changer
+             * d'identifiant -- c'est le cas apres une bascule en clair, ou
+             * le meme message, d'abord garde, devient lisible.
+             */
+            this._theirs = mergeThreads(read, this._theirs);
+            // Nos messages confirmes par le fil partage n'ont plus a etre
+            // gardes a part : ils sont dans le fil, et y resteront tant que le
+            // relai les porte.
+            this._mine = this._mine.filter(m => !known.has(m.id));
             this._lastError = null;
             this._publish();
         } catch (e) {

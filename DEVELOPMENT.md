@@ -385,10 +385,29 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   other end does not display an empty bubble, and joclymatch's `pseudo`
   is carried through `decodeThread` so the correspondent keeps the name
   they chose. Both are covered in `tests/test-remote-chat-protocol.mjs`.
-- The relay bounds the chat file (`$chatMaxBytes`, 256 KB) and answers
-  **413** beyond it. That is a foreseen end of the road, not a network
-  failure: the message is removed from our own thread rather than left
-  showing as if it had gone, and the window closes the input saying why.
+- **The chat log fills up, and the conversation carries on.** The relay
+  bounds the chat file (`$chatMaxBytes`, 256 KB); it now drops the *oldest*
+  messages to make room (`$chatTrimOldest`) instead of closing the thread,
+  because a correspondence game lasts weeks and a frozen conversation in the
+  middle of a live game is the worse failure. Three consequences here:
+  - `_readThread()` **merges** into what we already hold rather than
+    replacing it, so a trim on the relay never makes messages vanish from a
+    window someone is reading — joclymatch behaves the same way, its panel
+    never removes a bubble. The freshly read copy wins on identity ties: the
+    same message can change between two polls (a sealed body becomes
+    readable after switching to clear), and the stale copy must not win.
+    Our own confirmed messages are dropped from `_mine` once the shared file
+    carries them; it is only a pending-display buffer.
+  - the save answers `{"ok":true,"trimmed":n}`; the channel counts them
+    (`chan.trimmed`) and logs them. What is lost is what a player *opening*
+    the match now would see, which is worth knowing when debugging a thread
+    that looks shorter on one side than the other.
+  - two refusals remain and they read differently: `chat-too-long` is about
+    that one message (bigger than the whole log — shorten it, the input
+    stays open, `chat.tooLong` says so), `chat-full` only comes from a relay
+    that kept the old refusal, and then the window closes the input. The
+    message is removed from our own thread in both cases rather than left
+    showing as if it had gone.
 - **Free text is sealed, on both transports.** `sealMessage()` is the
   single rule: a chat message carrying a `body` travels sealed and
   carries `enc:1`, and `decodeThread()` refuses to display a body

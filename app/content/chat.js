@@ -233,6 +233,12 @@ function Apply(payload) {
     if (payload.sides) sides = payload.sides;
     SetKeyring(payload.keyring || [], payload.keyringId || null);
     SetCanWrite(!!payload.canWrite, payload.chatKey || null, !!payload.chatFull);
+    // Un fait ponctuel, pose APRES l'etat : la saisie reste ouverte et c'est
+    // le dernier envoi qui n'est pas passe.
+    if (payload.notice === 'tooLong') {
+        const status = $('chat-status');
+        if (status) status.textContent = t('chat.tooLong');
+    }
     SetClearOffer(!!payload.canClear);
     conversation = payload.conversation || [];
     Render(conversation);

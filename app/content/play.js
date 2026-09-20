@@ -447,7 +447,13 @@ function disposeChatChannel() {
  * refuserait, et laisser taper pour echouer ensuite serait pire que de fermer
  * le champ en disant pourquoi. Les messages rapides, eux, restent disponibles.
  */
-function PushChat() {
+/**
+ * `notice` : un fait ponctuel a dire dans la fenetre, en plus de l'etat --
+ * aujourd'hui « ce message est trop long ». Il ne SE DEDUIT d'aucun etat (le
+ * fil n'est pas ferme, la cle est bonne, l'envoi suivant passera), donc il
+ * doit voyager avec l'evenement qui le suit.
+ */
+function PushChat(notice) {
     const conv = chatChannel ? chatChannel.conversation : [];
     /*
      * PROPOSE-T-ON DE CONTINUER SANS PROTECTION ?
@@ -476,6 +482,7 @@ function PushChat() {
         // la saisie en le disant, au lieu de laisser taper pour rien.
         canWrite: !!chatSealed && !chatChannel?.full,
         chatFull: !!chatChannel?.full,
+        notice: notice || null,
         /*
          * LA CLE ELLE-MEME, pour que la fenetre puisse l'AFFICHER.
          *
@@ -1359,6 +1366,9 @@ function initSatelliteListeners() {
             // saisie et dire pourquoi, sans quoi le joueur retape le meme
             // message indefiniment.
             if (e && e.code === 'chat-full') PushChat();
+            // Message trop long pour le fil : la saisie reste ouverte, il n'y
+            // a qu'a raccourcir. Le dire, sinon le joueur croit a une panne.
+            else if (e && e.code === 'chat-too-long') PushChat('tooLong');
         });
     });
 

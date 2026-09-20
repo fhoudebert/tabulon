@@ -31,6 +31,14 @@ const writes = [];                // trace des clés écrites, pour l'assertion
  */
 const chatLog = new Map();       // gameid -> [ligne, …] (le fichier -chat.txt)
 let chatCap = null;              // plafond du fichier, comme $chatMaxBytes
+/*
+ * Le serveur RETIRE-T-IL les plus anciens pour faire de la place ?
+ *
+ * C'est ce que fait fileio.php depuis qu'un fil plein ne ferme plus la
+ * conversation ($chatTrimOldest). Le mock reproduit les deux regimes : un
+ * relai a jour, et un relai ancien qui refuse encore.
+ */
+let chatTrims = false;
 async function mockFetch(url, init) {
     const params = new URLSearchParams(init.body);
     const chat = params.get('chatioaction');
@@ -41,15 +49,29 @@ async function mockFetch(url, init) {
         // au-delà, avec un 413. Ce n'est pas une panne réseau : réessayer n'y
         // changerait rien.
         const size = (chatLog.get(gameid) || []).join('\n').length;
-        if (chatCap !== null && size + line.length > chatCap)
-            return { status: 413, text: async () => '{"error":"chat log full"}' };
+        // Un message plus gros que le fil entier ne rentrera jamais : refus
+        // NOMME, distinct du fil plein (aucun retrait n'y changerait rien).
+        if (chatCap !== null && line.length > chatCap)
+            return { status: 413, text: async () => '{"error":"chat message too large"}' };
+        let trimmed = 0;
+        if (chatCap !== null && size + line.length > chatCap) {
+            if (!chatTrims)
+                return { status: 413, text: async () => '{"error":"chat log full"}' };
+            // Comme fileio.php : on retire par le DEBUT jusqu'a ce que le
+            // nouveau message tienne.
+            const lines = chatLog.get(gameid) || [];
+            while (lines.length && lines.join('\n').length + line.length > chatCap) {
+                lines.shift();
+                trimmed++;
+            }
+        }
         // Le vrai serveur refuse (400) un message multiligne : il relit le
         // fichier ligne par ligne.
         if (/[\r\n]/.test(line)) return { status: 400, text: async () => 'single line' };
         writes.push(gameid);
         if (!chatLog.has(gameid)) chatLog.set(gameid, []);
         chatLog.get(gameid).push(line);
-        return { status: 200, text: async () => '{"ok":true}' };
+        return { status: 200, text: async () => JSON.stringify({ ok: true, trimmed }) };
     }
     if (chat === 'load') {
         const lines = chatLog.get(gameid) || [];
@@ -495,6 +517,89 @@ console.log('Relai : le fil plein');
     assert(depose.msg === 'et voila', 'le texte libre part en clair');
     assert(depose.enc === undefined, 'et sans marqueur de scellement');
     chan.stop();
+}
+
+// ── Le fil plein qui se VIDE par le debut ───────────────────────────────────
+//
+// LE CAS : une partie par correspondance dure des semaines, le fichier de
+// conversation est plafonne, et il finissait par se fermer -- plus un mot
+// n'etait echange alors que la partie, elle, continuait. Le relai retire
+// desormais les plus anciens messages pour loger les nouveaux.
+//
+// Ce que le canal doit en faire : continuer a ecrire, et NE RIEN FAIRE
+// DISPARAITRE de ce que le joueur a deja sous les yeux.
+console.log('');
+console.log('Relai : le fil se vide par le debut');
+{
+    chatTrims = true;
+    chatCap = 700;
+    const mid = 'rotation-0001';
+    const chan = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: mid, side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await chan.start();
+    await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'tout premier' });
+    await waitFor(() => chan.conversation.length === 1, 'le premier message passe');
+
+    // Assez de messages pour que le relai doive faire de la place.
+    for (let k = 0; k < 12; k++)
+        await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'message numéro ' + k });
+
+    assert(!chan.full, 'le fil n’est jamais declare plein');
+    assert(chan.trimmed > 0, 'le relai a retire des messages (' + chan.trimmed + ')');
+    const onRelay = chatLog.get(mid) || [];
+    assert(onRelay.length < 13, 'le relai n’en garde qu’une partie (' + onRelay.length + ')');
+    assert(JSON.parse(onRelay.at(-1)).data.msg.length > 0, 'et ce sont les derniers');
+
+    /*
+     * CE QUE LE JOUEUR VOIT NE RECULE PAS. Le relai a beau oublier le debut,
+     * notre fenetre garde ce qu'elle a affiche -- comme le panneau de
+     * joclymatch, qui n'enleve jamais un message. Sinon la conversation se
+     * raccourcirait toute seule sous les yeux de celui qui la lit.
+     */
+    await waitFor(() => chan.conversation.length === 13, 'les treize messages restent affiches');
+    // Le tout premier n'est plus sur le relai, et reste pourtant a l'ecran.
+    assert(!onRelay.some(l => JSON.parse(l).data.msg === 'tout premier'),
+        'le relai ne porte plus le tout premier message');
+    assert(chan.conversation.some(m => m.body === 'tout premier'),
+        'mais la fenetre le garde : rien ne disparait sous les yeux du joueur');
+
+    // Et la conversation continue d'aller dans les deux sens.
+    chatLog.get(mid).push(JSON.stringify({ data: {
+        msg: 'et moi je reponds', player: B, time: Date.now(), key: 'rr' } }));
+    await waitFor(() => chan.conversation.some(m => m.body === 'et moi je reponds'),
+        'un message d’en face arrive toujours');
+    chan.stop();
+    chatCap = null;
+    chatTrims = false;
+}
+
+// ── Un message plus long que le fil entier ──────────────────────────────────
+//
+// Aucun retrait n'y changerait rien, et ce n'est pas le fil qui est ferme :
+// il n'y a qu'a raccourcir. Deux refus, deux reactions, donc deux codes.
+{
+    chatTrims = true;
+    chatCap = 300;
+    const chan = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: 'trop-long-0001', side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await chan.start();
+    let code = null;
+    try { await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'x'.repeat(400) }); }
+    catch (e) { code = e.code; }
+    assert(code === 'chat-too-long', 'le refus porte son propre code : ' + code);
+    assert(!chan.full, 'et le fil n’est PAS declare plein — la saisie reste ouverte');
+    assert(!chan.conversation.some(m => (m.body || '').length > 300),
+        'le message refuse ne reste pas affiche comme s’il etait parti');
+    // Un message ordinaire passe juste apres.
+    await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'plus court' });
+    await waitFor(() => chan.conversation.some(m => m.body === 'plus court'), 'le suivant passe');
+    chan.stop();
+    chatCap = null;
+    chatTrims = false;
 }
 
 console.log(`\n${passed} assertions OK — transport de la discussion validé.`);
