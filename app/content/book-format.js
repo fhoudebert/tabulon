@@ -352,6 +352,11 @@ const VARIANT_ALIASES = {
     'antichess': 'antichess',
     'losing chess': 'antichess',
     'giveaway': 'antichess',
+    // Le S-Chess : « Seirawan » chez PyChess, « S-Chess » ailleurs. Le
+    // catalogue rattache « seirawan » au Seirawan++ de jocly (pgnVariant).
+    's-chess': 'seirawan',
+    'schess': 'seirawan',
+    'seirawan chess': 'seirawan',
 };
 
 /**
@@ -455,7 +460,8 @@ export function ParseWesternMove(token) {
  * Renvoie { piece, from, steps:[{capture, square}] } ou null.
  */
 export function ParseNaturalMove(text) {
-    const raw = String(text || '').trim();
+    // L'entree du S-Chess (« Nb1-c3/C ») ne change ni le depart ni l'arrivee.
+    const raw = SplitGate(String(text || '').trim()).rest;
     // "=<abbrev>" : le type obtenu. jocly ne l'ecrit que lorsqu'un CHOIX
     // existait, et les types promus sont ceux dont l'abreviation commence par
     // "+" -- refuser de promouvoir donne "=KN", promouvoir "=+KN".
@@ -1115,6 +1121,59 @@ export function VariantFen(fen, game) {
     return text;
 }
 
+/**
+ * Le [FEN] d'un PGN de S-Chess (Seirawan), ramene a ce que Tabulon sait
+ * ouvrir -- ou `undefined` si le jeu n'est pas concerne.
+ *
+ * PyChess ecrit la position de depart MEME quand elle est standard :
+ *
+ *   rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[HEhe] w KQBCDFGkqbcdfg - 0 1
+ *
+ * les pieces en attente en poche, et les cases encore ouvertes a l'entree
+ * dans le champ du roque. Rien de cela n'a d'equivalent direct dans le FEN de
+ * jocly, dont les pieces en attente sont sur des colonnes hors jeu -- et ce
+ * FEN tomberait sinon dans PgnFenToShogiSfen, qui le lirait comme un shogi.
+ *
+ * La position de DEPART n'a pas besoin d'etre traduite : c'est celle que le
+ * prelude pose, et la paire en poche est celle que [Variant] designe deja.
+ * On rend donc null (« pas de position a charger »). Toute autre position
+ * est rendue telle quelle : jocly la refusera, et la lecture s'arretera sur
+ * un message plutot que de rejouer les coups depuis une position fausse.
+ */
+export function SChessFen(fen, game) {
+    if (game !== 'seirawan-chess') return undefined;
+    const text = String(fen || '').trim();
+    const f = text.split(/\s+/);
+    const m = /^(.*)\[([A-Za-z]*)\]$/.exec(f[0] || '');
+    const board = m ? m[1] : f[0];
+    const pocket = m ? m[2] : '';
+    const upper = pocket.replace(/[a-z]/g, ''), lower = pocket.replace(/[A-Z]/g, '');
+    const standard = board === 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR'
+        && (f[1] || 'w') === 'w'
+        && upper.length === 2 && upper.toLowerCase().split('').sort().join('') === lower.split('').sort().join('');
+    return standard ? null : text;
+}
+
+/**
+ * Un coup PJN du Seirawan++ ecrit par un jocly anterieur, remis dans la forme
+ * actuelle -- sans effet sur tout autre jeton.
+ *
+ * Le modele ecrivait « Qd1-h5=Q+ » (promotion factice d'une piece en
+ * elle-meme) et « Qd1-h5=C+/C » (idem, l'entree collee derriere l'echec)
+ * quand un coup de la rangee arriere donnait echec. La forme actuelle est
+ * « Qd1-h5+ » et « Qd1-h5/C+ ». Relu tel quel, l'ancien jeton est a egale
+ * distance d'edition des deux coups actuels, et pickMove pourrait jouer
+ * l'autre.
+ */
+export function NormalizeSChessNatural(token) {
+    const t = String(token || '');
+    const gated = /^(.*?)=[A-Z]([+#])\/([A-Z])([a-h][1-8])?$/.exec(t);
+    if (gated) return gated[1] + '/' + gated[3] + (gated[4] || '') + gated[2];
+    const self = /^([A-Z])(\S+?)=\1([+#]?)$/.exec(t);
+    if (self) return self[1] + self[2] + self[3];
+    return t;
+}
+
 // ── Xiangqi : la notation WXF ────────────────────────────────────────────────
 //
 // « H2+3 », « C2=5 » — et en pleine largeur « Ｈ２＋３ », qui est la forme des
@@ -1228,10 +1287,20 @@ export function WxfMatches(parsed, from, to, letter, red, files) {
  * `piece` vaut '' pour un pion. `castle` vaut 'K' (petit) ou 'Q' (grand).
  */
 export function ParseSanMove(token) {
-    const t = String(token || '').trim().replace(/[!?]+$/, '');
+    let t = String(token || '').trim().replace(/[!?]+$/, '');
+    /*
+     * L'ENTREE DU S-CHESS (Seirawan) : « Bb7/E », « O-O/He1 ». La piece nommee
+     * apres la barre entre sur la case que la piece deplacee vient de quitter
+     * -- ou, au roque, sur celle que le suffixe designe. PyChess et
+     * Fairy-Stockfish placent l'echec APRES (« Qh5/E+ ») ; on accepte aussi
+     * l'autre ordre, qu'ecrivait un jocly anterieur.
+     */
+    const gated = SplitGate(t);
+    t = gated.rest;
+    const gate = gated.gate;
     const castle = /^(?:O-O-O|0-0-0)[+#]?$/.test(t) ? 'Q'
                  : (/^(?:O-O|0-0)[+#]?$/.test(t) ? 'K' : null);
-    if (castle) return { castle, piece: 'K', capture: false, square: null, promotion: null, drop: false };
+    if (castle) return { castle, piece: 'K', capture: false, square: null, promotion: null, drop: false, gate };
     // Parachutage : « N@h5 » au crazyhouse, « P*5e » au shogi. jocly l'ecrit
     // « N@h5 » aussi, mais on le compare quand meme piece par piece : la
     // lettre du plateau n'existe pas encore a la case de depart, et il n'y a
@@ -1267,7 +1336,44 @@ export function ParseSanMove(token) {
         capture: !!m[4],
         square: m[5],
         promotion: m[6] || null,
+        gate,
     };
+}
+
+/**
+ * Detache le suffixe d'entree du S-Chess d'un coup ecrit -- « /E », ou
+ * « /He1 » au roque -- ou qu'il soit par rapport a l'echec.
+ *
+ * Rend { rest, gate } : `rest` est le coup sans l'entree, echec conserve a la
+ * fin ; `gate` vaut { piece, square } ou null. `square` n'est ecrit qu'au
+ * roque, ou deux cases se liberent.
+ */
+export function SplitGate(text) {
+    const t = String(text || '');
+    const m = /^(.*?)([+#]?)\/(\+?[A-Z])([a-o][0-9]{1,2})?([+#]?)$/.exec(t);
+    if (!m || !m[1]) return { rest: t, gate: null };
+    return { rest: m[1] + (m[2] || m[5]), gate: { piece: m[3], square: m[4] || null } };
+}
+
+/*
+ * LES LETTRES D'UN ARRANGEMENT. Certains jeux a prelude ne nomment pas leurs
+ * pieces comme Fairy-Stockfish : au Seirawan++ jocly ecrit C (cardinal) et M
+ * (marshall), PyChess H (hawk) et E (elephant). Le manifeste du jeu porte la
+ * correspondance (`pieceMap`, jocly -> moteur), PAR ARRANGEMENT -- une table
+ * organisee par jeu ne suffit pas : le « H » du chu shogi est le phenix dans
+ * un autre arrangement du meme jeu.
+ *
+ * Lettres de fichier qu'une abreviation jocly peut porter, et l'inverse.
+ */
+function MappedLetters(letter, game, pieceMap) {
+    const out = PieceAliases(letter, game);
+    for (const [jocly, file] of Object.entries(pieceMap || {}))
+        if (file === letter && out.indexOf(jocly) < 0) out.push(jocly);
+    return out;
+}
+function FileLetterOf(abbrev, game, pieceMap) {
+    if (abbrev && pieceMap && pieceMap[abbrev]) return pieceMap[abbrev];
+    return SanLetterOf(abbrev, game);
 }
 
 /**
@@ -1394,9 +1500,21 @@ export function SanMatches(parsed, natural, letterAt, options) {
     // de jocly, dont le « + » final est sans ambiguite. Voir plus bas pourquoi
     // la lettre du SAN ne suffit pas.
     const promoted = options && typeof options.promoted === 'boolean' ? options.promoted : null;
+    const pieceMap = (options && options.pieceMap) || null;
+    const game = (options && options.game) || '';
     if (!parsed) return false;
-    const text = String(natural || '').trim();
-    if (parsed.castle) return text === (parsed.castle === 'K' ? 'O-O' : 'O-O-O');
+    // L'entree du S-Chess fait partie de l'identite du coup : « Nf3 » et
+    // « Nf3/H » sont deux coups, et un seul des deux correspond.
+    const split = SplitGate(String(natural || '').trim());
+    let text = split.rest;
+    const gateOk = () => {
+        const want = parsed.gate || null, got = split.gate;
+        if (!want || !got) return !want && !got;
+        if (MappedLetters(want.piece, game, pieceMap).indexOf(got.piece) < 0) return false;
+        return !want.square || !got.square || want.square === got.square;
+    };
+    if (!gateOk()) return false;
+    if (parsed.castle) return text.replace(/[+#]$/, '') === (parsed.castle === 'K' ? 'O-O' : 'O-O-O');
     if (/^O-O/.test(text)) return false;
     // Parachutage : une piece et une case, pas de depart a comparer.
     // La lettre peut MANQUER cote jocly : l'hirondelle du tori n'a pas
@@ -1424,8 +1542,16 @@ export function SanMatches(parsed, natural, letterAt, options) {
     // Le separateur est FACULTATIF : le xiangqi de jocly ecrit « c0e2 », sans
     // abreviation ni tiret. La notation d'un jeu ne se devine pas depuis son
     // nom, on accepte donc les deux formes et on compare ce qui est present.
-    const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x]?)([a-o][0-9]{1,2})(?:=([A-Z+]+))?[+#]?$/.exec(text);
+    let m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x]?)([a-o][0-9]{1,2})(?:=([A-Z+]+))?[+#]?$/.exec(text);
     if (!m) return false;
+    // « Nb1-c3=N » : une piece « promue » en elle-meme n'est pas une
+    // promotion. C'est l'artefact qu'un jocly anterieur laissait au S-Chess
+    // quand le coup donnait echec ; il ne doit pas faire refuser le coup.
+    // (Le « + » d'un echec peut etre happe par ce groupe : « =Q+ ».)
+    // Meme artefact sur un coup AVEC entree (« Qd1-h5=M+/M ») : le « =M »
+    // n'y est que la lettre de la piece qui entre.
+    if (m[5] && ((m[1] && m[5].replace(/\+$/, '') === m[1]) || split.gate))
+        m = m.slice(0, 5).concat([undefined]);
     // Le xiangqi de jocly numerote ses rangees a partir de 0, PyChess a partir
     // de 1 : le meme point du plateau s'ecrit « c2 » d'un cote et « c3 » de
     // l'autre. Le decalage est donne par l'appelant, qui seul sait a quel jeu
@@ -1460,7 +1586,7 @@ export function SanMatches(parsed, natural, letterAt, options) {
         // La piece obtenue passe elle aussi par la table : le met du makruk
         // s'ecrit « =M » dans le fichier et « =Q » chez jocly.
         if (parsed.promotion
-            && PieceAliases(parsed.promotion, options && options.game).indexOf(got) < 0) return false;
+            && MappedLetters(parsed.promotion, game, pieceMap).indexOf(got) < 0) return false;
         if (!parsed.promotion && got) return false;
     }
 
@@ -1489,7 +1615,7 @@ export function SanMatches(parsed, natural, letterAt, options) {
     // Se fier au plateau plutot qu'a l'abreviation serait un piege : les
     // geometries a colonnes de reserve (shogi, crazyhouse) decalent les noms
     // de case, et la lettre lue n'est pas celle qu'on croit.
-    return PieceAliases(parsed.piece, options && options.game).indexOf(abbrev) >= 0;
+    return MappedLetters(parsed.piece, game, pieceMap).indexOf(abbrev) >= 0;
     // Ni l'un ni l'autre ne nomme la piece : c'est un pion des deux cotes, et
     // il n'y a rien de plus a verifier. Confirmer par le plateau serait une
     // securite illusoire -- elle ne pourrait que se tromper sur les geometries
@@ -1530,7 +1656,20 @@ const SAN_NAMES_PAWN = {
 };
 
 export function BuildSanMove(natural, rivals, game, options) {
-    const text = String(natural || '').trim();
+    const pieceMap = (options && options.pieceMap) || null;
+    // L'entree du S-Chess s'ecrit apres le coup et AVANT l'echec, comme chez
+    // PyChess et Fairy-Stockfish : « Bb7/E », « O-O/He1 », « Qh5/E+ ». Au
+    // roque seulement la case, puisque deux cases s'y liberent.
+    const split = SplitGate(String(natural || '').trim());
+    if (split.gate) {
+        const inner = BuildSanMove(split.rest, rivals, game, options);
+        if (!inner) return null;
+        const tail = /[+#]$/.exec(inner);
+        const body = tail ? inner.slice(0, -1) : inner;
+        return body + '/' + FileLetterOf(split.gate.piece, game, pieceMap)
+            + (/^O-O/.test(body) ? (split.gate.square || '') : '') + (tail ? tail[0] : '');
+    }
+    const text = split.rest;
     // L'echec et le mat font partie du jeton : jocly marque le premier d'un
     // « + », le second se lit sur la partie et l'appelant le signale.
     // Le « + » final de jocly est un ECHEC aux echecs, une PROMOTION au shogi.
@@ -1567,6 +1706,8 @@ export function BuildSanMove(natural, rivals, game, options) {
     const m = /^(\+?[A-Z]+)?([a-o][0-9]{1,2})([-x]?)([a-o][0-9]{1,2})(?:=(\+?[A-Z]+))?[+#]?$/.exec(text);
     if (!m) return null;
     const abbrev = m[1] || '';
+    // Une piece « promue » en elle-meme n'a pas promu (voir SanMatches).
+    if (m[5] && m[5] === abbrev) m[5] = undefined;
     const capture = m[3] ? m[3] === 'x' : !!(options && options.capture);
 
     // Les rangees peuvent etre decalees : jocly les compte a partir de 0 au
@@ -1591,7 +1732,7 @@ export function BuildSanMove(natural, rivals, game, options) {
     // Spartan qui a bouge -- trois pieces que le fichier ecrit « rien », « P »
     // et « H ». Seule la lettre du PLATEAU les distingue, et l'appelant la
     // fournit ; a defaut on suppose un pion.
-    let letter = SanLetterOf(abbrev, game);
+    let letter = FileLetterOf(abbrev, game, pieceMap);
     if (!abbrev) {
         const onBoard = options && options.letterAt && options.letterAt(from);
         letter = onBoard ? SanLetterOf(onBoard.toUpperCase(), game) : 'P';
@@ -1604,7 +1745,7 @@ export function BuildSanMove(natural, rivals, game, options) {
     // l'USI, et c'est l'appelant qui la signale. Le fichier, lui, la nomme
     // toujours : « =D » pour une tour promue, « =G » pour tout ce qui bouge
     // comme un or.
-    let promo = PromotionSuffix(m[5], game);
+    let promo = m[5] && pieceMap && pieceMap[m[5]] ? '=' + pieceMap[m[5]] : PromotionSuffix(m[5], game);
     if (!promo && options && options.promoted) {
         const obtained = SanLetterOf('+' + (abbrev || 'P'), game);
         if (obtained) promo = '=' + obtained;
@@ -1718,6 +1859,7 @@ export function MoveFormat(tokens) {
     // la-bas. Une partie d'echecs lue comme du chu shogi cherche des coups
     // promouvants et n'en trouve aucun.
     if (list.some(tok => /^(?:O-O|0-0)/.test(tok) || /=[A-Z]/.test(tok) || /^[A-Z][@*]/.test(tok)
+                      || /^[A-Za-z0-9x-]+\/[A-Z]/.test(tok)
                       || /^[KQRBNACMEHJ][a-o]?[0-9]{0,2}x?[a-o][0-9]{1,2}[+#]?$/.test(tok))
         && list.every(tok => ParseSanMove(tok))) return 'san';
     if (list.every(tok => ParseWesternMove(tok))) return 'western';
@@ -1802,8 +1944,14 @@ export function FairyGameIndex(configs) {
              * deja dans [Variant], et un coup de prelude n'est pas un coup
              * d'echecs.
              */
-            for (const v of lvl.variants || [])
-                add(v?.variant, { game: name, setup: Number.isInteger(v?.setup) ? v.setup : null });
+            for (const v of lvl.variants || []) {
+                const entry = { game: name, setup: Number.isInteger(v?.setup) ? v.setup : null };
+                add(v?.variant, entry);
+                // Le nom STANDARD d'un arrangement, quand il en a un : un PGN
+                // [Variant "seirawan"] de PyChess rouvre ainsi l'arrangement
+                // qui EST le S-Chess, et pas le premier venu.
+                add(v?.pgnVariant, entry);
+            }
         }
     }
     return index;

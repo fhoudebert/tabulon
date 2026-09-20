@@ -1,0 +1,11 @@
+[Event "?"]
+[Site "https://www.pychess.org/analysis/seirawan"]
+[Date "2026.09.20"]
+[White "?"]
+[Black "?"]
+[Result "*"]
+[Variant "Seirawan"]
+[FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[HEhe] w KQBCDFGkqbcdfg - 0 1"]
+[SetUp "1"]
+
+1. g3 b6 2. Nf3 Bb7/E 3. Bg2 Nf6/H 4. O-O/He1 Ed6 5. d3 Hh6 *

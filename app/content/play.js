@@ -14,6 +14,7 @@ import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel, getLocale } from './tabulon-i18n.js';
 import { gameTitle } from './localized-field.js';
 import { installNativeEngine } from './engine-native.js';
+import { SChessFen, NormalizeSChessNatural } from './book-format.js';
 import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
          
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove,
@@ -1666,6 +1667,9 @@ function BoardLetters(fen, options) {
             }
             let piece = c; k++;
             if (c === '+') { piece += row[k]; k++; }   // piece promue : deux caracteres
+            // « C! » : une piece en attente du S-Chess. Le « ! » n'est pas une
+            // case -- sans ca, les colonnes d'attente se decalent.
+            if (row[k] === '!') k++;
             map[String.fromCharCode(97 + file) + rank] = piece;
             file++;
         }
@@ -1764,7 +1768,10 @@ function FairyProfile(played) {
     if (!answer) return empty;
     const match = level.variants.find(v => v && v.setup === answer.setup);
     if (!match || !match.variant) return empty;
-    return { variant: match.variant, pieceMap: match.pieceMap || level.pieceMap || null };
+    // `pgnVariant` : le nom STANDARD de l'arrangement, quand il en a un
+    // (« seirawan » pour l'arrangement 0 du Seirawan++). C'est lui que
+    // PyChess relit ; le nom de section n'existe que pour notre moteur.
+    return { variant: match.pgnVariant || match.variant, pieceMap: match.pieceMap || level.pieceMap || null };
 }
 
 /**
@@ -1852,9 +1859,14 @@ async function WesternGame() {
             const naturals = await joclyMatch.getMoveString(legal);
             const letterAt = BoardLetters(await joclyMatch.getBoardState(),
                                           { zeroBased: zeroBasedRanks });
+            // `en`/`et` : l'entree du S-Chess. Au roque, les deux entrees
+            // (case du roi, case de la tour) ont le meme depart, la meme
+            // arrivee et la meme piece entrante -- seul `et` les distingue.
             const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
                 && (m.via || null) === (played[ply].via || null)
-                && (m.pr || null) === (played[ply].pr || null));
+                && (m.pr || null) === (played[ply].pr || null)
+                && (m.en ?? null) === (played[ply].en ?? null)
+                && (m.et ?? null) === (played[ply].et ?? null));
             if (index < 0) {
                 console.warn('[play] export : coup', ply + 1, 'introuvable dans la liste legale');
                 out.push('?'); await joclyMatch.rollback(ply + 1); continue;
@@ -1890,6 +1902,9 @@ async function WesternGame() {
             } else {
                 const usiMove = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
                 token = BuildSanMove(naturals[index], rivals, gameName, {
+                    // Les lettres de l'arrangement : « H » et « E » pour le
+                    // cardinal et le marshall du S-Chess.
+                    pieceMap,
                     // Les lettres de Fairy-Stockfish, pas celles de jocly :
                     // c'est ce qui distingue un PGN relisible par le moteur
                     // d'un fichier qui lui ressemble.
@@ -2114,6 +2129,9 @@ async function MoveFromSan(token) {
     // un echec. Les jeux qui ne savent pas ecrire l'USI n'ont pas de
     // promotion a departager, et l'absence de reponse convient.
     const usi = await joclyMatch.getMoveString(moves, 'usi').catch(() => null);
+    // Les lettres de l'arrangement joue, lues APRES le prelude : au S-Chess,
+    // « H » et « E » designent le cardinal et le marshall de jocly.
+    const { pieceMap } = FairyProfile(await joclyMatch.getPlayedMoves().catch(() => []));
 
     const tryOffset = (offset) => {
         let found = null, ambiguous = false;
@@ -2121,8 +2139,10 @@ async function MoveFromSan(token) {
             // Le nom du jeu accompagne la comparaison : la table d'alias est
             // organisee par jeu, la meme lettre y designant des pieces
             // differentes selon la variante.
-            const options = { rankOffset: offset, game: gameName };
-            if (usi && typeof usi[i] === 'string') options.promoted = usi[i].endsWith('+');
+            const options = { rankOffset: offset, game: gameName, pieceMap };
+            // « ?? » : ce jeu n'ecrit pas l'USI. Le prendre pour « ne promeut
+            // pas » faisait refuser toute promotion ecrite « =Q ».
+            if (usi && typeof usi[i] === 'string' && usi[i] !== '??') options.promoted = usi[i].endsWith('+');
             if (!SanMatches(parsed, naturals[i], letterAt, options)) continue;
             if (found) { ambiguous = true; continue; }
             found = moves[i];
@@ -2636,9 +2656,10 @@ async function ExplainUnresolved(token) {
         const letterAt = BoardLetters(await joclyMatch.getBoardState(),
                                       { zeroBased: gameName === 'xiangqi' });
         const matches = [];
+        const { pieceMap } = FairyProfile(await joclyMatch.getPlayedMoves().catch(() => []));
         for (let i = 0; i < moves.length; i++)
             if (SanMatches(parsed, naturals[i], letterAt,
-                           { game: gameName, rankOffset: sanRankOffset || 0 }))
+                           { game: gameName, rankOffset: sanRankOffset || 0, pieceMap }))
                 matches.push(naturals[i]);
         if (matches.length > 1)
             console.warn('[play] book: « ' + token +' » est ambigu —',
@@ -2663,9 +2684,13 @@ async function BookReplay(book) {
         // crochets, a la maniere du crazyhouse). L'ordre importe peu, les deux
         // formes s'excluent.
         if (book.initialBoard) {
-            book.initialBoard = PgnFenToJocly(book.initialBoard)
-                || PgnFenToShogiSfen(book.initialBoard)
-                || VariantFen(book.initialBoard, gameName);
+            // Le S-Chess d'abord : son FEN a poche ressemble a celui du shogi
+            // de PyChess, et PgnFenToShogiSfen le prendrait pour tel.
+            const schess = SChessFen(book.initialBoard, gameName);
+            book.initialBoard = schess !== undefined ? schess
+                : (PgnFenToJocly(book.initialBoard)
+                   || PgnFenToShogiSfen(book.initialBoard)
+                   || VariantFen(book.initialBoard, gameName));
         }
         // `tsume` accompagne la position partout ou elle est rechargee : la
         // fenetre Historique fait revenir play.js a la position de depart pour
@@ -2721,6 +2746,10 @@ async function BookReplay(book) {
         // donc zero coup joue et le fichier declare illisible. Ils faussaient
         // aussi MoveFormat(), qui les lisait comme des coups pour deviner la
         // notation du fichier.
+        // Les coups PJN du Seirawan++ ecrits par un jocly anterieur
+        // (« Qd1-h5=Q+ ») : remis dans la forme actuelle avant d'etre relus.
+        if (gameName === 'seirawan-chess' && Array.isArray(book.moves))
+            book.moves = book.moves.map(NormalizeSChessNatural);
         const recordedPrelude = [];
         while (book.moves && book.moves.length && PRELUDE_MOVE.test(book.moves[0]))
             recordedPrelude.push(book.moves.shift());

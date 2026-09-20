@@ -1086,6 +1086,48 @@ the extracted SAN moves are stored under `fork:{id}` with a `book` marker
 and `new_match` opens a board that replays them via `pickMove`/`playMove`
 (game paused, navigation through the History window).
 
+**S-Chess (Seirawan++) notation.** Two things set this game apart from every
+other chess variant Tabulon reads or writes.
+
+- *Gating is part of the move.* jocly writes it after a slash — `Bc8-b7/M`,
+  and at castling the square too (`O-O/Ce1`), since two squares are freed
+  there. PGN (PyChess, Fairy-Stockfish) writes the same thing in SAN:
+  `Bb7/E`, `O-O/He1`, check last (`Qh5/E+`). `SplitGate()` detaches the
+  suffix on both sides; `ParseSanMove` returns it as `gate: {piece, square}`,
+  `SanMatches` refuses a move whose gating doesn't match (`Nf3` and `Nf3/H`
+  are two different moves), and `BuildSanMove` writes it back.
+- *The prelude picks the letters.* The pair of pieces is chosen before the
+  first move, so the same game writes `C`/`M` (cardinal, marshall) in one
+  arrangement and `H`/`I` (phoenix, kirin) in another. The mapping to the
+  engine's letters lives in the manifest, **per arrangement**
+  (`levels[].variants[].pieceMap`, `{C: 'H', M: 'E'}` for arrangement 0), not
+  in a per-game table like `SAN_PIECE_ALIASES` — a per-game table would
+  rename the khan's marshall too. It is passed as `options.pieceMap` to
+  `SanMatches`/`BuildSanMove`; `FairyProfile()` reads it from the answered
+  prelude.
+- *[Variant] on the way out and in.* Arrangement 0 **is** the S-Chess, so it
+  declares `pgnVariant: "seirawan"` — that is what a PGN must say to be read
+  elsewhere, and what `FairyGameIndex` maps back to arrangement 0. The other
+  arrangements keep their section name (`jocly-seirawan-chu`…), which only
+  Tabulon and the engine understand.
+- *The [FEN] of a PyChess file* carries the waiting pieces in a pocket and
+  the still-open gating squares in the castling field
+  (`…/RNBQKBNR[HEhe] w KQBCDFGkqbcdfg - 0 1`). jocly has neither: its waiting
+  pieces sit on off-board columns. `SChessFen()` recognises the **starting**
+  position and returns null — nothing to load, the prelude already puts it
+  there — and hands any other position back untouched, so jocly refuses it
+  loudly instead of replaying the moves from a wrong position. It runs before
+  `PgnFenToShogiSfen`, which would otherwise read that pocket as a shogi hand.
+- *Older files.* A jocly predating the fix wrote a fake promotion when a
+  back-rank move gave check (`Qd1-h5=Q+`, `Qd1-h5=C+/C`).
+  `NormalizeSChessNatural()` puts those PJN tokens back into today's form
+  before replay — left alone, they are equidistant from two current moves and
+  `pickMove` could play the other one. `SanMatches` ignores the same artefact.
+
+Covered end to end by `tests/import/test-seirawan.mjs` (the PyChess fixture
+replayed and rewritten token for token, PGN and PJN round trips in two
+arrangements).
+
 ### The clock (JoclyBoard model, ported)
 
 State lives in `play.js`: `{mode, 1: ms, -1: ms, xtrasec_±1, mps_±1,
