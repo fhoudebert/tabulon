@@ -1095,11 +1095,15 @@ function InitInvitationPane() {
      * FENETRE Invitation marchait alors qu'elle echouait depuis ici. Les deux
      * portes doivent deposer la meme chose.
      */
-    async function startMatch({ gameName, matchId, relayUrl, player, peer, chatKey = null, chatKeyId = null }) {
+    async function startMatch({ gameName, matchId, relayUrl, player, peer, chatKey = null, chatKeyId = null,
+                                allowTakeback = null }) {
         const inviteId = 'inv-' + Date.now();
+        // Meme depot que la fenetre Invitation, reglage de reprise compris :
+        // les deux portes doivent deposer la meme chose.
         await store.set('invite:' + inviteId, {
             matchId, relayUrl, gameName, player, creator: false, peer: !!peer,
             chatKey: chatKey || null, chatKeyId: chatKeyId || null,
+            allowTakeback: typeof allowTakeback === 'boolean' ? allowTakeback : null,
         });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
     }
@@ -1125,9 +1129,9 @@ function InitInvitationPane() {
         if (!raw.trim()) { setStatus(peerStatus, t('invitation.peerInvalidCode'), 'fail'); return; }
         setStatus(peerStatus, t('invitation.peerConnecting'), '');
         try {
-            const { gameName, token, chatKey } = await joinPeerMatch(raw);
+            const { gameName, token, chatKey, allowTakeback } = await joinPeerMatch(raw);
             await startMatch({ gameName, matchId: 'p2p:' + token.slice(0, 12), player: 'b',
-                peer: true, chatKey });
+                peer: true, chatKey, allowTakeback });
             setStatus(peerStatus, '');
         } catch (e) {
             console.warn('[hub] peer join failed:', e.message || e);

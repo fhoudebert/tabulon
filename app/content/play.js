@@ -206,13 +206,80 @@ function cancelRemoteWait(reason) {
     waiters.forEach(w => w.reject(new Error(reason)));
 }
 
+/*
+ * L'ADVERSAIRE A REPRIS UN COUP (ou recommence la partie).
+ *
+ * Le canal le reconnait a un nombre de coups qui BAISSE, et nous remet l'etat
+ * complet : on le CHARGE tel quel. Surtout pas de playMove -- il n'y a aucun
+ * coup a jouer, et rejouer « le dernier » defairait l'annulation d'un cran
+ * en animant un coup que personne n'a joue.
+ *
+ * Ca peut arriver a tout moment (le canal sonde en continu), d'ou la file :
+ * deux annulations rapprochees s'appliquent l'une apres l'autre, jamais
+ * entremelees.
+ *
+ * L'ordre suit celui des boutons locaux (voir rearmAfterPositionChange) :
+ * interrompre, changer la position, PUIS rearmer. L'attente d'un coup
+ * distant est annulee APRES le chargement, sinon la boucle rebouclerait sur
+ * l'ancienne position et attendrait un coup qui ne viendra pas.
+ */
+let remoteTakebackQueue = Promise.resolve();
+
+function onRemoteTakebackReceived(payload) {
+    remoteTakebackQueue = remoteTakebackQueue
+        .then(() => ApplyRemoteTakeback(payload))
+        .catch(e => console.warn('[play] reprise distante non appliquee :', e.message || e));
+}
+
+async function ApplyRemoteTakeback(payload) {
+    if (!joclyMatch) return;
+    remoteMoveBuffer = null;
+    if (!payload?.state) { ShowWarning(t('play.remoteDesync')); return; }
+    await joclyMatch.abortUserTurn().catch(() => {});
+    await joclyMatch.abortMachineSearch().catch(() => {});
+    try { await joclyMatch.load(payload.state); }
+    catch (e) {
+        console.warn('[play] etat distant illisible :', e.message || e);
+        ShowWarning(t('play.remoteDesync'));
+        return;
+    }
+    await resyncRemoteChannelBaseline();
+    cancelRemoteWait('remote takeback');
+    // Le plateau vient de changer sans que le joueur ait rien fait : il faut
+    // le lui dire, et dans un bandeau plutot qu'au pied, que le tour suivant
+    // reecrit aussitot.
+    ShowWarning(t(payload.nbTurns === 0 ? 'play.opponentRestarted' : 'play.opponentTookBack',
+        { player: SideName(remoteChannelKey) }));
+    emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+    await rearmAfterPositionChange();
+}
+
+/*
+ * Nous reprenons un coup face a un adversaire distant : il faut le lui
+ * PUBLIER, avec le nouveau compte ET l'etat complet (c'est ce qu'il charge).
+ * push() recale lui-meme la reference du canal ; aucun resetBaseline avant,
+ * qui laisserait un sondage relire l'ancien fichier et y voir un coup.
+ */
+async function PublishTakeback() {
+    if (!remoteChannel) return;
+    remoteMoveBuffer = null;
+    const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+    const state = await SaveMatch();
+    try {
+        await remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null, state });
+    } catch (e) {
+        console.warn('[play] reprise non transmise :', e.message || e);
+        ShowWarning(t('play.remoteTakebackNotSent'));
+    }
+}
+
 // Cree (ou reutilise) le canal pour la configuration donnee, et l'associe a
 // playerKey (le cote distant). Si un canal existe deja pour une autre partie
 // (matchId different) ou un autre cote, il est arrete proprement d'abord.
 // currentNbTurns : nombre de coups deja joues localement au moment de la
 // creation (baseline correcte pour une partie deja entamee -- fork, reprise
 // apres fermeture de la fenetre...) ; ignore si le canal existe deja.
-function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey, chatKeyId: chatKid }, currentNbTurns) {
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey, chatKeyId: chatKid, allowTakeback = null }, currentNbTurns) {
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
@@ -221,7 +288,7 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
         // fenetre Invitation avant new_match) -- le canal ne fait que s'y
         // attacher. Meme interface RemoteChannel, gameLoop ne voit aucune
         // difference avec le relai HTTP.
-        const chan = new PeerChannel({ matchId: remoteMatchId, localNbTurns: currentNbTurns });
+        const chan = new PeerChannel({ matchId: remoteMatchId, localNbTurns: currentNbTurns, allowTakeback });
         chan.onStatusChange(({ connected, error }) => {
             if (!connected) {
                 console.warn('[play] session pair-a-pair terminee', error || '');
@@ -230,13 +297,24 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
         });
         remoteChannel = chan;
     } else {
+        /*
+         * Reprise de coup quand ni le lien ni le fichier ne disent rien :
+         * AUTORISEE face au codec de joclymatch, qui la livre sans condition
+         * (l'interdire ferait regresser toutes ses parties) ; INTERDITE avec
+         * notre propre enveloppe, que seul Tabulon parle -- et un Tabulon
+         * anterieur a ce reglage ne sait pas recevoir une annulation.
+         */
+        const jsm = codec === 'jocly-simple-match';
         remoteChannel = new HttpRelayChannel({
             relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns,
             codec: codec || 'tabulon', gameName: remoteGameName || gameName,
+            allowTakeback, defaultAllowTakeback: jsm,
         });
     }
     remoteChannelKey = playerKey;
     remoteChannel.onRemoteMove(onRemoteMoveReceived);
+    remoteChannel.onRemoteTakeback(onRemoteTakebackReceived);
+    remoteChannel.onSettingsChange(() => updateRemoteRestrictedButtons());
     remoteChannel.start();
     // playerKey est le camp DISTANT : le notre est l'autre. C'est lui qui
     // signe nos messages et qui decide laquelle des deux cles de fil nous
@@ -606,6 +684,9 @@ function describePlayer(value) {
         type: 'remote', matchId: value.matchId, relayUrl: value.relayUrl,
         codec: value.codec || 'tabulon', gameName: value.gameName || null,
         peer: !!value.peer,
+        // Reglage de la partie, pas du joueur : la fenetre Joueurs le
+        // renvoie tel quel, faute de quoi un simple Save l'effacerait.
+        allowTakeback: typeof value.allowTakeback === 'boolean' ? value.allowTakeback : null,
     };
     return { type: 'ai', levelIndex: levels.indexOf(value) };
 }
@@ -616,12 +697,14 @@ function buildPlayerValue(info) {
         return {
             remote: true, peer: true, matchId: String(info.matchId),
             gameName: info.gameName || gameName,
+            allowTakeback: typeof info.allowTakeback === 'boolean' ? info.allowTakeback : null,
         };
     if (info.type === 'remote' && info.matchId && info.relayUrl)
         return {
             remote: true, matchId: String(info.matchId), relayUrl: String(info.relayUrl),
             codec: info.codec === 'jocly-simple-match' ? 'jocly-simple-match' : 'tabulon',
             gameName: info.gameName || gameName,
+            allowTakeback: typeof info.allowTakeback === 'boolean' ? info.allowTakeback : null,
         };
     if (info.type === 'ai' && levels[info.levelIndex]) return levels[info.levelIndex];
     return null;
@@ -762,7 +845,17 @@ async function gameLoop() {
                     // particulier -- le seul indice est sinon la couleur du
                     // trait, que jocly n'affiche nulle part.
                     UpdateFooter(t(turn > 0 ? 'play.turnA' : 'play.turnB'));
-                    const result = await joclyMatch.userTurn();
+                    // « Notre tour » ouvre la reprise de coup face a un
+                    // adversaire distant : c'est le seul moment ou il nous
+                    // attend, donc ou il recevra l'annulation.
+                    localHumanTurn = true;
+                    updateRemoteRestrictedButtons();
+                    let result;
+                    try { result = await joclyMatch.userTurn(); }
+                    finally {
+                        localHumanTurn = false;
+                        updateRemoteRestrictedButtons();
+                    }
                     UpdateFooter('');
                     finished = result?.finished || false;
                     winner   = result?.winner;
@@ -1079,26 +1172,44 @@ function hasRemoteSide() {
     return [Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote);
 }
 
-// Reculer/recommencer face a un joueur DISTANT desynchronise la partie : le
-// relai (fileio.php) comme le pair TCP n'ont aucune notion de retrait de
-// coup -- c'etait la « limite connue » documentee depuis l'etape 3. On ferme
-// la porte en amont : ces boutons sont GRISES tant qu'un cote est distant
-// (l'infobulle explique pourquoi), et les handlers gardent une garde de
-// fond. Ils redeviennent actifs des que plus aucun cote n'est distant
-// (partie rapide, chronometree, locale...).
+// Reculer/recommencer face a un joueur DISTANT : permis a DEUX conditions.
+//
+//  1. la partie l'autorise -- reglage pose par l'hote a la creation de
+//     l'invitation, porte par le lien puis par le fichier du relai (qui fait
+//     foi) ; voir remote-relay-protocol.js, resolveAllowTakeback ;
+//  2. c'est NOTRE tour. Ce n'est pas une politesse : joclymatch ne sonde le
+//     relai que pendant qu'il attend l'autre. Pendant son propre tour il est
+//     bloque dans sa saisie et ne verrait pas l'annulation -- son coup
+//     suivant, calcule sur la position d'avant, l'ecraserait en silence.
+//     Pendant le notre, il attend, donc il sonde, donc il verra.
+//
+// L'infobulle distingue les deux cas : « la partie ne le permet pas » et
+// « a votre tour » ne se corrigent pas de la meme facon. Les handlers
+// gardent une garde de fond qui dit la meme chose au pied.
 // Les doublons quick-* ont disparu avec la barre repliable : les deux boutons
 // du pied portent maintenant les identifiants principaux, et une seule entree
 // suffit ici comme ailleurs.
 const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart'];
 
+// true pendant qu'on attend une saisie du joueur local (voir gameLoop).
+let localHumanTurn = false;
+
+/** null si reculer est permis maintenant, sinon la cle i18n du motif. */
+function remoteTakebackBlock() {
+    if (!hasRemoteSide()) return null;
+    if (!remoteChannel?.allowTakeback) return 'play.remoteTakebackForbidden';
+    if (!localHumanTurn) return 'play.remoteTakebackNotYourTurn';
+    return null;
+}
+
 function updateRemoteRestrictedButtons() {
-    const remote = hasRemoteSide();
+    const block = remoteTakebackBlock();
     for (const id of REMOTE_RESTRICTED_BUTTONS) {
         const el = document.getElementById(id);
         if (!el) continue;
-        el.disabled = remote;
+        el.disabled = !!block;
         const normalKey = el.getAttribute('data-i18n-title');
-        el.title = remote ? t('play.remoteRestricted') : (normalKey ? t(normalKey) : el.title);
+        el.title = block ? t(block) : (normalKey ? t(normalKey) : el.title);
     }
 }
 
@@ -2113,9 +2224,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn('button-takeback', async () => {
         if (!joclyMatch) return;
-        // Garde de fond (le bouton est deja grise en mode distant) : reculer
-        // desynchroniserait la partie distante, relai comme pair-a-pair.
-        if (hasRemoteSide()) { UpdateFooter(t('play.remoteRestricted')); return; }
+        // Garde de fond (le bouton est deja grise dans ces cas-la). Evaluee
+        // AVANT d'interrompre la saisie : c'est elle qui dit si c'est notre
+        // tour.
+        const block = remoteTakebackBlock();
+        if (block) { UpdateFooter(t(block)); return; }
+        const remote = hasRemoteSide();
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('takeback');
@@ -2128,13 +2242,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         // au tour d'un humain de jouer, en utilisant getTurn() comme
         // source de vérité (fiable pour tous les jeux, y compris ceux
         // où le premier joueur n'est pas PLAYER_A).
+        // Un adversaire distant n'est pas un humain LOCAL (players[turn] est
+        // son descripteur) : on revient donc a NOTRE tour precedent, ce qui
+        // retire notre coup et sa reponse -- « je reprends ma betise ».
         for (let target = n - 1; target >= 0; target--) {
             await joclyMatch.rollback(target);
             if (target === 0) break;  // début de partie, on s'arrête
             const turn = await joclyMatch.getTurn().catch(() => null);
             if (!players[turn]) break;  // tour humain trouvé
         }
-        await resyncRemoteChannelBaseline();
+        if (remote) await PublishTakeback();
+        else await resyncRemoteChannelBaseline();
         UpdateFooter('');
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
         await rearmAfterPositionChange();
@@ -2142,12 +2260,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn('button-restart', async () => {
         if (!joclyMatch) return;
-        if (hasRemoteSide()) { UpdateFooter(t('play.remoteRestricted')); return; }
+        const block = remoteTakebackBlock();
+        if (block) { UpdateFooter(t(block)); return; }
+        const remote = hasRemoteSide();
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('restart');
         await joclyMatch.rollback(0);
-        await resyncRemoteChannelBaseline();
+        if (remote) await PublishTakeback();
+        else await resyncRemoteChannelBaseline();
         paused = false;
         UpdatePause();
         UpdateFooter('');
@@ -2786,11 +2907,15 @@ async function BookReplay(book) {
                 gameName: invite.gameName || gameName,
                 chatKey: invite.chatKey || null,
                 chatKeyId: invite.chatKeyId || null,
+                allowTakeback: typeof invite.allowTakeback === 'boolean' ? invite.allowTakeback : null,
             } : {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
                 chatKey: invite.chatKey || null,
                 chatKeyId: invite.chatKeyId || null,
+                // Ce que l'invitation annonce ; le fichier du relai, lu au
+                // premier sondage, le remplacera s'il dit autre chose.
+                allowTakeback: typeof invite.allowTakeback === 'boolean' ? invite.allowTakeback : null,
             });
             syncFooterSelect(localSide);
             console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);

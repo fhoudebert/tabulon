@@ -44,7 +44,7 @@ Two ways to play against a remote human, both from the **Players** window of any
 - **Through a relay server** — create or join a match on a shared relay (compatible with existing [joclymatch](https://github.com/fhoudebert/joclymatch) or [mogichex](https://github.com/fhoudebert/mogichex) servers). An **invitation screen** lets you create a game and hand the match link to your opponent, or join one you received. You can even play against someone using the original jocly-simple-match web page.
 - **Peer-to-peer, no server at all** — one player hosts and gets a short **connection code**; the other pastes it and the game connects directly between the two machines. Works on a LAN out of the box; across the internet, the host opens a port (or uses any port-forwarding/VPN setup) and can embed the public address in the code. No account, no third party, nothing stored anywhere.
 
-Both modes are marked **experimental**: they cover normal play well, but takeback/rollback during a remote game can desynchronize the two sides (a limitation stated in the app's design notes).
+Taking back a move is a setting of the match, chosen when creating the invitation (off by default): when allowed, either player can take back on their own turn, and the opponent's board follows. Both modes are marked **experimental**: they cover normal play well, but loading a saved game or jumping around the history during a remote game still changes only your own board.
 
 ## Languages
 

@@ -84,7 +84,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // (ex. jocly-simple-match venu d'une invitation) plutôt que
                 // de le faire silencieusement retomber sur notre codec par
                 // défaut, qui casserait l'interop avec l'autre client.
-                lastReceivedRemote[which] = { matchId: info.matchId, codec: info.codec, gameName: info.gameName, peer: !!info.peer, relayUrl: info.relayUrl };
+                lastReceivedRemote[which] = { matchId: info.matchId, codec: info.codec, gameName: info.gameName, peer: !!info.peer, relayUrl: info.relayUrl,
+                    allowTakeback: info.allowTakeback ?? null };
             } else {
                 lastReceivedRemote[which] = null;
             }
@@ -128,13 +129,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // pair-a-pair tant que le match id n'est pas modifie ici
                     // -- sinon Save le degraderait silencieusement en config
                     // relai (le formulaire n'a pas de notion de p2p).
+                    // La reprise de coup est un reglage de la PARTIE : elle suit
+                    // le match id, comme le codec.
                     result[key] = (unchanged && prev.peer) ? {
                         type: 'remote', peer: true, matchId: matchIdVal,
-                        gameName: prev.gameName,
+                        gameName: prev.gameName, allowTakeback: prev.allowTakeback,
                     } : {
                         type: 'remote', matchId: matchIdVal, relayUrl: relayUrlVal,
                         codec: unchanged ? prev.codec : 'tabulon',
                         gameName: unchanged ? prev.gameName : undefined,
+                        allowTakeback: unchanged ? prev.allowTakeback : null,
                     };
                 } else {
                     result[key] = { type: 'human', levelIndex: -1 };  // pas d'id -> repli humain

@@ -63,18 +63,24 @@ export const DEFAULT_RELAY_URL = 'https://biscandine.fr/variantes/joclymatch/fil
  *              complète (nouvelle connexion, désynchronisation détectée).
  * @returns {string} JSON prêt à poster comme "gamedata"
  */
-export function encodeEnvelope({ nbTurns, lastMove = null, state = null }) {
+export function encodeEnvelope({ nbTurns, lastMove = null, state = null, allowTakeback = null }) {
     if (!Number.isInteger(nbTurns) || nbTurns < 0) {
         throw new Error('encodeEnvelope: nbTurns doit être un entier >= 0');
     }
-    return JSON.stringify({
+    const envelope = {
         v: PROTOCOL_VERSION,
         kind: ENVELOPE_KIND.MOVE,
         nbTurns,
         lastMove,
         state,
         updatedAt: Date.now(),
-    });
+    };
+    // Reglage de la PARTIE, recopie a chaque ecriture : le relai ne garde que
+    // la derniere enveloppe, un champ absent d'une seule ecriture serait
+    // perdu pour les deux joueurs. Pas ecrit quand on ne le connait pas --
+    // l'absence veut dire « inconnu », pas « interdit ».
+    if (typeof allowTakeback === 'boolean') envelope.allowTakeback = allowTakeback;
+    return JSON.stringify(envelope);
 }
 
 /**
@@ -103,7 +109,13 @@ export function decodeEnvelope(text) {
         lastMove: data.lastMove ?? null,
         state: data.state ?? null,
         updatedAt: Number.isInteger(data.updatedAt) ? data.updatedAt : null,
+        allowTakeback: readAllowTakeback(data.allowTakeback),
     };
+}
+
+/** true/false tels quels ; tout le reste (absent, abime) = inconnu (null). */
+function readAllowTakeback(value) {
+    return typeof value === 'boolean' ? value : null;
 }
 
 /**
@@ -120,6 +132,49 @@ export function hasOpponentMoved(localNbTurns, remoteEnvelope) {
     // pour un coup ferait avancer la partie sur du vide.
     if (remoteEnvelope.kind !== undefined && remoteEnvelope.kind !== ENVELOPE_KIND.MOVE) return false;
     return remoteEnvelope.nbTurns > localNbTurns;
+}
+
+/**
+ * true si l'adversaire a REPRIS un ou plusieurs coups (ou recommence la
+ * partie) : le relai porte MOINS de coups que nous.
+ *
+ * C'est le pendant de hasOpponentMoved, et c'est pourquoi celle-ci teste un
+ * strict superieur : une baisse n'est pas un coup. La passer dans la branche
+ * « il a joue » depilerait un coup et le rejouerait -- ce qui defait
+ * l'annulation d'un cran en animant un coup que personne n'a joue. Le piege
+ * a deja ete corrige une fois cote joclymatch (un `!=` devenu `>` / `<`).
+ *
+ * Une annulation se charge TELLE QUELLE, depuis l'etat complet : il n'y a pas
+ * de coup a jouer.
+ * @param {number} localNbTurns
+ * @param {{nbTurns:number, kind?:string}|null} remoteEnvelope
+ */
+export function hasOpponentTakenBack(localNbTurns, remoteEnvelope) {
+    if (!remoteEnvelope) return false;
+    if (remoteEnvelope.kind !== undefined && remoteEnvelope.kind !== ENVELOPE_KIND.MOVE) return false;
+    if (!Number.isInteger(remoteEnvelope.nbTurns)) return false;
+    return remoteEnvelope.nbTurns < localNbTurns;
+}
+
+/**
+ * La reprise de coup est-elle permise dans cette partie ?
+ *
+ * LE FICHIER FAIT FOI, le lien annonce : le fichier du relai est le meme pour
+ * les deux joueurs par construction, il survit a un rechargement et a un lien
+ * tronque au copier-coller ; un lien, lui, a pu etre retouche a la main. Le
+ * lien ne sert que tant que le fichier ne dit rien -- en particulier avant
+ * que l'hote n'y ait ecrit.
+ *
+ * Et quand PERSONNE ne dit rien, `fallback` : la valeur par defaut depend du
+ * correspondant possible (voir play.js), pas de ce module.
+ * @param {boolean|null} fileValue
+ * @param {boolean|null} linkValue
+ * @param {boolean} fallback
+ */
+export function resolveAllowTakeback(fileValue, linkValue, fallback) {
+    if (typeof fileValue === 'boolean') return fileValue;
+    if (typeof linkValue === 'boolean') return linkValue;
+    return !!fallback;
 }
 
 /**
@@ -221,13 +276,21 @@ export function generateMatchId() {
  * @param {{matchId:string, gameName:string, nbTurns:number, matchdata:*}} data
  * @returns {string} JSON pret a poster comme "gamedata"
  */
-export function encodeJoclySimpleMatchEnvelope({ matchId, gameName, nbTurns, matchdata }) {
+export function encodeJoclySimpleMatchEnvelope({ matchId, gameName, nbTurns, matchdata, allowTakeback = null }) {
     if (!matchId) throw new Error('encodeJoclySimpleMatchEnvelope: matchId requis');
     if (!Number.isInteger(nbTurns) || nbTurns < 0) {
         throw new Error('encodeJoclySimpleMatchEnvelope: nbTurns doit être un entier >= 0');
     }
+    const matchDetails = { matchId, gameName, nbTurns, a: { pseudo: '' }, b: { pseudo: '' } };
+    /*
+     * matchDetails est RECONSTRUIT a chaque sauvegarde, ici comme dans
+     * control.js : un champ que l'un des deux clients ne recopie pas est
+     * efface a sa premiere ecriture. Le reglage de reprise est donc reporte
+     * explicitement, et seulement quand on le connait.
+     */
+    if (typeof allowTakeback === 'boolean') matchDetails.allowTakeback = allowTakeback;
     return JSON.stringify({
-        matchDetails: { matchId, gameName, nbTurns, a: { pseudo: '' }, b: { pseudo: '' } },
+        matchDetails,
         matchdata,
         time: Date.now(),
         // jocly-simple-match ne verifie jamais cette cle malgre son nom --
@@ -252,7 +315,10 @@ export function decodeJoclySimpleMatchEnvelope(text) {
     if (!Number.isInteger(nbTurns)) return null;
     const moves = data.matchdata?.playedMoves;
     const lastMove = Array.isArray(moves) && moves.length ? moves[moves.length - 1] : null;
-    return { nbTurns, lastMove, state: data.matchdata ?? null };
+    return {
+        nbTurns, lastMove, state: data.matchdata ?? null,
+        allowTakeback: readAllowTakeback(data.matchDetails.allowTakeback),
+    };
 }
 
 /**
@@ -262,7 +328,8 @@ export function decodeJoclySimpleMatchEnvelope(text) {
  * remplaçant index.php par fileio.php dans le même dossier (les deux scripts
  * vivent toujours côte à côte dans jocly-simple-match).
  * @param {string} urlString
- * @returns {{gameName:string, matchId:string, player:'a'|'b', relayUrl:string}|null}
+ * @returns {{gameName:string, matchId:string, player:'a'|'b', relayUrl:string,
+ *            allowTakeback:boolean|null}|null}
  */
 export function parseInvitationUrl(urlString) {
     let url;
@@ -293,7 +360,21 @@ export function parseInvitationUrl(urlString) {
          * appartient, et que le relai n'a pas a l'apprendre.
          */
         chatKeyId: /^[0-9a-f]{16}$/.test(keyId || '') ? keyId : null,
+        /*
+         * `tb` : la reprise de coup, telle que l'hote l'a reglee. DANS LA
+         * REQUETE, pas dans le fragment : le fragment est reserve a ce qui ne
+         * doit pas atteindre le serveur (la cle), alors que la page de
+         * joclymatch a besoin de lire ce reglage. Absent ou illisible = null,
+         * c'est-a-dire « le lien ne dit rien » -- un lien d'avant ce reglage.
+         */
+        allowTakeback: takebackFromParam(url.searchParams.get('tb')),
     };
+}
+
+function takebackFromParam(value) {
+    if (value === '1') return true;
+    if (value === '0') return false;
+    return null;
 }
 
 /**
@@ -330,7 +411,8 @@ export function isChatKey(value) {
  * @param {{relayUrl:string, gameName:string, matchId:string, player:'a'|'b'}} data
  * @returns {string|null} null si relayUrl n'est pas une URL valide
  */
-export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null, chatKeyId = null }) {
+export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null, chatKeyId = null,
+                                    allowTakeback = null }) {
     let url;
     try {
         url = new URL(relayUrl);
@@ -343,6 +425,9 @@ export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKe
     url.searchParams.set('game', gameName);
     url.searchParams.set('mid', matchId);
     url.searchParams.set('player', player);
+    // Emis EXPLICITEMENT dans les deux sens (tb=1 comme tb=0) : un lien qui
+    // ne dit rien laisse croire a un client ancien, pas a un choix.
+    if (typeof allowTakeback === 'boolean') url.searchParams.set('tb', allowTakeback ? '1' : '0');
     /*
      * La clé va dans le FRAGMENT, et une clé mal formée est refusée plutôt
      * qu'écrite : un lien qui en porterait une inutilisable annoncerait une

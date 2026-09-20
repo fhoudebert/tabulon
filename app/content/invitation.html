@@ -28,6 +28,14 @@
 
 			<h4 data-i18n="invitation.createHeading"></h4>
 			<p class="invitation-intro" data-i18n="invitation.createIntro"></p>
+			<!-- Reglage de la PARTIE, pose ici par l'hote et transmis a l'invite
+			     (lien : tb=0/1, code pair-a-pair : tb) -- il vaut pour les deux
+			     facons de creer, relai comme pair-a-pair. -->
+			<div class="checkbox">
+				<label data-i18n-title="invitation.allowTakebackTip">
+					<input type="checkbox" id="invitation-allow-takeback"> <span data-i18n="invitation.allowTakeback">Allow taking back moves</span>
+				</label>
+			</div>
 			<div class="form-group invitation-link-row">
 				<input type="text" id="invitation-relay-url" class="form-control" data-i18n-placeholder="players.relayUrl">
 				<button id="button-test-relay" class="btn btn-default"><span data-i18n="players.test">Test</span></button>

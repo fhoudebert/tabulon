@@ -181,25 +181,68 @@ the development history.
   active channel). Every move played *locally* — from the board, the AI,
   or the "Possible moves" window — is pushed to the active channel.
 - `RemoteChannel` (`app/content/remote-channel.js`) is the
-  transport-agnostic interface (`start`/`stop`/`push`/`onRemoteMove`),
+  transport-agnostic interface (`start`/`stop`/`push`/`onRemoteMove`, plus
+  `onRemoteTakeback`/`onSettingsChange` and the `allowTakeback` setting
+  shared by both implementations),
   with two implementations: `HttpRelayChannel` and `PeerChannel`.
   `ensureRemoteChannel()` picks the class from the player config; a side
   configured as remote gets its channel **immediately** (not lazily), so
   a host's first move is always pushed. Every "abort the current turn"
   spot (pause, takeback, restart, player reconfiguration, board/game
   loading, rollback) also cancels a pending wait for a remote move.
-- **Closed limitation**: takeback/rollback/restart change the local
-  position without propagating (neither transport has an "unplay"
-  concept), which used to let the two sides desync. The door is now shut
-  upstream: the Take back and Restart buttons (footer quick bar and full
-  bar alike) are **disabled whenever a side is remote**, with a tooltip
-  saying why (`play.remoteRestricted`), and their handlers keep a
-  defensive guard showing the same message in the footer. They come back
-  as soon as no side is remote — quick play, clocked play and local
-  games are unaffected. The single choke point is `syncFooterSelect()`,
-  crossed by every path that reconfigures players (invitation, Players
-  window, footer selects). `resetBaseline()` remains in place for the
-  paths that still resync legitimately (loading a saved game, etc.).
+- **Taking back a move against a remote player** is a *setting of the
+  match*, chosen by the host when creating the invitation (checkbox
+  "Allow taking back moves", **unchecked by default**, remembered with the
+  other invitation settings). It travels in the relay link as `tb=1` /
+  `tb=0` (query string, not the fragment: joclymatch's page must read it)
+  and in the peer code as `tb`; it is then copied into **every** write —
+  `matchDetails.allowTakeback` for the jocly-simple-match codec,
+  `allowTakeback` in our own envelope. Both codecs rebuild their details
+  object on each save, so a field one side does not copy is erased by its
+  first save: the copy is deliberate on both sides.
+  - **The file wins over the link** (`resolveAllowTakeback`): the relay
+    file is the same for both players, survives a reload and a truncated
+    link. When nobody says anything, the default depends on who may be on
+    the other end: **allowed** with the jocly-simple-match codec
+    (joclymatch has shipped takeback unconditionally, forbidding it would
+    regress its matches), **forbidden** with our own envelope and in
+    peer-to-peer (only Tabulon speaks them, and a Tabulon predating this
+    setting cannot receive a takeback).
+  - **Only on your own turn.** joclymatch polls the relay only while it
+    waits for the opponent; during its own turn it sits in `userTurn()` and
+    would never see a takeback — its next move, computed on the old
+    position, would silently overwrite it. During *our* turn it is waiting,
+    hence polling. The Take back / Restart buttons are therefore enabled
+    when the match allows it **and** a local human input is pending
+    (`localHumanTurn`, set around `userTurn()` in `gameLoop`); the tooltip
+    tells the two refusals apart (`play.remoteTakebackForbidden` /
+    `play.remoteTakebackNotYourTurn`), and the handlers keep a defensive
+    guard. Against a remote side, Take back returns to *our* previous turn
+    (our move and its answer).
+  - **Sending** (`PublishTakeback`): after the local rollback, push the new
+    `nbTurns` **and** the full state; `push()` moves the channel baseline
+    itself — no `resetBaseline()` beforehand, which would let a poll reread
+    the old file and see a move in it.
+  - **Receiving**: a *decreasing* `nbTurns` is a takeback
+    (`hasOpponentTakenBack`), routed to `onRemoteTakeback`, never to
+    `onRemoteMove` — the latter would pop and replay the last move, undoing
+    the takeback by one ply while animating a move nobody played (the same
+    trap once fixed in joclymatch, a `!=` turned into `>` / `<`).
+    `ApplyRemoteTakeback` loads the state as is, cancels the pending remote
+    wait *after* loading, re-arms the loop, and shows a banner — the board
+    changed on its own. Takebacks are queued, never interleaved.
+  - **Stale reads**: a poll sent before our write may return after it,
+    with the old, now *higher*, move count. `HttpRelayChannel` drops any
+    poll answer read across a write or a baseline reset (`_generation`,
+    `_pushing`). Peer-to-peer needs no such guard: TCP delivers lines in
+    order and each one is a new message.
+  - **Known limits.** An opponent client that predates the setting ignores
+    it (an old joclymatch can still take back in a match created with the
+    box unchecked; Tabulon follows its takeback anyway to stay in sync). A
+    new Tabulon joining an old Tabulon's link (no `tb`) assumes "allowed"
+    and the old one cannot receive it. Loading a file or a board state, and
+    `rollback-to` from the History window, still change the local position
+    without publishing it.
 
 - Remote play is **set up** in the Invitation window (both roles: join or
   create) and, for a guest only, from the **Invitation** entry in the hub
