@@ -121,12 +121,20 @@ async function SetupPieceMap(game, setup) {
 /** La position se charge-t-elle ? Rend le message d'erreur, ou null. */
 async function PositionRefused(game, board, tsume) {
     if (!board) return null;
+    let trial = null;
     try {
-        const trial = await Jocly.createMatch(game);
+        trial = await Jocly.createMatch(game);
         await trial.load({ game, initialBoard: board, playedMoves: [], tsume: !!tsume });
         return null;
     } catch (e) {
         return e && e.message ? e.message : String(e);
+    } finally {
+        // Une partie d'essai par fichier ouvert : la rendre. Depuis jocly2
+        // next, destroy() libere aussi le jeu lui-meme (GameDestroyGame :
+        // worker d'IA, moteur Fairy-Stockfish), pas seulement sa vue. Un
+        // echec ici ne change rien au verdict.
+        if (trial && typeof trial.destroy === 'function')
+            Promise.resolve().then(() => trial.destroy()).catch(() => {});
     }
 }
 

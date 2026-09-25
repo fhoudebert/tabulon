@@ -236,6 +236,15 @@ the development history.
     poll answer read across a write or a baseline reset (`_generation`,
     `_pushing`). Peer-to-peer needs no such guard: TCP delivers lines in
     order and each one is a new message.
+  - **A link without `tb` is read by the page that issued it**
+    (`parseInvitationUrl`). `index.php` is joclymatch, which has always
+    received a takeback: the link says nothing (`null`) and the codec
+    default applies. Any other page — mogichex serves `index.html` or a
+    bare folder — is read as **forbidden**: mogichex up to 1.01 ignores
+    any decreasing `nbTurns`, so a takeback there left each side waiting
+    for the other on two different boards. The relay file still wins: a
+    mogichex that can follow a takeback writes the setting there and puts
+    `tb` in the links it issues.
   - **Known limits.** An opponent client that predates the setting ignores
     it (an old joclymatch can still take back in a match created with the
     box unchecked; Tabulon follows its takeback anyway to stay in sync). A
@@ -271,12 +280,28 @@ the development history.
   joclymatch's `fileio.php` — a dumb per-match-id key/value store. Any
   existing instance works as-is (default: the biscandine.fr test
   instance). Two projects provide one, and either can host a Tabulon
-  match:
-  [joclymatch](https://github.com/fhoudebert/joclymatch/) (`fileio.php`)
-  and [mogichex](https://github.com/fhoudebert/mogichex/), whose
-  `deploy/match.php` serves the same purpose for its own games — so a
-  mogichex deployment doubles as a relay for Tabulon, alongside the
-  browser games it already hosts. Requests go through `tauri-plugin-http`
+  match — moves and chat alike:
+  - [joclymatch](https://github.com/fhoudebert/joclymatch/): its own
+    `fileio.php`.
+  - [mogichex](https://github.com/fhoudebert/mogichex/) (branch `next`
+    onwards): `deploy/fileio.php`, a translator in front of its
+    `match.php` — it maps `gameioaction/gameid/gamedata` to mogichex's
+    `action/mid/data`, serves `chatioaction` itself, and copies
+    `X-Match-Mtime` into `X-File-Mtime`. Nothing to configure in Tabulon:
+    the relay URL is the mogichex folder's `fileio.php`
+    (e.g. `https://biscandine.fr/variantes/mogichex/fileio.php`). A link
+    received from mogichex (`…/mogichex/index.html?game=…`) already leads
+    there, since `parseInvitationUrl` swaps the last path segment for
+    `fileio.php`. A link *created* by Tabulon on that relay points to
+    `…/mogichex/index.php`, which does not exist: mogichex's `.htaccess`
+    answers any missing file with its `index.html`, so the mogichex app
+    opens on it anyway — it works *because of* that single-page rule.
+  - Tauri only lets the relay requests out to the hosts listed in
+    `src-tauri/capabilities/default.json` (`http:default` → `allow[].url`,
+    today `https://biscandine.fr/*`). A joclymatch or mogichex hosted
+    anywhere else needs its host added there first; otherwise the request
+    is refused before it leaves the application.
+- Requests go through `tauri-plugin-http`
   (`httpFetch` in `tauri-bridge.js`), not the webview's `fetch` (the relay
   sends no CORS headers); allowed relay hosts are scoped in
   `src-tauri/capabilities/default.json` (`http:default` → `allow[].url`).
@@ -293,7 +318,11 @@ the development history.
   publishes the starting position to the relay immediately (so the relay
   is never empty for whoever opens the link — `fileio.php` returns a PHP
   warning, not JSON, for a never-saved id), and offers a **Test** button
-  probing the relay URL's reachability before playing.
+  probing the relay URL before playing. A reply is not enough to pass
+  (`classifyRelayProbe`): a mogichex folder *without* `fileio.php`
+  answers 200 with its own `index.html`, and an error status means no
+  script there either. A PHP warning still passes — that is what an
+  original jocly-simple-match relay says about an unknown id.
 
 ### Peer-to-peer mode (no server at all)
 
@@ -375,7 +404,10 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   Tabulon **alone**: a joclymatch player in the same match saw nothing of
   what was said, and vice versa. Messages are still merged and
   deduplicated by id (`mergeThreads`); the whole thread comes back on
-  every read, so catching up after a reconnection is unchanged.
+  every read, so catching up after a reconnection is unchanged. mogichex
+  (branch `next` onwards) writes into the same thread through its own
+  `fileio.php`, so a Tabulon player and a mogichex player read each other
+  too.
 - **The wire envelope is joclymatch's, plus optional fields** (`kind`,
   `quick`, `state`, `enc`) — see `toRelayMessage` / `fromRelayMessage`.
   A client that ignores them is not harmed: `kind` absent means `chat`,
@@ -487,13 +519,11 @@ peer-to-peer; a match-resume story (persist `matchId` + side + transport
 with the game, piggybacking on the existing Save/Load format rather than
 inventing a new one); and the WebRTC re-evaluation noted above.
 
-One more, on the relay dialects: Tabulon speaks
-`gameioaction/gameid/gamedata` only. A joclymatch server now also accepts
-mogichex's `action/mid/data`, so one server serves all three — but the
-reverse is not true, and a mogichex `match.php` does not understand what
-Tabulon sends. Either `match.php` learns the aliases, or Tabulon learns
-the second dialect; until then the comment claiming the same code works
-on both relays is an intention, not a fact.
+The relay dialects are aligned: Tabulon speaks
+`gameioaction/gameid/gamedata`, joclymatch also accepts mogichex's
+`action/mid/data`, and mogichex's `deploy/fileio.php` translates the
+first into the second before handing it to `match.php`. One server of
+either kind serves all three applications.
 
 ### Design background
 

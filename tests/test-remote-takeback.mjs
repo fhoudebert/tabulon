@@ -64,6 +64,19 @@ const RELAY = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
     assert(parseInvitationUrl(off).allowTakeback === false, 'tb=0 se relit false');
     assert(parseInvitationUrl(old).allowTakeback === null, 'absence -> null (« le lien ne dit rien »)');
     assert(parseInvitationUrl(on.replace('tb=1', 'tb=oui')).allowTakeback === null, 'valeur abîmée -> null');
+    // Lien sans `tb` : c'est la PAGE emettrice qui decide. index.php est
+    // joclymatch (reprise toujours recue -> null, defaut du codec) ; toute
+    // autre page peut etre un mogichex qui ne recoit pas la reprise -> false.
+    const moBase = 'https://biscandine.fr/variantes/mogichex/';
+    const q = '?game=go19&mid=1784023862731-pIUWbcgh0yDFVT&player=b';
+    assert(parseInvitationUrl(moBase + 'index.html' + q).allowTakeback === false,
+        'lien mogichex (index.html) sans tb -> interdit');
+    assert(parseInvitationUrl(moBase + q).allowTakeback === false,
+        'lien mogichex (répertoire nu) sans tb -> interdit');
+    assert(parseInvitationUrl(moBase + 'index.html' + q + '&tb=1').allowTakeback === true,
+        'lien mogichex AVEC tb=1 -> le lien fait foi');
+    assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/INDEX.PHP' + q).allowTakeback === null,
+        'lien joclymatch sans tb -> null, quelle que soit la casse');
     // La clé reste dans le fragment, le réglage dans la requête.
     const withKey = buildInvitationUrl({ relayUrl: RELAY, gameName: 'go19', matchId: 'm-1', player: 'b',
         chatKey: 'c'.repeat(64), allowTakeback: false });

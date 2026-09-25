@@ -5,7 +5,7 @@ import {
     encodeEnvelope, decodeEnvelope, hasOpponentMoved,
     buildSaveBody, buildLoadBody, generateMatchId,
     encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope,
-    parseInvitationUrl, buildInvitationUrl,
+    parseInvitationUrl, buildInvitationUrl, classifyRelayProbe,
 } from '../app/content/remote-relay-protocol.js';
 
 let passed = 0;
@@ -229,5 +229,15 @@ assert(buildInvitationUrl({ relayUrl: 'pas une url', gameName: 'go', matchId: 'x
         chatKey: 'a'.repeat(64), chatKeyId: kid });
     assert(parseInvitationUrl(both).chatKey === 'a'.repeat(64), 'une clé explicite reste prioritaire');
 }
+
+// ── Sonde « Tester » : une page web n'est pas un relai ──────────────────────
+assert(classifyRelayProbe(200, '{}') === 'ok', 'sonde : {} (fileio.php, id inconnu) -> ok');
+assert(classifyRelayProbe(200, '<br />\n<b>Warning</b>: file_get_contents(saves/tabulon-test)') === 'ok',
+    'sonde : avertissement PHP d\'un jocly-simple-match d\'origine -> ok (relai réel)');
+assert(classifyRelayProbe(200, '\n  <!DOCTYPE html>\n<html lang="fr"><head>') === 'not-relay',
+    'sonde : page entière servie en 200 (repli mono-page de mogichex) -> not-relay');
+assert(classifyRelayProbe(200, '<html><body>x</body></html>') === 'not-relay', 'sonde : <html> sans doctype -> not-relay');
+assert(classifyRelayProbe(404, 'Not Found') === 'http-error', 'sonde : 404 -> http-error');
+assert(classifyRelayProbe(500, '{}') === 'http-error', 'sonde : 500 -> http-error, même avec du JSON');
 
 console.log(`\n${passed} assertions passées.`);

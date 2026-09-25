@@ -19,7 +19,8 @@ import tRpc from './tabulon-rpc.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, httpFetch } from './tauri-bridge.js';
-import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
+import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody,
+         classifyRelayProbe } from './remote-relay-protocol.js';
 import { generateChatKey, deriveChatKey, chatKeyId, resolveInviteChatKey } from './remote-secret.js';
 import { hostPeerMatch, joinPeerMatch } from './remote-peer-channel.js';
 
@@ -283,9 +284,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         setStatus(peerHostStatus, t('invitation.peerConnected'), 'ok');
     });
 
-    // Tester le relai (etape 8d, deplace depuis la fenetre Joueurs) : meme
-    // sonde qu'avant -- un POST "load" sur un id anodin ; seule
-    // l'atteignabilite du fileio.php compte, pas le contenu de la reponse.
+    // Tester le relai (etape 8d, deplace depuis la fenetre Joueurs) : un POST
+    // "load" sur un id anodin. Une page HTML entiere ou un statut d'erreur
+    // n'est pas un relai (voir classifyRelayProbe).
     document.getElementById('button-test-relay')?.addEventListener('click', async () => {
         const relayUrl = document.getElementById('invitation-relay-url')?.value.trim() || DEFAULT_RELAY_URL;
         setStatus(createStatus, t('players.testChecking'), '');
@@ -295,8 +296,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: buildLoadBody('tabulon-test').toString(),
             });
-            await res.text();
-            setStatus(createStatus, t('players.testOk'), 'ok');
+            const verdict = classifyRelayProbe(res.status, await res.text());
+            if (verdict === 'not-relay') setStatus(createStatus, t('players.testNotRelay'), 'fail');
+            else if (verdict === 'http-error')
+                setStatus(createStatus, t('players.testHttpError', { status: res.status }), 'fail');
+            else setStatus(createStatus, t('players.testOk'), 'ok');
         } catch (e) {
             console.warn('[invitation] test relay failed:', e.message || e);
             setStatus(createStatus, t('players.testFail'), 'fail');

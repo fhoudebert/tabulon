@@ -178,6 +178,30 @@ export function resolveAllowTakeback(fileValue, linkValue, fallback) {
 }
 
 /**
+ * Verdict du bouton « Tester » sur la reponse d'un relai.
+ *
+ * AVANT, TOUTE REPONSE VALAIT « JOIGNABLE ». Or une installation mogichex
+ * renvoie index.html -- avec un 200 -- pour toute adresse qui n'est pas un
+ * fichier (regle mono-page de son .htaccess) : sans fileio.php, le test
+ * disait « relai joignable » et la partie restait muette ensuite.
+ *
+ * On ne demande pas pour autant du JSON : un fileio.php de jocly-simple-match
+ * d'origine repond a un identifiant jamais sauvegarde par un avertissement
+ * PHP (du HTML en fragments, pas un document), et ce relai-la fonctionne tres
+ * bien. Ce qui trahit « pas de relai ici », c'est une PAGE entiere, ou un
+ * statut d'erreur.
+ * @param {number} status
+ * @param {string} bodyText
+ * @returns {'ok'|'not-relay'|'http-error'}
+ */
+export function classifyRelayProbe(status, bodyText) {
+    if (Number.isInteger(status) && status >= 400) return 'http-error';
+    const head = String(bodyText || '').trimStart().slice(0, 200).toLowerCase();
+    if (head.startsWith('<!doctype') || head.startsWith('<html')) return 'not-relay';
+    return 'ok';
+}
+
+/**
  * Corps x-www-form-urlencoded pour un POST "save" vers fileio.php.
  * @param {string} gameId
  * @param {string} envelopeJson - sortie de encodeEnvelope()
@@ -367,8 +391,30 @@ export function parseInvitationUrl(urlString) {
          * joclymatch a besoin de lire ce reglage. Absent ou illisible = null,
          * c'est-a-dire « le lien ne dit rien » -- un lien d'avant ce reglage.
          */
-        allowTakeback: takebackFromParam(url.searchParams.get('tb')),
+        allowTakeback: takebackFromParam(url.searchParams.get('tb'))
+            ?? takebackFromHostPage(url.pathname),
     };
+}
+
+/*
+ * UN LIEN SANS `tb` NE DIT PAS LA MEME CHOSE SELON LA PAGE QUI L'A EMIS.
+ *
+ * Seule la page de joclymatch s'appelle index.php, et joclymatch a toujours
+ * su recevoir une reprise : se taire, pour lui, c'est « permis », et c'est ce
+ * que suppose la valeur par defaut du codec jocly-simple-match (null ici).
+ *
+ * Toute autre page -- mogichex sert index.html, ou son repertoire nu -- peut
+ * etre un client qui ne sait PAS recevoir une reprise : mogichex jusqu'a sa
+ * 1.01 comprise ignore tout nbTurns qui baisse. Tabulon reprenait alors un
+ * coup, mogichex n'en voyait rien, puis ignorait aussi le coup suivant (plus
+ * court que ce qu'il avait deja) : chaque camp attendait l'autre, plateaux
+ * divergents. D'ou « interdit » quand le lien ne dit rien. Le fichier du
+ * relai l'emporte toujours (resolveAllowTakeback) : un mogichex qui sait
+ * reprendre l'y ecrit, et un lien qu'il emet porte `tb` explicitement.
+ */
+function takebackFromHostPage(pathname) {
+    const page = String(pathname || '').split('/').pop().toLowerCase();
+    return page === 'index.php' ? null : false;
 }
 
 function takebackFromParam(value) {

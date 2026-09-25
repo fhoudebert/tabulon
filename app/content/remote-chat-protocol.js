@@ -8,25 +8,26 @@
 // remote-peer-channel.js ; ce module ne décide que de la FORME de ce qui
 // circule.
 //
-// ── Un seul écrivain par fil, et c'est ce qui rend le relais possible ────────
+// ── Sur un relai : le fil commun, que le serveur complete ────────────────────
 //
-// Les deux relais connus stockent une clé -> une valeur, en dernier-écrit-
-// gagne : fileio.php de joclymatch (gameid) et match.php de mogichex (mid).
-// Écrire une discussion à deux dans la même clé, c'est une lecture-modification-
-// écriture concurrente, donc des messages perdus dès que les deux joueurs
-// tapent en même temps. joclymatch a contourné le problème avec un fichier
-// séparé ouvert en AJOUT (chatioaction), ce que match.php ne propose pas.
+// Les relais stockent une cle -> une valeur, en dernier-ecrit-gagne. Ecrire
+// une discussion a deux dans la cle de la partie, ce serait une lecture-
+// modification-ecriture concurrente -- des messages perdus, et un coup pas
+// encore lu ecrase. La discussion passe donc par un point d'entree a part,
+// `chatioaction=save|load` de fileio.php, ou le SERVEUR ajoute une ligne par
+// message : un seul fichier pour les deux joueurs, aucune concurrence a
+// eviter, rien a reecrire.
 //
-// La solution retenue ne demande rien au serveur : DEUX clés, une par joueur.
-// Chacun n'écrit QUE dans la sienne et ne lit QUE celle d'en face. Il n'y a
-// alors plus aucune concurrence -- un seul écrivain par fichier -- et le
-// dernier-écrit-gagne devient exact plutôt que dangereux. Le prix est que
-// chaque joueur réécrit son fil entier à chaque message ; un fil de partie
-// tient largement dans la limite de 1 Mo de match.php.
+// C'est le fil de joclymatch, et depuis sa version `next` celui de mogichex
+// (son deploy/fileio.php le sert au-dessus de match.php) : les trois
+// applications se lisent dans une meme partie. Le relai retire les plus
+// anciens messages quand le fil atteint son plafond ; le client FUSIONNE ce
+// qu'il relit avec ce qu'il a deja (mergeThreads), rien ne disparait donc de
+// l'ecran d'un joueur.
 //
-// Cela vaut aussi pour le pair-à-pair, où il n'y a pas de stockage du tout :
-// le même message part sur le fil TCP et les deux côtés fusionnent ce qu'ils
-// ont. mergeThreads() est écrit pour être appelé dans les deux cas.
+// Cela vaut aussi pour le pair-a-pair, ou il n'y a pas de stockage du tout :
+// le meme message part sur le fil TCP et les deux cotes fusionnent ce qu'ils
+// ont. mergeThreads() est ecrit pour etre appele dans les deux cas.
 //
 // ── Ce qui n'est PAS ici ────────────────────────────────────────────────────
 //
