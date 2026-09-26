@@ -245,5 +245,54 @@ assert(window.__distURL('browser/games/chessbase/res/rules/capa10x8/capablanca-t
 assert(window.__distURL('content/tabulon.css') === 'content/tabulon.css',
   'window.__distURL laisse les chemins hors browser/games inchangés');
 
+// ── Images de fond posées par style.backgroundImage (cibles 2D d'Annexation) ──
+//
+// Les vues xd de Jocly posent l'image des cibles 2D par jQuery .css(), donc
+// style.backgroundImage = 'url(…)'. Le crochet ne cherchait l'accesseur que
+// sur CSSStyleDeclaration.prototype ; WebKitGTK 2.52 l'a déplacé sur
+// CSSStyleProperties.prototype (spec CSSOM) et Chromium n'en a aucun
+// (propriété de données par instance). On rejoue ici les DEUX dispositions,
+// sur des contextes jsdom dédiés, avec le vrai script.
+async function backgroundCase(layout) {
+  const d = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+    url: 'https://tauri.localhost/content/jocly.embed.html',
+    runScripts: 'outside-only',
+  });
+  const w = d.window;
+  w.__TAURI__ = { core: { convertFileSrc: (p, scheme) => `https://${scheme}.localhost/${p}` } };
+  // jsdom (30+) range DÉJÀ l'accesseur sur CSSStyleProperties.prototype,
+  // comme WebKitGTK 2.52 : c'est la disposition native. On fabrique les deux
+  // autres à partir d'elle.
+  const CSP = w.CSSStyleProperties.prototype;
+  const CSD = w.CSSStyleDeclaration.prototype;
+  const desc = Object.getOwnPropertyDescriptor(CSP, 'backgroundImage');
+  if (layout === 'CSSStyleDeclaration') {          // moteurs plus anciens
+    delete CSP.backgroundImage;
+    Object.defineProperty(CSD, 'backgroundImage', desc);
+  } else if (layout === 'instance') {              // Chromium : aucun accesseur
+    delete CSP.backgroundImage;
+  }
+  w.eval(script);
+  const el = w.document.createElement('div');
+  w.document.body.appendChild(el);
+  const U = '/browser/games/reversi/res/xd-view/select-target-2d.png';
+  if (layout === 'instance') {
+    // Sans accesseur, le moteur modifie directement l'attribut style : on le
+    // rejoue par le nœud d'attribut, hors du setAttribute crocheté -- seul
+    // l'observateur peut alors rattraper l'URL.
+    el.setAttribute('style', 'color: red');
+    el.getAttributeNode('style').value = `background-image: url(${U})`;
+  } else {
+    el.style.backgroundImage = `url(${U})`;
+  }
+  await new Promise(r => setTimeout(r, 20));
+  return el.getAttribute('style') || '';
+}
+for (const layout of ['CSSStyleDeclaration', 'CSSStyleProperties', 'instance']) {
+  const style = await backgroundCase(layout);
+  assert(style.includes(PROTO + 'browser/games/reversi/res/xd-view/select-target-2d.png'),
+    `style.backgroundImage réécrit — accesseur ${layout === 'instance' ? 'absent (Chromium), via l’observateur' : 'sur ' + layout + '.prototype'}`);
+}
+
 console.log(`\n${passed} assertions OK — réécriture d'assets (dist externe) validée.`);
 process.exit(0);
