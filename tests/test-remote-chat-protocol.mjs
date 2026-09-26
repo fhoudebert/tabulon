@@ -21,6 +21,7 @@ import {
     ENVELOPE_KIND, PRESENCE, THREAD_VERSION, NUDGE_MIN_INTERVAL_MS,
     chatMidFor, newMessage, encodeThread, decodeThread, mergeThreads,
     presenceOf, canNudge, requiresSeal,
+    toRelayMessage, fromRelayMessage,
 } from '../app/content/remote-chat-protocol.js';
 import {
     SEED_KEY, SEED_BYTES, generateSeed, generateChatKey, isSeed, getOrCreateSeed, rotateSeed,
@@ -355,6 +356,105 @@ console.log('La clé d’une invitation reçue, quelle que soit la porte');
         [{ matchId: 'm-1' }, keyring, 'une invitation sans clé ni empreinte'],
         [null, keyring, 'une invitation illisible'],
     ]) ok(await resolveInviteChatKey(parsed, ring, fakeRust) === null, what + ' ne donne pas de clé');
+}
+
+console.log('');
+console.log('L’enveloppe de joclymatch');
+{
+    const { toRelayMessage, fromRelayMessage } =
+        await import('../app/content/remote-chat-protocol.js');
+
+    /*
+     * Les deux formats se rejoignaient déjà sur le camp : `1` / `-1` des deux
+     * côtés. Le reste est un changement de nom — `body` → `msg`, `at` →
+     * `time` — plus une part aléatoire `key`, dont joclymatch fait son
+     * identifiant en la collant à l'horodatage.
+     */
+    const m = newMessage({ kind: ENVELOPE_KIND.CHAT, side: A, body: 'salut', at: 1700, rand });
+    const wire = toRelayMessage(m);
+    ok(wire.msg === 'salut' && wire.player === A && wire.time === 1700,
+       'texte, camp et horodatage prennent les noms de joclymatch');
+    ok(wire.kind === undefined, '`chat` est le défaut : on ne l’écrit pas');
+
+    /*
+     * L'IDENTIFIANT PREND LA FORME « horodatage-aléa ».
+     *
+     * Les deux applications relisent désormais le MÊME fil. Si elles n'y
+     * calculaient pas le même identifiant, chacune dédupliquerait dans son
+     * coin : un message relu apparaîtrait deux fois chez l'une et une seule
+     * chez l'autre.
+     */
+    ok(/^\d+-[0-9a-f]+$/.test(m.id), 'l’identifiant est horodatage-aléa : ' + m.id);
+    ok(fromRelayMessage({ data: wire }).id === m.id, 'et se recalcule à l’identique à la relecture');
+
+    // Aller-retour complet : ce qui part doit revenir tel quel, sinon un
+    // message écrit et relu ne se reconnaît pas lui-même.
+    const back = fromRelayMessage({ data: wire });
+    ok(back.body === 'salut' && back.side === A && back.at === 1700, 'aller-retour fidèle');
+
+    // Les genres que joclymatch ne connaît pas voyagent à côté : il les ignore.
+    const pause = newMessage({ kind: ENVELOPE_KIND.PRESENCE, side: B, state: PRESENCE.PAUSED, at: 1800, rand });
+    ok(toRelayMessage(pause).kind === ENVELOPE_KIND.PRESENCE, 'un genre non standard est écrit');
+    ok(toRelayMessage(pause).msg === '', 'sans texte : joclymatch ignore une ligne sans msg');
+
+    /*
+     * LE CAMP 0 EST CELUI DES MESSAGES DE SERVICE de joclymatch. Il est
+     * conservé plutôt qu'écarté : un message qui disparaît sans laisser de
+     * trace est pire qu'un message qu'on ne sait pas attribuer.
+     */
+    ok(fromRelayMessage({ data: { msg: 'partie terminée', player: 0, time: 9, key: 'z' } })?.side === 0,
+       'un message de service est conservé');
+    // Et le pseudo, que nous n'émettons jamais : en régime scellé il
+    // annoncerait une protection que le fil n'a pas.
+    ok(fromRelayMessage({ data: { msg: 'x', player: 1, time: 9, key: 'z', pseudo: 'Bob' } })?.pseudo === 'Bob',
+       'le pseudo reçu est conservé pour l’affichage');
+    ok(toRelayMessage(m).pseudo === undefined, 'mais jamais émis');
+
+    // Une ligne inexploitable rend null plutôt que de lever : un fil partagé
+    // contient des lignes écrites par un client qu'on ne connaît pas, et une
+    // seule ne doit pas emporter la conversation.
+    for (const bad of [null, {}, { data: {} }, { data: { msg: 1, player: 1, time: 1 } },
+                       { data: { msg: 'x', player: 7, time: 1 } },
+                       { data: { msg: 'x', player: 1, time: 'hier' } }])
+        ok(fromRelayMessage(bad) === null, 'ligne inexploitable ignorée : ' + JSON.stringify(bad));
+}
+
+console.log('');
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Interoperabilite mesuree contre un serveur joclymatch reel : deux defauts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+{
+    // UN MESSAGE RAPIDE NE DOIT PAS ARRIVER VIDE. joclymatch affiche `msg` et
+    // ne connait pas `quick` : sans repli, la bulle etait vide dans son fil.
+    const m = newMessage({ kind: 'chat', side: 1, quick: 'wellPlayed' });
+    ok(toRelayMessage(m).msg === '', 'sans repli, le corps reste vide (etat d avant)');
+    const avec = toRelayMessage(m, null, 'Bien joué');
+    ok(avec.msg === 'Bien joué', 'avec repli, le corps porte le libelle');
+    ok(avec.quick === 'wellPlayed', 'et `quick` part quand meme, pour qui sait le lire');
+
+    // Le repli ne doit JAMAIS ecraser un corps scelle.
+    const libre = newMessage({ kind: 'chat', side: 1, body: 'secret' });
+    const scelle = toRelayMessage(libre, 'c2NlbGxl', 'Bien joué');
+    ok(scelle.msg === 'c2NlbGxl', 'un corps scelle n est pas remplace par le repli');
+    ok(scelle.enc === 1, 'et il porte enc');
+}
+
+{
+    // LE PSEUDO DE JOCLYMATCH DOIT SURVIVRE. fromRelayMessage le conservait,
+    // decodeThread le jetait : le correspondant s'affichait « Joueur B » alors
+    // qu'il s'etait donne un nom.
+    const interne = fromRelayMessage(
+        { data: { msg: 'bonjour', player: -1, pseudo: 'Ada', time: 1000, key: 'zzzz' } });
+    ok(interne.pseudo === 'Ada', 'fromRelayMessage garde le pseudo');
+    const [relu] = await decodeThread(JSON.stringify({ v: 1, msgs: [interne] }), { allowClear: true });
+    ok(relu && relu.pseudo === 'Ada', 'decodeThread le garde aussi');
+    ok(relu && relu.body === 'bonjour', 'et le corps reste lisible');
+
+    const sans = fromRelayMessage({ data: { msg: 'x', player: 1, time: 2000, key: 'yyyy' } });
+    const [relu2] = await decodeThread(JSON.stringify({ v: 1, msgs: [sans] }), { allowClear: true });
+    ok(relu2 && relu2.pseudo === undefined, 'pas de pseudo inutile quand il n y en a pas');
 }
 
 console.log('');

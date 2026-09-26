@@ -7,6 +7,7 @@
 //     proxys vers les handlers de la barre (rollback observé sur le match)
 // Usage : npm test  (ou node tests/test-capture-2d.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 
@@ -63,7 +64,7 @@ const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/play.html?ga
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 globalThis.FileReader = dom.window.FileReader;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 dom.window.WebGLRenderingContext = function () {};
 dom.window.HTMLCanvasElement.prototype.getContext = () => ({});
 globalThis.Jocly = {

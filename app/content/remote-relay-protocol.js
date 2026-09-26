@@ -63,18 +63,24 @@ export const DEFAULT_RELAY_URL = 'https://biscandine.fr/variantes/joclymatch/fil
  *              complète (nouvelle connexion, désynchronisation détectée).
  * @returns {string} JSON prêt à poster comme "gamedata"
  */
-export function encodeEnvelope({ nbTurns, lastMove = null, state = null }) {
+export function encodeEnvelope({ nbTurns, lastMove = null, state = null, allowTakeback = null }) {
     if (!Number.isInteger(nbTurns) || nbTurns < 0) {
         throw new Error('encodeEnvelope: nbTurns doit être un entier >= 0');
     }
-    return JSON.stringify({
+    const envelope = {
         v: PROTOCOL_VERSION,
         kind: ENVELOPE_KIND.MOVE,
         nbTurns,
         lastMove,
         state,
         updatedAt: Date.now(),
-    });
+    };
+    // Reglage de la PARTIE, recopie a chaque ecriture : le relai ne garde que
+    // la derniere enveloppe, un champ absent d'une seule ecriture serait
+    // perdu pour les deux joueurs. Pas ecrit quand on ne le connait pas --
+    // l'absence veut dire « inconnu », pas « interdit ».
+    if (typeof allowTakeback === 'boolean') envelope.allowTakeback = allowTakeback;
+    return JSON.stringify(envelope);
 }
 
 /**
@@ -103,7 +109,13 @@ export function decodeEnvelope(text) {
         lastMove: data.lastMove ?? null,
         state: data.state ?? null,
         updatedAt: Number.isInteger(data.updatedAt) ? data.updatedAt : null,
+        allowTakeback: readAllowTakeback(data.allowTakeback),
     };
+}
+
+/** true/false tels quels ; tout le reste (absent, abime) = inconnu (null). */
+function readAllowTakeback(value) {
+    return typeof value === 'boolean' ? value : null;
 }
 
 /**
@@ -120,6 +132,98 @@ export function hasOpponentMoved(localNbTurns, remoteEnvelope) {
     // pour un coup ferait avancer la partie sur du vide.
     if (remoteEnvelope.kind !== undefined && remoteEnvelope.kind !== ENVELOPE_KIND.MOVE) return false;
     return remoteEnvelope.nbTurns > localNbTurns;
+}
+
+/**
+ * true si l'adversaire a REPRIS un ou plusieurs coups (ou recommence la
+ * partie) : le relai porte MOINS de coups que nous.
+ *
+ * C'est le pendant de hasOpponentMoved, et c'est pourquoi celle-ci teste un
+ * strict superieur : une baisse n'est pas un coup. La passer dans la branche
+ * « il a joue » depilerait un coup et le rejouerait -- ce qui defait
+ * l'annulation d'un cran en animant un coup que personne n'a joue. Le piege
+ * a deja ete corrige une fois cote joclymatch (un `!=` devenu `>` / `<`).
+ *
+ * Une annulation se charge TELLE QUELLE, depuis l'etat complet : il n'y a pas
+ * de coup a jouer.
+ * @param {number} localNbTurns
+ * @param {{nbTurns:number, kind?:string}|null} remoteEnvelope
+ */
+export function hasOpponentTakenBack(localNbTurns, remoteEnvelope) {
+    if (!remoteEnvelope) return false;
+    if (remoteEnvelope.kind !== undefined && remoteEnvelope.kind !== ENVELOPE_KIND.MOVE) return false;
+    if (!Number.isInteger(remoteEnvelope.nbTurns)) return false;
+    return remoteEnvelope.nbTurns < localNbTurns;
+}
+
+/**
+ * La reprise de coup est-elle permise dans cette partie ?
+ *
+ * LE FICHIER FAIT FOI, le lien annonce : le fichier du relai est le meme pour
+ * les deux joueurs par construction, il survit a un rechargement et a un lien
+ * tronque au copier-coller ; un lien, lui, a pu etre retouche a la main. Le
+ * lien ne sert que tant que le fichier ne dit rien -- en particulier avant
+ * que l'hote n'y ait ecrit.
+ *
+ * Quand PERSONNE ne dit rien : INTERDITE. C'est la regle commune a Tabulon,
+ * joclymatch et mogichex : l'autre bout d'une partie sans reglage peut etre un
+ * client anterieur, qui ne sait pas suivre une annulation (il ignore un
+ * nbTurns qui baisse, ou rejoue le dernier coup du fichier) -- les plateaux
+ * divergeraient. RECEVOIR une reprise ne depend jamais de ce reglage.
+ * @param {boolean|null} fileValue
+ * @param {boolean|null} linkValue
+ */
+export function resolveAllowTakeback(fileValue, linkValue) {
+    if (typeof fileValue === 'boolean') return fileValue;
+    if (typeof linkValue === 'boolean') return linkValue;
+    return false;
+}
+
+/**
+ * Pourquoi « Reculer » est refuse MAINTENANT face a un joueur distant (cle
+ * i18n), ou null s'il est permis. Meme regle que joclymatch et mogichex :
+ *
+ *  - la partie doit l'autoriser (resolveAllowTakeback) ;
+ *  - ce doit etre NOTRE tour : joclymatch ne sonde le relai que pendant qu'il
+ *    attend l'autre ; pendant son propre tour il ne verrait pas l'annulation
+ *    et son coup suivant, calcule sur l'ancienne position, l'ecraserait ;
+ *  - il faut DEUX coups joues au moins : a notre tour le dernier coup est
+ *    celui de l'adversaire, le notre est l'avant-dernier. Avec un seul coup
+ *    (le premier coup de A, vu par B), reculer defaisait le coup ADVERSE et
+ *    lui rendait la main.
+ * @param {{remote:boolean, allowed:boolean, localTurn:boolean, playedMoves:number}} s
+ * @returns {string|null}
+ */
+export function remoteTakebackBlock({ remote, allowed, localTurn, playedMoves }) {
+    if (!remote) return null;
+    if (!allowed) return 'play.remoteTakebackForbidden';
+    if (!localTurn) return 'play.remoteTakebackNotYourTurn';
+    if (!(playedMoves >= 2)) return 'play.remoteTakebackNothingYet';
+    return null;
+}
+
+/**
+ * Verdict du bouton « Tester » sur la reponse d'un relai.
+ *
+ * AVANT, TOUTE REPONSE VALAIT « JOIGNABLE ». Or une installation mogichex
+ * renvoie index.html -- avec un 200 -- pour toute adresse qui n'est pas un
+ * fichier (regle mono-page de son .htaccess) : sans fileio.php, le test
+ * disait « relai joignable » et la partie restait muette ensuite.
+ *
+ * On ne demande pas pour autant du JSON : un fileio.php de jocly-simple-match
+ * d'origine repond a un identifiant jamais sauvegarde par un avertissement
+ * PHP (du HTML en fragments, pas un document), et ce relai-la fonctionne tres
+ * bien. Ce qui trahit « pas de relai ici », c'est une PAGE entiere, ou un
+ * statut d'erreur.
+ * @param {number} status
+ * @param {string} bodyText
+ * @returns {'ok'|'not-relay'|'http-error'}
+ */
+export function classifyRelayProbe(status, bodyText) {
+    if (Number.isInteger(status) && status >= 400) return 'http-error';
+    const head = String(bodyText || '').trimStart().slice(0, 200).toLowerCase();
+    if (head.startsWith('<!doctype') || head.startsWith('<html')) return 'not-relay';
+    return 'ok';
 }
 
 /**
@@ -144,6 +248,43 @@ export function buildLoadBody(gameId) {
     if (!gameId) throw new Error('buildLoadBody: gameId requis');
     const p = new URLSearchParams();
     p.set('gameioaction', 'load');
+    p.set('gameid', gameId);
+    return p;
+}
+
+/**
+ * Corps d'un POST "chat" vers fileio.php : le serveur AJOUTE la ligne.
+ *
+ * Point d'entree distinct de celui des coups, et fichier distinct
+ * (`<gameid>-chat.txt`) : ecrire une conversation dans la cle de la partie
+ * ecraserait le coup qui n'a pas encore ete lu.
+ *
+ * C'est le point d'entree de joclymatch, et c'est tout l'objet du
+ * demenagement : deux applications qui partagent un plateau partagent
+ * desormais aussi le fil.
+ *
+ * UN MESSAGE EST UNE LIGNE. Le serveur refuse (400) un `chatmsg` contenant un
+ * saut de ligne, parce qu'il relit le fichier ligne par ligne : un message
+ * multiligne couperait le JSON de son auteur en fragments invalides et
+ * rendrait le fil illisible POUR LES DEUX joueurs, durablement. JSON.stringify
+ * n'en emet jamais -- a condition de ne pas indenter.
+ */
+export function buildChatSaveBody(gameId, line) {
+    if (!gameId) throw new Error('buildChatSaveBody: gameId requis');
+    if (/[\r\n]/.test(line))
+        throw new Error('buildChatSaveBody: un message est une ligne (le relai refuse les sauts de ligne)');
+    const p = new URLSearchParams();
+    p.set('chatioaction', 'save');
+    p.set('gameid', gameId);
+    p.set('chatmsg', line);
+    return p;
+}
+
+/** Corps d'un POST "chat load" : rend TOUT le fil, les deux joueurs meles. */
+export function buildChatLoadBody(gameId) {
+    if (!gameId) throw new Error('buildChatLoadBody: gameId requis');
+    const p = new URLSearchParams();
+    p.set('chatioaction', 'load');
     p.set('gameid', gameId);
     return p;
 }
@@ -184,13 +325,21 @@ export function generateMatchId() {
  * @param {{matchId:string, gameName:string, nbTurns:number, matchdata:*}} data
  * @returns {string} JSON pret a poster comme "gamedata"
  */
-export function encodeJoclySimpleMatchEnvelope({ matchId, gameName, nbTurns, matchdata }) {
+export function encodeJoclySimpleMatchEnvelope({ matchId, gameName, nbTurns, matchdata, allowTakeback = null }) {
     if (!matchId) throw new Error('encodeJoclySimpleMatchEnvelope: matchId requis');
     if (!Number.isInteger(nbTurns) || nbTurns < 0) {
         throw new Error('encodeJoclySimpleMatchEnvelope: nbTurns doit être un entier >= 0');
     }
+    const matchDetails = { matchId, gameName, nbTurns, a: { pseudo: '' }, b: { pseudo: '' } };
+    /*
+     * matchDetails est RECONSTRUIT a chaque sauvegarde, ici comme dans
+     * control.js : un champ que l'un des deux clients ne recopie pas est
+     * efface a sa premiere ecriture. Le reglage de reprise est donc reporte
+     * explicitement, et seulement quand on le connait.
+     */
+    if (typeof allowTakeback === 'boolean') matchDetails.allowTakeback = allowTakeback;
     return JSON.stringify({
-        matchDetails: { matchId, gameName, nbTurns, a: { pseudo: '' }, b: { pseudo: '' } },
+        matchDetails,
         matchdata,
         time: Date.now(),
         // jocly-simple-match ne verifie jamais cette cle malgre son nom --
@@ -215,7 +364,10 @@ export function decodeJoclySimpleMatchEnvelope(text) {
     if (!Number.isInteger(nbTurns)) return null;
     const moves = data.matchdata?.playedMoves;
     const lastMove = Array.isArray(moves) && moves.length ? moves[moves.length - 1] : null;
-    return { nbTurns, lastMove, state: data.matchdata ?? null };
+    return {
+        nbTurns, lastMove, state: data.matchdata ?? null,
+        allowTakeback: readAllowTakeback(data.matchDetails.allowTakeback),
+    };
 }
 
 /**
@@ -225,7 +377,8 @@ export function decodeJoclySimpleMatchEnvelope(text) {
  * remplaçant index.php par fileio.php dans le même dossier (les deux scripts
  * vivent toujours côte à côte dans jocly-simple-match).
  * @param {string} urlString
- * @returns {{gameName:string, matchId:string, player:'a'|'b', relayUrl:string}|null}
+ * @returns {{gameName:string, matchId:string, player:'a'|'b', relayUrl:string,
+ *            allowTakeback:boolean|null}|null}
  */
 export function parseInvitationUrl(urlString) {
     let url;
@@ -256,7 +409,21 @@ export function parseInvitationUrl(urlString) {
          * appartient, et que le relai n'a pas a l'apprendre.
          */
         chatKeyId: /^[0-9a-f]{16}$/.test(keyId || '') ? keyId : null,
+        /*
+         * `tb` : la reprise de coup, telle que l'hote l'a reglee. DANS LA
+         * REQUETE, pas dans le fragment : le fragment est reserve a ce qui ne
+         * doit pas atteindre le serveur (la cle), alors que la page de
+         * joclymatch a besoin de lire ce reglage. Absent ou illisible = null,
+         * c'est-a-dire « le lien ne dit rien » -- un lien d'avant ce reglage.
+         */
+        allowTakeback: takebackFromParam(url.searchParams.get('tb')),
     };
+}
+
+function takebackFromParam(value) {
+    if (value === '1') return true;
+    if (value === '0') return false;
+    return null;
 }
 
 /**
@@ -293,7 +460,8 @@ export function isChatKey(value) {
  * @param {{relayUrl:string, gameName:string, matchId:string, player:'a'|'b'}} data
  * @returns {string|null} null si relayUrl n'est pas une URL valide
  */
-export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null, chatKeyId = null }) {
+export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKey = null, chatKeyId = null,
+                                    allowTakeback = null }) {
     let url;
     try {
         url = new URL(relayUrl);
@@ -306,6 +474,9 @@ export function buildInvitationUrl({ relayUrl, gameName, matchId, player, chatKe
     url.searchParams.set('game', gameName);
     url.searchParams.set('mid', matchId);
     url.searchParams.set('player', player);
+    // Emis EXPLICITEMENT dans les deux sens (tb=1 comme tb=0) : un lien qui
+    // ne dit rien laisse croire a un client ancien, pas a un choix.
+    if (typeof allowTakeback === 'boolean') url.searchParams.set('tb', allowTakeback ? '1' : '0');
     /*
      * La clé va dans le FRAGMENT, et une clé mal formée est refusée plutôt
      * qu'écrite : un lien qui en porterait une inutilisable annoncerait une

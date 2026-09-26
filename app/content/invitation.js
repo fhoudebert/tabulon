@@ -19,7 +19,8 @@ import tRpc from './tabulon-rpc.js';
 import { initI18n, t } from './tabulon-i18n.js';
 import twu  from './tabulon-winutils.js';
 import { Store, listen, httpFetch } from './tauri-bridge.js';
-import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody } from './remote-relay-protocol.js';
+import { parseInvitationUrl, buildInvitationUrl, generateMatchId, DEFAULT_RELAY_URL, buildLoadBody,
+         classifyRelayProbe } from './remote-relay-protocol.js';
 import { generateChatKey, deriveChatKey, chatKeyId, resolveInviteChatKey } from './remote-secret.js';
 import { hostPeerMatch, joinPeerMatch } from './remote-peer-channel.js';
 
@@ -57,6 +58,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const extraField = document.getElementById('peer-extra-addr');
     if (portField && prefs.port) portField.value = prefs.port;
     if (extraField && prefs.extraAddresses) extraField.value = prefs.extraAddresses;
+
+    /*
+     * REPRISE DE COUP : decochee par defaut -- une partie a distance ne
+     * permet pas de reprendre un coup tant que l'hote ne l'a pas voulu.
+     * Retenue d'une partie a l'autre comme le relai, et seulement quand une
+     * partie a effectivement ete creee avec (meme regle que ci-dessus).
+     *
+     * C'est un reglage de la PARTIE, jamais de l'un des joueurs : il part
+     * dans le lien (tb=0/1) et dans le code pair-a-pair, puis dans chaque
+     * ecriture du relai, et l'invite s'y range.
+     */
+    const takebackBox = document.getElementById('invitation-allow-takeback');
+    if (takebackBox) takebackBox.checked = prefs.allowTakeback === true;
+    const allowTakeback = () => !!takebackBox?.checked;
 
     // Fusionne plutot que remplace : le relai et le pair-a-pair s'enregistrent
     // separement, et retenir l'un ne doit pas effacer l'autre.
@@ -152,7 +167,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function startMatch({ gameName, matchId, relayUrl, player, creator, peer,
-                               chatKey = null, chatKeyId: kid = null }) {
+                               chatKey = null, chatKeyId: kid = null, allowTakeback: tb = null }) {
         const inviteId = 'inv-' + Date.now();
         /*
          * La cle de discussion est rangee AVEC l'invitation, et nulle part
@@ -174,6 +189,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             matchId, relayUrl, gameName, player,
             creator: !!creator, peer: !!peer, chatKey: chatKey || null,
             chatKeyId: kid || null,
+            // null = l'invitation ne disait rien (lien ou code d'avant ce
+            // reglage) : c'est alors play.js qui choisit selon le transport.
+            allowTakeback: typeof tb === 'boolean' ? tb : null,
         });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
         tRpc.close();
@@ -212,14 +230,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { chatKey, chatKeyId: kid, derived } = await inviteChatKey(matchId);
         // Une cle derivee ne voyage PAS : le lien ne porte que l'empreinte du
         // trousseau, et l'invite en deduit la meme cle.
+        const tb = allowTakeback();
         const link = buildInvitationUrl({ relayUrl, gameName: selectedGame, matchId, player: 'b',
-            chatKey: derived ? null : chatKey, chatKeyId: derived ? kid : null });
+            chatKey: derived ? null : chatKey, chatKeyId: derived ? kid : null, allowTakeback: tb });
         if (!link) { setStatus(createStatus, t('players.testFail'), 'fail'); return; }
         created = { gameName: selectedGame, matchId, relayUrl, player: 'a', creator: true,
-            chatKey, chatKeyId: derived ? kid : null };
+            chatKey, chatKeyId: derived ? kid : null, allowTakeback: tb };
         // Le lien s'est construit, donc l'adresse du relai est au moins bien
         // formee. On la retient pour la prochaine partie.
-        await remember({ relayUrl });
+        await remember({ relayUrl, allowTakeback: tb });
         if (linkInput) linkInput.value = link;
         if (linkRow) linkRow.style.display = '';
         if (startBtn) startBtn.disabled = false;
@@ -265,9 +284,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         setStatus(peerHostStatus, t('invitation.peerConnected'), 'ok');
     });
 
-    // Tester le relai (etape 8d, deplace depuis la fenetre Joueurs) : meme
-    // sonde qu'avant -- un POST "load" sur un id anodin ; seule
-    // l'atteignabilite du fileio.php compte, pas le contenu de la reponse.
+    // Tester le relai (etape 8d, deplace depuis la fenetre Joueurs) : un POST
+    // "load" sur un id anodin. Une page HTML entiere ou un statut d'erreur
+    // n'est pas un relai (voir classifyRelayProbe).
     document.getElementById('button-test-relay')?.addEventListener('click', async () => {
         const relayUrl = document.getElementById('invitation-relay-url')?.value.trim() || DEFAULT_RELAY_URL;
         setStatus(createStatus, t('players.testChecking'), '');
@@ -277,8 +296,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: buildLoadBody('tabulon-test').toString(),
             });
-            await res.text();
-            setStatus(createStatus, t('players.testOk'), 'ok');
+            const verdict = classifyRelayProbe(res.status, await res.text());
+            if (verdict === 'not-relay') setStatus(createStatus, t('players.testNotRelay'), 'fail');
+            else if (verdict === 'http-error')
+                setStatus(createStatus, t('players.testHttpError', { status: res.status }), 'fail');
+            else setStatus(createStatus, t('players.testOk'), 'ok');
         } catch (e) {
             console.warn('[invitation] test relay failed:', e.message || e);
             setStatus(createStatus, t('players.testFail'), 'fail');
@@ -325,11 +347,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         let chatKey = null;
         try { chatKey = generateChatKey(); }
         catch (e) { console.warn('[invitation] pas de cle de discussion :', e.message || e); }
+        const tb = allowTakeback();
         try {
-            const { code, token } = await hostPeerMatch(selectedGame, { port, extraAddresses, chatKey });
+            const { code, token } = await hostPeerMatch(selectedGame, { port, extraAddresses, chatKey,
+                allowTakeback: tb });
             peerHosting = {
                 gameName: selectedGame, matchId: 'p2p:' + token.slice(0, 12),
-                player: 'a', peer: true, creator: true, chatKey,
+                player: 'a', peer: true, creator: true, chatKey, allowTakeback: tb,
             };
             if (peerCode) peerCode.value = code;
             if (peerCodeRow) peerCodeRow.style.display = '';
@@ -337,7 +361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // ICI et pas avant : l'hebergement a demarre, donc le port etait
             // libre et les adresses acceptables. C'est ce qui distingue un
             // reglage eprouve d'un reglage simplement saisi.
-            await remember({ port: portRaw, extraAddresses: extraRaw.trim() });
+            await remember({ port: portRaw, extraAddresses: extraRaw.trim(), allowTakeback: tb });
         } catch (e) {
             console.warn('[invitation] peer host failed:', e.message || e);
             setStatus(peerHostStatus, t('invitation.peerHostFail', { error: String(e.message || e) }), 'fail');
@@ -362,12 +386,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!raw.trim()) { setStatus(peerJoinStatus, t('invitation.peerInvalidCode'), 'fail'); return; }
         setStatus(peerJoinStatus, t('invitation.peerConnecting'), '');
         try {
-            const { gameName, token, chatKey } = await joinPeerMatch(raw);
+            const { gameName, token, chatKey, allowTakeback: tb } = await joinPeerMatch(raw);
             if (selectedGame && gameName !== selectedGame)
                 setStatus(peerJoinStatus, t('invitation.gameMismatch', { game: gameName }), 'warn');
             await startMatch({
                 gameName, matchId: 'p2p:' + token.slice(0, 12),
-                player: 'b', peer: true, chatKey,
+                player: 'b', peer: true, chatKey, allowTakeback: tb,
             });
         } catch (e) {
             console.warn('[invitation] peer join failed:', e.message || e);

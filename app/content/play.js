@@ -14,8 +14,8 @@ import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 import { initI18n, t, translateLevelLabel, getLocale } from './tabulon-i18n.js';
 import { gameTitle } from './localized-field.js';
 import { installNativeEngine } from './engine-native.js';
-import { ReplayBookMoves, MoveFormat, FlipSfenTurn, PgnFenToJocly, PgnFenToShogiSfen, VariantFen,
-         
+import { NormalizeBookFen, NormalizeSChessNatural } from './book-format.js';
+import { ReplayBookMoves, MoveFormat, FlipSfenTurn,
          ParseWesternMove, ParseNaturalMove, WesternMatches, BuildWesternMove,
          ParseWxfMove, WxfMatches, ParseSanMove, SanMatches, BuildSanMove } from './book-format.js';
 import { HttpRelayChannel } from './remote-channel.js';
@@ -23,7 +23,7 @@ import { PeerChannel } from './remote-peer-channel.js';
 import { RelayChatChannel, PeerChatChannel } from './remote-chat-channel.js';
 import { ENVELOPE_KIND, PRESENCE, presenceOf } from './remote-chat-protocol.js';
 import { makeSealer, deriveChatKey, chatKeyId } from './remote-secret.js';
-import { isChatKey } from './remote-relay-protocol.js';
+import { isChatKey, remoteTakebackBlock } from './remote-relay-protocol.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
@@ -206,13 +206,80 @@ function cancelRemoteWait(reason) {
     waiters.forEach(w => w.reject(new Error(reason)));
 }
 
+/*
+ * L'ADVERSAIRE A REPRIS UN COUP (ou recommence la partie).
+ *
+ * Le canal le reconnait a un nombre de coups qui BAISSE, et nous remet l'etat
+ * complet : on le CHARGE tel quel. Surtout pas de playMove -- il n'y a aucun
+ * coup a jouer, et rejouer « le dernier » defairait l'annulation d'un cran
+ * en animant un coup que personne n'a joue.
+ *
+ * Ca peut arriver a tout moment (le canal sonde en continu), d'ou la file :
+ * deux annulations rapprochees s'appliquent l'une apres l'autre, jamais
+ * entremelees.
+ *
+ * L'ordre suit celui des boutons locaux (voir rearmAfterPositionChange) :
+ * interrompre, changer la position, PUIS rearmer. L'attente d'un coup
+ * distant est annulee APRES le chargement, sinon la boucle rebouclerait sur
+ * l'ancienne position et attendrait un coup qui ne viendra pas.
+ */
+let remoteTakebackQueue = Promise.resolve();
+
+function onRemoteTakebackReceived(payload) {
+    remoteTakebackQueue = remoteTakebackQueue
+        .then(() => ApplyRemoteTakeback(payload))
+        .catch(e => console.warn('[play] reprise distante non appliquee :', e.message || e));
+}
+
+async function ApplyRemoteTakeback(payload) {
+    if (!joclyMatch) return;
+    remoteMoveBuffer = null;
+    if (!payload?.state) { ShowWarning(t('play.remoteDesync')); return; }
+    await joclyMatch.abortUserTurn().catch(() => {});
+    await joclyMatch.abortMachineSearch().catch(() => {});
+    try { await joclyMatch.load(payload.state); }
+    catch (e) {
+        console.warn('[play] etat distant illisible :', e.message || e);
+        ShowWarning(t('play.remoteDesync'));
+        return;
+    }
+    await resyncRemoteChannelBaseline();
+    cancelRemoteWait('remote takeback');
+    // Le plateau vient de changer sans que le joueur ait rien fait : il faut
+    // le lui dire, et dans un bandeau plutot qu'au pied, que le tour suivant
+    // reecrit aussitot.
+    ShowWarning(t(payload.nbTurns === 0 ? 'play.opponentRestarted' : 'play.opponentTookBack',
+        { player: SideName(remoteChannelKey) }));
+    emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+    await rearmAfterPositionChange();
+}
+
+/*
+ * Nous reprenons un coup face a un adversaire distant : il faut le lui
+ * PUBLIER, avec le nouveau compte ET l'etat complet (c'est ce qu'il charge).
+ * push() recale lui-meme la reference du canal ; aucun resetBaseline avant,
+ * qui laisserait un sondage relire l'ancien fichier et y voir un coup.
+ */
+async function PublishTakeback() {
+    if (!remoteChannel) return;
+    remoteMoveBuffer = null;
+    const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+    const state = await SaveMatch();
+    try {
+        await remoteChannel.push({ nbTurns: moves.length, lastMove: moves[moves.length - 1] ?? null, state });
+    } catch (e) {
+        console.warn('[play] reprise non transmise :', e.message || e);
+        ShowWarning(t('play.remoteTakebackNotSent'));
+    }
+}
+
 // Cree (ou reutilise) le canal pour la configuration donnee, et l'associe a
 // playerKey (le cote distant). Si un canal existe deja pour une autre partie
 // (matchId different) ou un autre cote, il est arrete proprement d'abord.
 // currentNbTurns : nombre de coups deja joues localement au moment de la
 // creation (baseline correcte pour une partie deja entamee -- fork, reprise
 // apres fermeture de la fenetre...) ; ignore si le canal existe deja.
-function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey, chatKeyId: chatKid }, currentNbTurns) {
+function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, codec, gameName: remoteGameName, peer, chatKey, chatKeyId: chatKid, allowTakeback = null }, currentNbTurns) {
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
@@ -221,7 +288,7 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
         // fenetre Invitation avant new_match) -- le canal ne fait que s'y
         // attacher. Meme interface RemoteChannel, gameLoop ne voit aucune
         // difference avec le relai HTTP.
-        const chan = new PeerChannel({ matchId: remoteMatchId, localNbTurns: currentNbTurns });
+        const chan = new PeerChannel({ matchId: remoteMatchId, localNbTurns: currentNbTurns, allowTakeback });
         chan.onStatusChange(({ connected, error }) => {
             if (!connected) {
                 console.warn('[play] session pair-a-pair terminee', error || '');
@@ -230,13 +297,19 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
         });
         remoteChannel = chan;
     } else {
+        // Reprise de coup : ce que l'invitation annonce ; le fichier du relai
+        // fait foi, et si personne ne dit rien elle est interdite (meme regle
+        // que joclymatch et mogichex, voir resolveAllowTakeback).
         remoteChannel = new HttpRelayChannel({
             relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns,
             codec: codec || 'tabulon', gameName: remoteGameName || gameName,
+            allowTakeback,
         });
     }
     remoteChannelKey = playerKey;
     remoteChannel.onRemoteMove(onRemoteMoveReceived);
+    remoteChannel.onRemoteTakeback(onRemoteTakebackReceived);
+    remoteChannel.onSettingsChange(() => updateRemoteRestrictedButtons());
     remoteChannel.start();
     // playerKey est le camp DISTANT : le notre est l'autre. C'est lui qui
     // signe nos messages et qui decide laquelle des deux cles de fil nous
@@ -271,6 +344,21 @@ let remotePresence = null;   // dernier etat declare par l'adversaire
 let chatConfig = null;      // la derniere configuration, pour rouvrir le canal
 let chatKeyring = [];       // [{id, name}] -- les cles de communaute, SANS les cles
 let chatKeyringId = null;   // celle qui sert a cette partie, si on la reconnait
+/*
+ * PARTIES OU L'UTILISATEUR A ACCEPTE LE CLAIR.
+ *
+ * Memorise, et pas seulement pour la session : le lien d'invitation porte
+ * toujours la cle, donc a chaque ouverture la partie repartirait protegee et
+ * les messages du correspondant redeviendraient « non affiches ». Il faudrait
+ * reaccepter a chaque fois, devant un ecran qui ressemble a une panne.
+ *
+ * Ce qui est range est une LISTE D'IDENTIFIANTS DE PARTIE, jamais une cle :
+ * savoir qu'on a renonce a proteger une partie n'apprend rien a qui lirait ce
+ * fichier. Bornee, pour ne pas croitre indefiniment.
+ */
+const CHAT_CLEAR_KEY = 'chat-clear-matches';
+const CHAT_CLEAR_MAX = 100;
+let chatClearAccepted = false;
 
 function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: kid = null }, localSide) {
     disposeChatChannel();
@@ -281,10 +369,31 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
         try { sealer = makeSealer(chatKey); }
         catch (e) { console.warn('[play] cle de discussion inutilisable :', e.message || e); }
     }
+    /*
+     * REGIME CLAIR : uniquement quand la partie n'a AUCUNE cle.
+     *
+     * Une partie creee par Tabulon en porte toujours une, et son texte libre
+     * reste scelle -- le demenagement du transport vers le point d'entree de
+     * joclymatch n'y change rien. Une partie rejointe par un lien joclymatch
+     * n'en a pas : l'autre bout non plus, il n'y a rien a chiffrer avec, et le
+     * clair est le seul regime possible.
+     *
+     * `chatKey` et non `sealer` : un scelleur qui n'a pas pu se construire --
+     * cle abimee, commande Rust indisponible -- ne doit surtout pas ouvrir le
+     * regime clair. C'est le chemin par lequel une protection se perd sans que
+     * personne l'ait decide.
+     */
+    const allowClear = !chatKey;
+    chatClearAccepted = false;
     chatChannel = peer
         ? new PeerChatChannel({ side: localSide, sealer })
         : new RelayChatChannel({
-            relayUrl, matchId: remoteMatchId, side: localSide, sealer,
+            relayUrl, matchId: remoteMatchId, side: localSide, sealer, allowClear,
+            // Le fil est PARTAGE avec joclymatch, qui ne connait pas `quick` :
+            // sans repli lisible, un message rapide y apparait comme une bulle
+            // vide. On lui donne le libelle traduit -- dans notre langue,
+            // faute de connaitre la sienne, ce qui vaut mieux que rien.
+            quickText: (id) => t('chat.' + id),
         });
     /*
      * LE TEXTE LIBRE DEMANDE UNE CLE, PAIR-A-PAIR COMPRIS.
@@ -297,9 +406,16 @@ function ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, ch
      * pair-a-pair la cle vient du code d'invitation, donc le cas normal en a
      * une ; s'il n'y en a pas, mieux vaut fermer la saisie en le disant.
      */
-    chatSealed = !!sealer;
+    // Le texte libre est possible si la partie est protegee, ou si elle assume
+    // le clair -- pas entre les deux.
+    chatSealed = !!sealer || (!peer && allowClear);
     chatChannel.onConversation(OnConversation);
     chatChannel.start().catch(e => console.warn('[play] discussion indisponible :', e.message || e));
+    // La bascule deja acceptee pour CETTE partie est reappliquee sans rien
+    // redemander : on ne fait reconsentir a une perte que la premiere fois.
+    if (chatKey && !peer) {
+        RestoreChatClear(remoteMatchId).catch(() => {});
+    }
     // Le bouton n'apparait qu'ici : en partie locale il n'y a personne a qui
     // ecrire, et une fenetre vide est une promesse non tenue.
     const chatBtn = document.getElementById('button-chat');
@@ -326,10 +442,42 @@ function disposeChatChannel() {
  * refuserait, et laisser taper pour echouer ensuite serait pire que de fermer
  * le champ en disant pourquoi. Les messages rapides, eux, restent disponibles.
  */
-function PushChat() {
+/**
+ * `notice` : un fait ponctuel a dire dans la fenetre, en plus de l'etat --
+ * aujourd'hui « ce message est trop long ». Il ne SE DEDUIT d'aucun etat (le
+ * fil n'est pas ferme, la cle est bonne, l'envoi suivant passera), donc il
+ * doit voyager avec l'evenement qui le suit.
+ */
+function PushChat(notice) {
+    const conv = chatChannel ? chatChannel.conversation : [];
+    /*
+     * PROPOSE-T-ON DE CONTINUER SANS PROTECTION ?
+     *
+     * Seulement quand le cas s'est REELLEMENT presente : au moins un message
+     * du correspondant arrive en clair alors que nous attendons du scelle.
+     * C'est la signature d'un lien Tabulon ouvert dans joclymatch, qui ignore
+     * le fragment et n'a donc pas la cle.
+     *
+     * Proposer la bascule d'emblee serait offrir de renoncer a une protection
+     * dont rien ne dit qu'elle gene. On attend que le probleme existe et qu'il
+     * soit visible a l'ecran -- l'utilisateur voit des messages « non
+     * affiches », et le bouton repond a la question qu'il se pose.
+     */
+    const canClear = !!chatChannel?.allowClearFrom && !chatClearAccepted
+        // `=== remoteChannelKey` et non « pas nous » : le camp 0 existe, c'est
+        // celui des messages de service de joclymatch, et il ne dit rien de la
+        // capacite du correspondant a chiffrer.
+        && conv.some(m => m.locked && m.reason === 'unsealed' && m.side === remoteChannelKey);
     emit(`play-event:${matchId}:chat`, {
-        conversation: chatChannel ? chatChannel.conversation : [],
-        canWrite: !!chatSealed,
+        conversation: conv,
+        canClear,
+        sealing: chatChannel?.sealing !== false,
+        // Le relai plafonne le fil : quand il refuse, on peut encore LIRE mais
+        // plus ecrire. C'est un etat prevu, pas une panne -- la fenetre ferme
+        // la saisie en le disant, au lieu de laisser taper pour rien.
+        canWrite: !!chatSealed && !chatChannel?.full,
+        chatFull: !!chatChannel?.full,
+        notice: notice || null,
         /*
          * LA CLE ELLE-MEME, pour que la fenetre puisse l'AFFICHER.
          *
@@ -370,6 +518,40 @@ function PushChat() {
  * donne -- c'est ce qui permet a la fenetre de preselectionner la bonne ligne
  * sans rien demander a personne.
  */
+/** A-t-on deja renonce a proteger cette partie ? */
+async function RestoreChatClear(remoteMatchId) {
+    const list = (await store?.get(CHAT_CLEAR_KEY).catch(() => null)) || [];
+    if (!list.includes(remoteMatchId)) return;
+    chatClearAccepted = true;
+    chatChannel?.allowClearFrom?.();
+    chatSealed = true;   // on peut ecrire : en clair, mais on peut
+    PushChat();
+}
+
+/**
+ * L'utilisateur accepte de continuer sans protection.
+ *
+ * Irreversible, et c'est voulu : un texte depose en clair sur le relai l'est
+ * pour de bon, et proposer de « remettre la protection » laisserait croire le
+ * contraire. Ce qui a deja ete dit sous protection reste lisible -- le
+ * scelleur n'est pas jete.
+ */
+async function AcceptChatClear() {
+    if (!chatChannel || chatClearAccepted) return;
+    chatClearAccepted = true;
+    chatChannel.allowClearFrom?.();
+    chatSealed = true;
+    const mid = chatConfig?.matchId;
+    if (mid) {
+        const list = (await store?.get(CHAT_CLEAR_KEY).catch(() => null)) || [];
+        if (!list.includes(mid)) {
+            list.push(mid);
+            await store?.set(CHAT_CLEAR_KEY, list.slice(-CHAT_CLEAR_MAX)).catch(() => {});
+        }
+    }
+    PushChat();
+}
+
 async function RefreshChatKeyring() {
     chatKeyring = [];
     chatKeyringId = null;
@@ -504,6 +686,9 @@ function describePlayer(value) {
         type: 'remote', matchId: value.matchId, relayUrl: value.relayUrl,
         codec: value.codec || 'tabulon', gameName: value.gameName || null,
         peer: !!value.peer,
+        // Reglage de la partie, pas du joueur : la fenetre Joueurs le
+        // renvoie tel quel, faute de quoi un simple Save l'effacerait.
+        allowTakeback: typeof value.allowTakeback === 'boolean' ? value.allowTakeback : null,
     };
     return { type: 'ai', levelIndex: levels.indexOf(value) };
 }
@@ -514,12 +699,14 @@ function buildPlayerValue(info) {
         return {
             remote: true, peer: true, matchId: String(info.matchId),
             gameName: info.gameName || gameName,
+            allowTakeback: typeof info.allowTakeback === 'boolean' ? info.allowTakeback : null,
         };
     if (info.type === 'remote' && info.matchId && info.relayUrl)
         return {
             remote: true, matchId: String(info.matchId), relayUrl: String(info.relayUrl),
             codec: info.codec === 'jocly-simple-match' ? 'jocly-simple-match' : 'tabulon',
             gameName: info.gameName || gameName,
+            allowTakeback: typeof info.allowTakeback === 'boolean' ? info.allowTakeback : null,
         };
     if (info.type === 'ai' && levels[info.levelIndex]) return levels[info.levelIndex];
     return null;
@@ -574,6 +761,58 @@ function PlayerLabel(key) {
     return translateLevelLabel(value.label) || value.name || t('common.computer');
 }
 
+/*
+ * TENIR LA BOUCLE PENDANT QU'ON DEPLACE LA POSITION.
+ *
+ * Interrompre la saisie (abortUserTurn) ou la recherche en cours REVEILLE la
+ * boucle de jeu, qui repart aussitot sur la position du moment. Or reculer
+ * puis rejouer passe par des positions INTERMEDIAIRES : « Rejouer le dernier
+ * coup » recule d'un coup, et pendant ce laps c'est au tour de l'ordinateur.
+ * La boucle y lancait une recherche ; le coup rejoue arrivait, puis la
+ * recherche aboutissait et jouait PAR-DESSUS -- un coup du mauvais camp,
+ * suivi de la reponse de l'ordinateur. Mesure au navigateur avec le vrai
+ * jocly : 2 coups avant « Rejouer », 4 apres.
+ *
+ * holdLoop() demande a la boucle de s'arreter au DEBUT de son prochain tour
+ * (elle y attend releaseLoop()) et rend une promesse resolue quand elle y est
+ * -- ou tout de suite si elle ne tourne pas. withLoopHeld() enchaine le tout :
+ * demander l'arret, interrompre saisie / recherche / attente distante, attendre
+ * l'arret, changer la position, relacher.
+ */
+let loopHoldRequested = false;
+let loopParked = false;
+let loopParkWaiters = [];
+let loopRelease = null;
+
+function holdLoop() {
+    loopHoldRequested = true;
+    if (!loopActive || loopParked) return Promise.resolve();
+    return new Promise(r => loopParkWaiters.push(r));
+}
+
+function releaseLoop() {
+    loopHoldRequested = false;
+    const r = loopRelease;
+    loopRelease = null;
+    if (r) r();
+}
+
+function wakeLoopHolders() {
+    const waiters = loopParkWaiters;
+    loopParkWaiters = [];
+    waiters.forEach(r => r());
+}
+
+async function withLoopHeld(reason, fn) {
+    const parked = holdLoop();
+    await joclyMatch.abortMachineSearch().catch(() => {});
+    await joclyMatch.abortUserTurn().catch(() => {});
+    cancelRemoteWait(reason);
+    await parked;
+    try { return await fn(); }
+    finally { releaseLoop(); }
+}
+
 async function rearmAfterPositionChange() {
     gameResult = null;
     await joclyMatch?.abortUserTurn().catch(() => {});
@@ -586,6 +825,16 @@ async function gameLoop() {
     console.info('[play] gameLoop started');
     try {
         while (loopActive) {
+            if (loopHoldRequested) {
+                // Arret demande (withLoopHeld) : on se signale, puis on attend
+                // d'etre relache avant de relire la position.
+                loopParked = true;
+                const released = new Promise(r => { loopRelease = r; });
+                wakeLoopHolders();
+                await released;
+                loopParked = false;
+                continue;
+            }
             if (paused) {
                 await new Promise(r => setTimeout(r, 200));
                 continue;
@@ -660,7 +909,18 @@ async function gameLoop() {
                     // particulier -- le seul indice est sinon la couleur du
                     // trait, que jocly n'affiche nulle part.
                     UpdateFooter(t(turn > 0 ? 'play.turnA' : 'play.turnB'));
-                    const result = await joclyMatch.userTurn();
+                    // « Notre tour » ouvre la reprise de coup face a un
+                    // adversaire distant : c'est le seul moment ou il nous
+                    // attend, donc ou il recevra l'annulation.
+                    localTurnMoves = (await joclyMatch.getPlayedMoves().catch(() => [])).length;
+                    localHumanTurn = true;
+                    updateRemoteRestrictedButtons();
+                    let result;
+                    try { result = await joclyMatch.userTurn(); }
+                    finally {
+                        localHumanTurn = false;
+                        updateRemoteRestrictedButtons();
+                    }
                     UpdateFooter('');
                     finished = result?.finished || false;
                     winner   = result?.winner;
@@ -752,6 +1012,9 @@ async function gameLoop() {
         console.error('[play] gameLoop error:', e);
         UpdateFooter('');
     }
+    // Une boucle qui s'arrete (fin de partie) ne se garera plus : ne laisser
+    // personne attendre qu'elle le fasse.
+    wakeLoopHolders();
     console.info('[play] gameLoop ended');
 }
 
@@ -977,26 +1240,68 @@ function hasRemoteSide() {
     return [Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote);
 }
 
-// Reculer/recommencer face a un joueur DISTANT desynchronise la partie : le
-// relai (fileio.php) comme le pair TCP n'ont aucune notion de retrait de
-// coup -- c'etait la « limite connue » documentee depuis l'etape 3. On ferme
-// la porte en amont : ces boutons sont GRISES tant qu'un cote est distant
-// (l'infobulle explique pourquoi), et les handlers gardent une garde de
-// fond. Ils redeviennent actifs des que plus aucun cote n'est distant
-// (partie rapide, chronometree, locale...).
-// Les doublons quick-* ont disparu avec la barre repliable : les deux boutons
-// du pied portent maintenant les identifiants principaux, et une seule entree
-// suffit ici comme ailleurs.
+// Reculer / recommencer face a un joueur DISTANT.
+//
+// RECULER : la regle vit dans remote-relay-protocol.js (remoteTakebackBlock),
+// commune a joclymatch et mogichex -- partie qui l'autorise, NOTRE tour, et
+// deux coups joues au moins. L'infobulle dit lequel des motifs bloque : ils ne
+// se corrigent pas de la meme facon.
+//
+// RECOMMENCER : jamais a distance, comme joclymatch et mogichex. Effacer toute
+// la partie d'un clic, sur le plateau de l'adversaire aussi, va bien au-dela
+// d'une reprise de coup. Une remise a zero RECUE d'un autre client reste
+// suivie (ApplyRemoteTakeback).
+//
+// Les handlers gardent une garde de fond qui dit la meme chose au pied.
 const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart'];
 
+// true pendant qu'on attend une saisie du joueur local (voir gameLoop), et le
+// nombre de coups joues a ce moment-la.
+let localHumanTurn = false;
+let localTurnMoves = 0;
+
+/** null si reculer est permis maintenant, sinon la cle i18n du motif. */
+function takebackBlock() {
+    return remoteTakebackBlock({
+        remote: hasRemoteSide(),
+        allowed: !!remoteChannel?.allowTakeback,
+        localTurn: localHumanTurn,
+        playedMoves: localTurnMoves,
+    });
+}
+
+/*
+ * CHANGER LA POSITION AUTREMENT QU'EN JOUANT OU EN REPRENANT -- navigation
+ * dans la fenetre Historique (rollback-to), chargement d'un fichier ou d'un
+ * etat saisi -- est refuse face a un joueur distant.
+ *
+ * Ces chemins ne changeaient QUE notre plateau : l'adversaire ne recevait
+ * rien, et son coup suivant, calcule sur l'ancienne position, etait ensuite
+ * rejoue sur la nouvelle -- deux plateaux differents, sans que personne le
+ * voie. mogichex et joclymatch n'offrent pas ces chemins en partie a distance
+ * (la liste des coups s'y LIT, on n'y revient pas). Reprendre son dernier coup
+ * reste possible par « Reculer », qui, lui, publie la position.
+ * @returns {boolean} true si refuse (le motif est affiche au pied)
+ */
+function remotePositionLocked() {
+    if (!hasRemoteSide()) return false;
+    UpdateFooter(t('play.remotePositionLocked'));
+    return true;
+}
+
+/** null si recommencer est permis, sinon la cle i18n du motif. */
+function restartBlock() {
+    return hasRemoteSide() ? 'play.remoteRestartForbidden' : null;
+}
+
 function updateRemoteRestrictedButtons() {
-    const remote = hasRemoteSide();
     for (const id of REMOTE_RESTRICTED_BUTTONS) {
         const el = document.getElementById(id);
         if (!el) continue;
-        el.disabled = remote;
+        const block = id === 'button-restart' ? restartBlock() : takebackBlock();
+        el.disabled = !!block;
         const normalKey = el.getAttribute('data-i18n-title');
-        el.title = remote ? t('play.remoteRestricted') : (normalKey ? t(normalKey) : el.title);
+        el.title = block ? t(block) : (normalKey ? t(normalKey) : el.title);
     }
 }
 
@@ -1120,6 +1425,8 @@ function initSatelliteListeners() {
         PushChat();
     });
 
+    listen(prefix + 'chat-allow-clear', () => { AcceptChatClear().catch(() => {}); });
+
     listen(prefix + 'chat-seen', ({ payload }) => {
         if (!payload?.id) return;
         chatSeenId = payload.id;
@@ -1140,6 +1447,13 @@ function initSatelliteListeners() {
             : { kind: ENVELOPE_KIND.CHAT, body: String(payload.body || '') };
         await chatChannel.send(msg).catch(e => {
             console.warn('[play] message non transmis :', e.message || e);
+            // Le fil plein change l'etat de la fenetre : elle doit fermer sa
+            // saisie et dire pourquoi, sans quoi le joueur retape le meme
+            // message indefiniment.
+            if (e && e.code === 'chat-full') PushChat();
+            // Message trop long pour le fil : la saisie reste ouverte, il n'y
+            // a qu'a raccourcir. Le dire, sinon le joueur croit a une panne.
+            else if (e && e.code === 'chat-too-long') PushChat('tooLong');
         });
     });
 
@@ -1300,6 +1614,14 @@ function initSatelliteListeners() {
     // rollback-to : annuler jusqu'a l'index demande
     listen(prefix + 'rollback-to', async ({ payload }) => {
         if (!joclyMatch) return;
+        if (remotePositionLocked()) {
+            // Accuser reception quand meme (la lecture automatique attend cet
+            // evenement), et faire relire l'historique pour que sa selection
+            // revienne sur la position reelle.
+            emit(`play-rep:${matchId}:rollback-to`, { index: payload?.index ?? 0 }).catch(() => {});
+            emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+            return;
+        }
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('rollback');
@@ -1335,6 +1657,7 @@ function initSatelliteListeners() {
     // fenêtre open-position (équivalent joclyboard::loadBoardState avec match)
     listen(prefix + 'load-board-state', async ({ payload }) => {
         if (!joclyMatch || !payload?.state) return;
+        if (remotePositionLocked()) return;
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('load-board-state');
@@ -1447,6 +1770,9 @@ function BoardLetters(fen, options) {
             }
             let piece = c; k++;
             if (c === '+') { piece += row[k]; k++; }   // piece promue : deux caracteres
+            // « C! » : une piece en attente du S-Chess. Le « ! » n'est pas une
+            // case -- sans ca, les colonnes d'attente se decalent.
+            if (row[k] === '!') k++;
             map[String.fromCharCode(97 + file) + rank] = piece;
             file++;
         }
@@ -1536,16 +1862,28 @@ function FairyVariantName(played) {
  * et parle de « Mf3 » n'est pas du Fairy-Stockfish, c'est du jocly deguise.
  */
 function FairyProfile(played) {
+    const answer = (played || []).find(m => m && m.setup !== undefined);
+    return FairySetupProfile(answer ? answer.setup : null);
+}
+
+/**
+ * Le meme profil, a partir du NUMERO d'arrangement plutot que des coups
+ * joues : avant le prelude il n'y a rien a lire dans la partie, et c'est
+ * pourtant la que le [FEN] d'un fichier doit etre traduit.
+ */
+function FairySetupProfile(setup) {
     const empty = { variant: null, pieceMap: null };
     const level = (levels || []).find(l => l && l.ai === 'fairy-stockfish');
     if (!level) return empty;
     if (level.variant) return { variant: level.variant, pieceMap: level.pieceMap || null };
     if (!Array.isArray(level.variants)) return empty;
-    const answer = (played || []).find(m => m && m.setup !== undefined);
-    if (!answer) return empty;
-    const match = level.variants.find(v => v && v.setup === answer.setup);
+    if (!Number.isInteger(setup)) return empty;
+    const match = level.variants.find(v => v && v.setup === setup);
     if (!match || !match.variant) return empty;
-    return { variant: match.variant, pieceMap: match.pieceMap || level.pieceMap || null };
+    // `pgnVariant` : le nom STANDARD de l'arrangement, quand il en a un
+    // (« seirawan » pour l'arrangement 0 du Seirawan++). C'est lui que
+    // PyChess relit ; le nom de section n'existe que pour notre moteur.
+    return { variant: match.pgnVariant || match.variant, pieceMap: match.pieceMap || level.pieceMap || null };
 }
 
 /**
@@ -1633,9 +1971,14 @@ async function WesternGame() {
             const naturals = await joclyMatch.getMoveString(legal);
             const letterAt = BoardLetters(await joclyMatch.getBoardState(),
                                           { zeroBased: zeroBasedRanks });
+            // `en`/`et` : l'entree du S-Chess. Au roque, les deux entrees
+            // (case du roi, case de la tour) ont le meme depart, la meme
+            // arrivee et la meme piece entrante -- seul `et` les distingue.
             const index = legal.findIndex(m => m.f === played[ply].f && m.t === played[ply].t
                 && (m.via || null) === (played[ply].via || null)
-                && (m.pr || null) === (played[ply].pr || null));
+                && (m.pr || null) === (played[ply].pr || null)
+                && (m.en ?? null) === (played[ply].en ?? null)
+                && (m.et ?? null) === (played[ply].et ?? null));
             if (index < 0) {
                 console.warn('[play] export : coup', ply + 1, 'introuvable dans la liste legale');
                 out.push('?'); await joclyMatch.rollback(ply + 1); continue;
@@ -1671,6 +2014,9 @@ async function WesternGame() {
             } else {
                 const usiMove = await joclyMatch.getMoveString(legal[index], 'usi').catch(() => null);
                 token = BuildSanMove(naturals[index], rivals, gameName, {
+                    // Les lettres de l'arrangement : « H » et « E » pour le
+                    // cardinal et le marshall du S-Chess.
+                    pieceMap,
                     // Les lettres de Fairy-Stockfish, pas celles de jocly :
                     // c'est ce qui distingue un PGN relisible par le moteur
                     // d'un fichier qui lui ressemble.
@@ -1895,6 +2241,9 @@ async function MoveFromSan(token) {
     // un echec. Les jeux qui ne savent pas ecrire l'USI n'ont pas de
     // promotion a departager, et l'absence de reponse convient.
     const usi = await joclyMatch.getMoveString(moves, 'usi').catch(() => null);
+    // Les lettres de l'arrangement joue, lues APRES le prelude : au S-Chess,
+    // « H » et « E » designent le cardinal et le marshall de jocly.
+    const { pieceMap } = FairyProfile(await joclyMatch.getPlayedMoves().catch(() => []));
 
     const tryOffset = (offset) => {
         let found = null, ambiguous = false;
@@ -1902,8 +2251,10 @@ async function MoveFromSan(token) {
             // Le nom du jeu accompagne la comparaison : la table d'alias est
             // organisee par jeu, la meme lettre y designant des pieces
             // differentes selon la variante.
-            const options = { rankOffset: offset, game: gameName };
-            if (usi && typeof usi[i] === 'string') options.promoted = usi[i].endsWith('+');
+            const options = { rankOffset: offset, game: gameName, pieceMap };
+            // « ?? » : ce jeu n'ecrit pas l'USI. Le prendre pour « ne promeut
+            // pas » faisait refuser toute promotion ecrite « =Q ».
+            if (usi && typeof usi[i] === 'string' && usi[i] !== '??') options.promoted = usi[i].endsWith('+');
             if (!SanMatches(parsed, naturals[i], letterAt, options)) continue;
             if (found) { ambiguous = true; continue; }
             found = moves[i];
@@ -2005,28 +2356,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn('button-takeback', async () => {
         if (!joclyMatch) return;
-        // Garde de fond (le bouton est deja grise en mode distant) : reculer
-        // desynchroniserait la partie distante, relai comme pair-a-pair.
-        if (hasRemoteSide()) { UpdateFooter(t('play.remoteRestricted')); return; }
-        await joclyMatch.abortUserTurn().catch(() => {});
-        await joclyMatch.abortMachineSearch().catch(() => {});
-        cancelRemoteWait('takeback');
+        // Garde de fond (le bouton est deja grise dans ces cas-la). Evaluee
+        // AVANT d'interrompre la saisie : c'est elle qui dit si c'est notre
+        // tour.
+        const block = takebackBlock();
+        if (block) { UpdateFooter(t(block)); return; }
+        const remote = hasRemoteSide();
+        const changed = await withLoopHeld('takeback', async () => {
+            const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+            const n = moves?.length || 0;
+            if (n === 0) return false;
 
-        const moves = await joclyMatch.getPlayedMoves().catch(() => []);
-        const n = moves?.length || 0;
-        if (n === 0) return;
-
-        // Reculer coup par coup jusqu'à trouver une position où c'est
-        // au tour d'un humain de jouer, en utilisant getTurn() comme
-        // source de vérité (fiable pour tous les jeux, y compris ceux
-        // où le premier joueur n'est pas PLAYER_A).
-        for (let target = n - 1; target >= 0; target--) {
-            await joclyMatch.rollback(target);
-            if (target === 0) break;  // début de partie, on s'arrête
-            const turn = await joclyMatch.getTurn().catch(() => null);
-            if (!players[turn]) break;  // tour humain trouvé
-        }
-        await resyncRemoteChannelBaseline();
+            // Reculer coup par coup jusqu'à trouver une position où c'est
+            // au tour d'un humain de jouer, en utilisant getTurn() comme
+            // source de vérité (fiable pour tous les jeux, y compris ceux
+            // où le premier joueur n'est pas PLAYER_A).
+            // Un adversaire distant n'est pas un humain LOCAL (players[turn] est
+            // son descripteur) : on revient donc a NOTRE tour precedent, ce qui
+            // retire notre coup et sa reponse -- « je reprends ma betise ».
+            for (let target = n - 1; target >= 0; target--) {
+                await joclyMatch.rollback(target);
+                if (target === 0) break;  // début de partie, on s'arrête
+                const turn = await joclyMatch.getTurn().catch(() => null);
+                if (!players[turn]) break;  // tour humain trouvé
+            }
+            if (remote) await PublishTakeback();
+            else await resyncRemoteChannelBaseline();
+            return true;
+        });
+        if (!changed) { await rearmAfterPositionChange(); return; }
         UpdateFooter('');
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
         await rearmAfterPositionChange();
@@ -2034,12 +2392,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn('button-restart', async () => {
         if (!joclyMatch) return;
-        if (hasRemoteSide()) { UpdateFooter(t('play.remoteRestricted')); return; }
-        await joclyMatch.abortUserTurn().catch(() => {});
-        await joclyMatch.abortMachineSearch().catch(() => {});
-        cancelRemoteWait('restart');
-        await joclyMatch.rollback(0);
-        await resyncRemoteChannelBaseline();
+        const block = restartBlock();
+        if (block) { UpdateFooter(t(block)); return; }
+        await withLoopHeld('restart', async () => {
+            await joclyMatch.rollback(0);
+            await resyncRemoteChannelBaseline();
+        });
         paused = false;
         UpdatePause();
         UpdateFooter('');
@@ -2096,18 +2454,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         const n = moves?.length || 0;
         if (n === 0) return;
 
-        // La recherche machine d'abord : reculer sous une recherche en cours
-        // la ferait aboutir sur une position qui n'est plus la.
-        await joclyMatch.abortMachineSearch().catch(() => {});
-        await joclyMatch.abortUserTurn().catch(() => {});
-
-        await joclyMatch.rollback(n - 1).catch(() => {});
-        // Et on le rejoue : c'est tout l'objet du bouton. En cas d'echec, on
-        // ne laisse PAS la partie un demi-coup en arriere -- mieux vaut une
-        // animation manquee qu'une position fausse.
-        await joclyMatch.playMove(moves[n - 1]).catch(async (e) => {
-            console.warn('[play] rejeu impossible :', e.message || e);
-            await joclyMatch.rollback(n).catch(() => {});
+        // Boucle TENUE pendant tout le rejeu : la position intermediaire
+        // (un coup en arriere) est le plus souvent au tour de l'ordinateur,
+        // et la boucle y lancait une recherche qui jouait ensuite par-dessus
+        // le coup rejoue (voir withLoopHeld).
+        await withLoopHeld('replay', async () => {
+            await joclyMatch.rollback(n - 1).catch(() => {});
+            // Et on le rejoue : c'est tout l'objet du bouton. En cas d'echec,
+            // on ne laisse PAS la partie un demi-coup en arriere -- mieux vaut
+            // une animation manquee qu'une position fausse.
+            await joclyMatch.playMove(moves[n - 1]).catch(async (e) => {
+                console.warn('[play] rejeu impossible :', e.message || e);
+                await joclyMatch.rollback(n).catch(() => {});
+            });
         });
 
         await rearmAfterPositionChange();
@@ -2141,6 +2500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fileElem = document.getElementById('fileElem');
     fileElem?.addEventListener('change', async () => {
         if (!joclyMatch || !fileElem.files[0]) return;
+        if (remotePositionLocked()) { fileElem.value = ''; return; }
         const reader = new FileReader();
         reader.readAsText(fileElem.files[0]);
         reader.onload = async (e) => {
@@ -2407,9 +2767,10 @@ async function ExplainUnresolved(token) {
         const letterAt = BoardLetters(await joclyMatch.getBoardState(),
                                       { zeroBased: gameName === 'xiangqi' });
         const matches = [];
+        const { pieceMap } = FairyProfile(await joclyMatch.getPlayedMoves().catch(() => []));
         for (let i = 0; i < moves.length; i++)
             if (SanMatches(parsed, naturals[i], letterAt,
-                           { game: gameName, rankOffset: sanRankOffset || 0 }))
+                           { game: gameName, rankOffset: sanRankOffset || 0, pieceMap }))
                 matches.push(naturals[i]);
         if (matches.length > 1)
             console.warn('[play] book: « ' + token +' » est ambigu —',
@@ -2433,11 +2794,19 @@ async function BookReplay(book) {
         // shogi (cinq champs) et celui du shogi de PyChess (reserve entre
         // crochets, a la maniere du crazyhouse). L'ordre importe peu, les deux
         // formes s'excluent.
-        if (book.initialBoard) {
-            book.initialBoard = PgnFenToJocly(book.initialBoard)
-                || PgnFenToShogiSfen(book.initialBoard)
-                || VariantFen(book.initialBoard, gameName);
-        }
+        /*
+         * L'ARRANGEMENT AVANT LA POSITION. Les lettres d'un [FEN] dependent de
+         * la paire choisie -- le « H » de PyChess est notre cardinal -- et le
+         * fichier ne dit la paire que dans [Variant], que le hub a ramene a un
+         * numero d'arrangement. Il faut donc le lire AVANT de traduire la
+         * position, et pas apres le prelude : sur une position chargee, jocly
+         * ne rejoue pas le prelude, la paire se lisant dans la poche.
+         */
+        const bookSetup = Array.isArray(book.prelude) && /^#\d+$/.test(book.prelude[0] || '')
+            ? parseInt(String(book.prelude[0]).slice(1), 10) : null;
+        if (book.initialBoard)
+            book.initialBoard = NormalizeBookFen(book.initialBoard, gameName,
+                FairySetupProfile(bookSetup).pieceMap);
         // `tsume` accompagne la position partout ou elle est rechargee : la
         // fenetre Historique fait revenir play.js a la position de depart pour
         // rejouer jusqu'au coup demande, et sans l'option ce rechargement
@@ -2492,6 +2861,10 @@ async function BookReplay(book) {
         // donc zero coup joue et le fichier declare illisible. Ils faussaient
         // aussi MoveFormat(), qui les lisait comme des coups pour deviner la
         // notation du fichier.
+        // Les coups PJN du Seirawan++ ecrits par un jocly anterieur
+        // (« Qd1-h5=Q+ ») : remis dans la forme actuelle avant d'etre relus.
+        if (gameName === 'seirawan-chess' && Array.isArray(book.moves))
+            book.moves = book.moves.map(NormalizeSChessNatural);
         const recordedPrelude = [];
         while (book.moves && book.moves.length && PRELUDE_MOVE.test(book.moves[0]))
             recordedPrelude.push(book.moves.shift());
@@ -2678,11 +3051,15 @@ async function BookReplay(book) {
                 gameName: invite.gameName || gameName,
                 chatKey: invite.chatKey || null,
                 chatKeyId: invite.chatKeyId || null,
+                allowTakeback: typeof invite.allowTakeback === 'boolean' ? invite.allowTakeback : null,
             } : {
                 remote: true, matchId: invite.matchId, relayUrl: invite.relayUrl,
                 codec: 'jocly-simple-match', gameName: invite.gameName || gameName,
                 chatKey: invite.chatKey || null,
                 chatKeyId: invite.chatKeyId || null,
+                // Ce que l'invitation annonce ; le fichier du relai, lu au
+                // premier sondage, le remplacera s'il dit autre chose.
+                allowTakeback: typeof invite.allowTakeback === 'boolean' ? invite.allowTakeback : null,
             });
             syncFooterSelect(localSide);
             console.info('[play] joueur distant configure sur le cote', remoteSide, players[remoteSide]);

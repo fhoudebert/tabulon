@@ -9,6 +9,7 @@
 // reduit au catalogue : ce test n'a pas besoin du dist/ de jocly2.
 // Usage : npm test  (ou node tests/test-hub-loadscreen.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync, readdirSync } from 'fs';
 import { ExtractMoves } from '../app/content/book-format.js';
@@ -122,7 +123,7 @@ globalThis.window     = dom.window;
 globalThis.document   = dom.window.document;
 globalThis.FileReader = dom.window.FileReader;
 globalThis.File       = dom.window.File;
-dom.window.__TAURI__  = mockTauri;
+dom.window.__TAURI__  = completeTauriInjection(mockTauri);
 
 // Catalogue : les jeux des exemples livres, plus un jeu sans equivalent
 // Fairy-Stockfish pour verifier qu'il n'entre pas dans l'index.

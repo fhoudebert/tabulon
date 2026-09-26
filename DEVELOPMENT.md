@@ -98,6 +98,16 @@ Configuration group) lets you export any installed game as a single
 strictly what the game's config declares: the code bundles
 (`<game>-config/-model/-view.js`), the rules/credits/description pages, the
 thumbnail and the visuals — plus the index declaration in `extension.json`.
+
+**Trust model.** An extension is *code*, not data: its model and view run
+in the Jocly iframe, which is same-origin with the app and therefore
+reaches `window.__TAURI__` and every Rust command (`save_text_file` writes
+any absolute path). Its title, summary and rules are also inserted with
+`innerHTML`. Sanitizing that HTML would not change anything while the game
+code itself runs, so the boundary is the install step: the README tells
+users to install only trusted extensions. Hardening worth doing later:
+limit `save_text_file` / `save_data_uri_file` to paths the native save
+dialog just returned, and set a CSP (`app.security.csp` is `null`).
 Shared module resources (css, sounds, `res/` sprites/textures, rules graphs,
 fairy-stockfish engines) always stay with the module: importing a game
 requires its module to already exist in the target external dist, and
@@ -181,25 +191,78 @@ the development history.
   active channel). Every move played *locally* — from the board, the AI,
   or the "Possible moves" window — is pushed to the active channel.
 - `RemoteChannel` (`app/content/remote-channel.js`) is the
-  transport-agnostic interface (`start`/`stop`/`push`/`onRemoteMove`),
+  transport-agnostic interface (`start`/`stop`/`push`/`onRemoteMove`, plus
+  `onRemoteTakeback`/`onSettingsChange` and the `allowTakeback` setting
+  shared by both implementations),
   with two implementations: `HttpRelayChannel` and `PeerChannel`.
   `ensureRemoteChannel()` picks the class from the player config; a side
   configured as remote gets its channel **immediately** (not lazily), so
   a host's first move is always pushed. Every "abort the current turn"
   spot (pause, takeback, restart, player reconfiguration, board/game
   loading, rollback) also cancels a pending wait for a remote move.
-- **Closed limitation**: takeback/rollback/restart change the local
-  position without propagating (neither transport has an "unplay"
-  concept), which used to let the two sides desync. The door is now shut
-  upstream: the Take back and Restart buttons (footer quick bar and full
-  bar alike) are **disabled whenever a side is remote**, with a tooltip
-  saying why (`play.remoteRestricted`), and their handlers keep a
-  defensive guard showing the same message in the footer. They come back
-  as soon as no side is remote — quick play, clocked play and local
-  games are unaffected. The single choke point is `syncFooterSelect()`,
-  crossed by every path that reconfigures players (invitation, Players
-  window, footer selects). `resetBaseline()` remains in place for the
-  paths that still resync legitimately (loading a saved game, etc.).
+- **Taking back a move against a remote player** is a *setting of the
+  match*, chosen by the host when creating the invitation (checkbox
+  "Allow taking back moves", **unchecked by default**, remembered with the
+  other invitation settings). It travels in the relay link as `tb=1` /
+  `tb=0` (query string, not the fragment: joclymatch's page must read it)
+  and in the peer code as `tb`; it is then copied into **every** write —
+  `matchDetails.allowTakeback` for the jocly-simple-match codec,
+  `allowTakeback` in our own envelope. Both codecs rebuild their details
+  object on each save, so a field one side does not copy is erased by its
+  first save: the copy is deliberate on both sides.
+  - **The file wins over the link** (`resolveAllowTakeback`): the relay
+    file is the same for both players, survives a reload and a truncated
+    link. When nobody says anything, it is **forbidden** — the rule shared
+    with joclymatch and mogichex: the other end of such a match may be an
+    older client that cannot follow a takeback. Receiving a takeback never
+    depends on the setting.
+  - **Only on your own turn.** joclymatch polls the relay only while it
+    waits for the opponent; during its own turn it sits in `userTurn()` and
+    would never see a takeback — its next move, computed on the old
+    position, would silently overwrite it. During *our* turn it is waiting,
+    hence polling. Take back is therefore enabled when the match allows it,
+    a local human input is pending (`localHumanTurn`, set around
+    `userTurn()` in `gameLoop`) **and** at least two moves are played — on
+    our turn the last move is the opponent's, and with a single one (A's
+    first move seen by B) taking back would undo *their* move. The rule is
+    the pure `remoteTakebackBlock()` in `remote-relay-protocol.js`, the same
+    as joclymatch and mogichex; the tooltip names the reason
+    (`play.remoteTakebackForbidden` / `NotYourTurn` / `NothingYet`), and the
+    handler keeps a defensive guard. Against a remote side, Take back
+    returns to *our* previous turn (our move and its answer).
+  - **Restart is never offered against a remote side**
+    (`play.remoteRestartForbidden`), as in joclymatch and mogichex: wiping
+    the whole game on the opponent's board goes well beyond a takeback. A
+    restart *received* from another client (`nbTurns` back to 0) is still
+    followed.
+  - **Sending** (`PublishTakeback`): after the local rollback, push the new
+    `nbTurns` **and** the full state; `push()` moves the channel baseline
+    itself — no `resetBaseline()` beforehand, which would let a poll reread
+    the old file and see a move in it.
+  - **Receiving**: a *decreasing* `nbTurns` is a takeback
+    (`hasOpponentTakenBack`), routed to `onRemoteTakeback`, never to
+    `onRemoteMove` — the latter would pop and replay the last move, undoing
+    the takeback by one ply while animating a move nobody played (the same
+    trap once fixed in joclymatch, a `!=` turned into `>` / `<`).
+    `ApplyRemoteTakeback` loads the state as is, cancels the pending remote
+    wait *after* loading, re-arms the loop, and shows a banner — the board
+    changed on its own. Takebacks are queued, never interleaved.
+  - **Stale reads**: a poll sent before our write may return after it,
+    with the old, now *higher*, move count. `HttpRelayChannel` drops any
+    poll answer read across a write or a baseline reset (`_generation`,
+    `_pushing`). Peer-to-peer needs no such guard: TCP delivers lines in
+    order and each one is a new message.
+  - **Known limits.** An opponent client that predates the setting ignores
+    it (an old joclymatch can still take back in a match created with the
+    box unchecked; Tabulon follows its takeback anyway to stay in sync).
+  - **Other position changes are refused against a remote side**
+    (`remotePositionLocked()`, `play.remotePositionLocked`): `rollback-to`
+    from the History window, loading a file, loading a board state. They
+    only changed the local board, and the opponent's next move was then
+    replayed on a different position. The History window still gets its
+    acknowledgement (autoplay waits for it) and a `move-played` event so its
+    selection returns to the real position. The move list can be read, not
+    used to go back — as in mogichex.
 
 - Remote play is **set up** in the Invitation window (both roles: join or
   create) and, for a guest only, from the **Invitation** entry in the hub
@@ -228,12 +291,28 @@ the development history.
   joclymatch's `fileio.php` — a dumb per-match-id key/value store. Any
   existing instance works as-is (default: the biscandine.fr test
   instance). Two projects provide one, and either can host a Tabulon
-  match:
-  [joclymatch](https://github.com/fhoudebert/joclymatch/) (`fileio.php`)
-  and [mogichex](https://github.com/fhoudebert/mogichex/), whose
-  `deploy/match.php` serves the same purpose for its own games — so a
-  mogichex deployment doubles as a relay for Tabulon, alongside the
-  browser games it already hosts. Requests go through `tauri-plugin-http`
+  match — moves and chat alike:
+  - [joclymatch](https://github.com/fhoudebert/joclymatch/): its own
+    `fileio.php`.
+  - [mogichex](https://github.com/fhoudebert/mogichex/) (branch `next`
+    onwards): `deploy/fileio.php`, a translator in front of its
+    `match.php` — it maps `gameioaction/gameid/gamedata` to mogichex's
+    `action/mid/data`, serves `chatioaction` itself, and copies
+    `X-Match-Mtime` into `X-File-Mtime`. Nothing to configure in Tabulon:
+    the relay URL is the mogichex folder's `fileio.php`
+    (e.g. `https://biscandine.fr/variantes/mogichex/fileio.php`). A link
+    received from mogichex (`…/mogichex/index.html?game=…`) already leads
+    there, since `parseInvitationUrl` swaps the last path segment for
+    `fileio.php`. A link *created* by Tabulon on that relay points to
+    `…/mogichex/index.php`, which does not exist: mogichex's `.htaccess`
+    answers any missing file with its `index.html`, so the mogichex app
+    opens on it anyway — it works *because of* that single-page rule.
+  - Tauri only lets the relay requests out to the hosts listed in
+    `src-tauri/capabilities/default.json` (`http:default` → `allow[].url`,
+    today `https://biscandine.fr/*`). A joclymatch or mogichex hosted
+    anywhere else needs its host added there first; otherwise the request
+    is refused before it leaves the application.
+- Requests go through `tauri-plugin-http`
   (`httpFetch` in `tauri-bridge.js`), not the webview's `fetch` (the relay
   sends no CORS headers); allowed relay hosts are scoped in
   `src-tauri/capabilities/default.json` (`http:default` → `allow[].url`).
@@ -250,7 +329,11 @@ the development history.
   publishes the starting position to the relay immediately (so the relay
   is never empty for whoever opens the link — `fileio.php` returns a PHP
   warning, not JSON, for a never-saved id), and offers a **Test** button
-  probing the relay URL's reachability before playing.
+  probing the relay URL before playing. A reply is not enough to pass
+  (`classifyRelayProbe`): a mogichex folder *without* `fileio.php`
+  answers 200 with its own `index.html`, and an error status means no
+  script there either. A PHP warning still passes — that is what an
+  original jocly-simple-match relay says about an unknown id.
 
 ### Peer-to-peer mode (no server at all)
 
@@ -322,10 +405,52 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
 - A **separate channel** from the move channel (`ChatChannel`, with
   `RelayChatChannel` and `PeerChatChannel`): both relays are
   last-write-wins on a match id, so a message written into the same key
-  would overwrite a move not yet read. On a relay each player writes
-  **only their own thread** (`chatMidFor` → `<matchId>-ca` / `-cb`) and
-  reads only the other's, which removes concurrency entirely; threads are
-  merged and deduplicated by message id (`mergeThreads`).
+  would overwrite a move not yet read.
+- **On a relay the thread is joclymatch's own** (`chatioaction=save/load`
+  on the match id): the server *appends* one line per message, both
+  players write into the same file, so there is no concurrency to avoid
+  and nothing to rewrite. This replaced an earlier form — two ordinary
+  match keys, `<matchId>-ca` / `-cb`, each rewritten whole — which
+  avoided concurrency without asking anything of the server but left
+  Tabulon **alone**: a joclymatch player in the same match saw nothing of
+  what was said, and vice versa. Messages are still merged and
+  deduplicated by id (`mergeThreads`); the whole thread comes back on
+  every read, so catching up after a reconnection is unchanged. mogichex
+  (branch `next` onwards) writes into the same thread through its own
+  `fileio.php`, so a Tabulon player and a mogichex player read each other
+  too.
+- **The wire envelope is joclymatch's, plus optional fields** (`kind`,
+  `quick`, `state`, `enc`) — see `toRelayMessage` / `fromRelayMessage`.
+  A client that ignores them is not harmed: `kind` absent means `chat`,
+  and joclymatch skips what it cannot render instead of showing it
+  wrong. Two details are only visible when the two applications actually
+  talk: `msg` carries the **translated label** of a quick message so the
+  other end does not display an empty bubble, and joclymatch's `pseudo`
+  is carried through `decodeThread` so the correspondent keeps the name
+  they chose. Both are covered in `tests/test-remote-chat-protocol.mjs`.
+- **The chat log fills up, and the conversation carries on.** The relay
+  bounds the chat file (`$chatMaxBytes`, 256 KB); it now drops the *oldest*
+  messages to make room (`$chatTrimOldest`) instead of closing the thread,
+  because a correspondence game lasts weeks and a frozen conversation in the
+  middle of a live game is the worse failure. Three consequences here:
+  - `_readThread()` **merges** into what we already hold rather than
+    replacing it, so a trim on the relay never makes messages vanish from a
+    window someone is reading — joclymatch behaves the same way, its panel
+    never removes a bubble. The freshly read copy wins on identity ties: the
+    same message can change between two polls (a sealed body becomes
+    readable after switching to clear), and the stale copy must not win.
+    Our own confirmed messages are dropped from `_mine` once the shared file
+    carries them; it is only a pending-display buffer.
+  - the save answers `{"ok":true,"trimmed":n}`; the channel counts them
+    (`chan.trimmed`) and logs them. What is lost is what a player *opening*
+    the match now would see, which is worth knowing when debugging a thread
+    that looks shorter on one side than the other.
+  - two refusals remain and they read differently: `chat-too-long` is about
+    that one message (bigger than the whole log — shorten it, the input
+    stays open, `chat.tooLong` says so), `chat-full` only comes from a relay
+    that kept the old refusal, and then the window closes the input. The
+    message is removed from our own thread in both cases rather than left
+    showing as if it had gone.
 - **Free text is sealed, on both transports.** `sealMessage()` is the
   single rule: a chat message carrying a `body` travels sealed and
   carries `enc:1`, and `decodeThread()` refuses to display a body
@@ -338,12 +463,38 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   Internet it is the transport that protects least. Sealing itself is in
   Rust (`seal_cmds.rs`): `crypto.subtle` needs a secure context, which
   `tauri://` under WebKitGTK does not guarantee.
-- Consequently **no key means no free text** on either transport: the
-  input is closed and says why, rather than letting the player type
-  messages the opponent would never read. Quick messages and presence
-  flags travel as *identifiers* translated by the reader, carry nothing
-  personal, and therefore need no key — they work in a keyless match,
-  which is the point of "I'm taking a break".
+- **Two regimes, and the invitation link decides which.** A link with
+  `#k=` (or `#kid=`) means sealed; a joclymatch link, which has no
+  fragment, means clear. The fragment reaches no server, so both clients
+  reach the same conclusion without negotiating anything. Clear is an
+  **explicit permission** passed by the caller (`allowClear`), never
+  inferred from the absence of a sealer: a sealer that failed to build —
+  damaged key, Rust command unavailable — must not amount to permission
+  to write in the clear. That is exactly how a protection gets lost
+  without anyone deciding it.
+- Peer-to-peer has no clear regime: it only exists between two Tabulon
+  instances and its invitation code always carries a key, so free text
+  without a sealer is a programming error there, not a configuration.
+- **The awkward case, and its answer.** A Tabulon link carries a key but
+  points at `index.php`, so it can be opened in joclymatch — which
+  ignores the fragment and writes in the clear. The conversation was then
+  one-way in both directions: their messages showed as "sent
+  unprotected — not shown", ours were unreadable to them. A
+  **"continue without protection"** button appears *only* once that has
+  actually happened (an incoming message locked with `reason:'unsealed'`
+  from the opponent's side), because offering to give up a protection
+  nothing says is in the way would be the wrong question. Accepting is
+  remembered per match — the link still carries the key, so every
+  reopening would otherwise hide the messages again — and what is stored
+  is a **list of match ids, never a key**. The sealer is kept so that
+  what was already said under protection stays readable; only later
+  messages travel clear. There is no way back: text left in the clear on
+  a relay is there for good, and offering to "restore protection" would
+  suggest otherwise. `allowClearFrom()` in the channel,
+  `AcceptChatClear()` in `play.js`.
+- Quick messages and presence flags travel as *identifiers* translated by
+  the reader, carry nothing personal, and therefore need no key — they
+  work in a keyless match, which is the point of "I'm taking a break".
 - **Where the key comes from**: the fragment of the invitation link, or
   the peer invitation code, or a *community key* designated by its
   fingerprint (`chatKeyId`) — the key itself never circulates then, both
@@ -366,11 +517,24 @@ and `scripts/check-jocly-compat.mjs`. The full two-machine flow (two
 Tabulon instances exchanging a code over a real network) is the part only
 a manual test exercises.
 
+The **cross-application** path has its own probe: Tabulon's real
+`RelayChatChannel` run under Node with an injected `fetchImpl`, against a
+live joclymatch `fileio.php`, with a joclymatch page in a browser at the
+other end. That is what turned up the empty quick-message bubble, the
+dropped `pseudo` and a duplicated seal in `PeerChatChannel` — none of
+which any single-application test could see.
+
 Open items, from the design comparison below: push/WebSocket instead of
 polling for the relay transport; a saved-contact address book for
 peer-to-peer; a match-resume story (persist `matchId` + side + transport
 with the game, piggybacking on the existing Save/Load format rather than
 inventing a new one); and the WebRTC re-evaluation noted above.
+
+The relay dialects are aligned: Tabulon speaks
+`gameioaction/gameid/gamedata`, joclymatch also accepts mogichex's
+`action/mid/data`, and mogichex's `deploy/fileio.php` translates the
+first into the second before handing it to `match.php`. One server of
+either kind serves all three applications.
 
 ### Design background
 
@@ -751,7 +915,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
 | `check-syntax.mjs` | `npm run lint`. Runs `node --check` over `app/content/`, `scripts/` and `tests/` — real syntax errors only, no style rules, **no dependency**, and it exits non-zero when it finds something. Replaces `jshint`, removed in favour of this: jshint's own last release (2.13.6) pinned `cli@1.0.1`, which brought every security advisory and both deprecation warnings in the repo, and with no `.jshintrc` it linted ES2020 code as ES5 and reported 2169 false errors that `|| true` silently discarded. If real linting is wanted later, ESLint is the candidate — there were no jshint rules to preserve. |
-| `set-version.mjs` | Propagates the release number. **`package.json` (root) is the single source**; `npm version <x.y.z>` bumps it and the `version` lifecycle hook runs this script to update `app/package.json`, `src-tauri/Cargo.toml` and both spots in `package-lock.json`. `npm run set-version <x.y.z>` does the same without the git commit/tag; with no argument it just re-propagates the current number. `src-tauri/tauri.conf.json` is *not* written: its `version` field holds `"../package.json"`, a documented form of the field, so Tauri reads the source directly. `tests/test-version-sync.mjs` fails the build if any of these drift apart. |
+| `set-version.mjs` | Propagates the release number. **`package.json` (root) is the single source**; `npm version <x.y.z>` bumps it and the `version` lifecycle hook runs this script to update `app/package.json`, `src-tauri/Cargo.toml`, the `tabulon` entry of the committed `src-tauri/Cargo.lock` and both spots in `package-lock.json`. `npm run set-version <x.y.z>` does the same without the git commit/tag; with no argument it just re-propagates the current number. `src-tauri/tauri.conf.json` is *not* written: its `version` field holds `"../package.json"`, a documented form of the field, so Tauri reads the source directly. `tests/test-version-sync.mjs` fails the build if any of these drift apart. |
 
 ### Dependencies
 
@@ -781,10 +945,29 @@ mocked, plus the real Jocly `dist/` for game data:
 ```bash
 npm test               # runs every tests/test-*.mjs and summarizes
 node tests/test-i18n.mjs   # or any single suite
+npm run test:rust      # Rust unit tests (cargo test in src-tauri)
+npm run test:all       # both
 ```
 
-Prerequisites: `dist/` in place (see above) and `npm --prefix app install`
-(jsdom). The runner checks both and tells you what is missing.
+**Continuous integration.** `.github/workflows/tests.yml` runs both on every
+push and pull request: it builds the jocly2 dist from the branch named by
+`JOCLY2_REF` (the one this Tabulon branch ships with — update it together
+with the target branch), then `check:dist`, `npm test` and `npm run
+test:rust`. Before the workflow existed, a Rust test had gone stale for
+weeks without anyone noticing.
+
+Prerequisites: `dist/` in place (see above), `dist-minimal/` generated
+(`npm run check:dist`) and `npm --prefix app install` (jsdom). The runner
+checks all three and tells you what is missing. The whole run takes about
+a minute.
+
+**Mocking Tauri.** jsdom suites load pages under a Tauri URL
+(`https://tauri.localhost/...`), so `tauri-bridge.js` waits for a *complete*
+injection before evaluating the page. Pass the mock through
+`completeTauriInjection()` (`tests/helpers/tauri-mock.mjs`): it fills the
+namespaces the suite does not simulate with methods that throw a named
+error when called. A partial mock without it makes every suite wait for
+the bridge's 8-second timeout — that used to be three quarters of the run.
 
 ### Useful commands
 
@@ -901,6 +1084,16 @@ necessary, both fixed there:
   board, "player B wins" still on screen. The helper restarts the loop in
   that case, and the take-back handler now also clears the footer and emits
   `move-played` (the History window was not refreshed either).
+- *Intermediate positions.* Replay last move, Take back and Restart go
+  through positions that are not the final one (Replay steps back one move
+  before playing it again, usually landing on the computer's turn).
+  Aborting the input woke the loop, which started a search there; the
+  search then played over the final position — 2 moves before Replay, 4
+  after, measured with the real jocly. These handlers run inside
+  `withLoopHeld()`: the loop is asked to stop at the top of its next turn,
+  input / search / remote wait are aborted, the handler waits until the
+  loop is parked, changes the position, then releases it
+  (`tests/test-play-replay.mjs`).
 
 `HumanTurn()` is never called directly — it is jocly-internal, reached
 through `userTurn()`.
@@ -934,7 +1127,7 @@ dist), `tabulon.css`.
 in `tabulon-rpc.js`: **every new Rust command must be added there.**
 Current inventory (from `lib.rs`'s `generate_handler`):
 
-- `fs_cmds`: `parse_pjn`, `read_text_file`, `save_text_file`,
+- `fs_cmds`: `parse_pjn`, `save_text_file`,
   `save_data_uri_file`, `get_dist_info`
 - `hub_cmds`: `get_app_info`, `notify_user_response`
 - `match_cmds`: `new_match`, `is_favorite`, `set_favorite`,
@@ -981,6 +1174,67 @@ game end), `move-played` (after every move, a Load or a book replay).
 the extracted SAN moves are stored under `fork:{id}` with a `book` marker
 and `new_match` opens a board that replays them via `pickMove`/`playMove`
 (game paused, navigation through the History window).
+
+**S-Chess (Seirawan++) notation.** Two things set this game apart from every
+other chess variant Tabulon reads or writes.
+
+- *Gating is part of the move.* jocly writes it after a slash — `Bc8-b7/M`,
+  and at castling the square too (`O-O/Ce1`), since two squares are freed
+  there. PGN (PyChess, Fairy-Stockfish) writes the same thing in SAN:
+  `Bb7/E`, `O-O/He1`, check last (`Qh5/E+`). `SplitGate()` detaches the
+  suffix on both sides; `ParseSanMove` returns it as `gate: {piece, square}`,
+  `SanMatches` refuses a move whose gating doesn't match (`Nf3` and `Nf3/H`
+  are two different moves), and `BuildSanMove` writes it back.
+- *The prelude picks the letters.* The pair of pieces is chosen before the
+  first move, so the same game writes `C`/`M` (cardinal, marshall) in one
+  arrangement and `H`/`I` (phoenix, kirin) in another. The mapping to the
+  engine's letters lives in the manifest, **per arrangement**
+  (`levels[].variants[].pieceMap`, `{C: 'H', M: 'E'}` for arrangement 0), not
+  in a per-game table like `SAN_PIECE_ALIASES` — a per-game table would
+  rename the khan's marshall too. It is passed as `options.pieceMap` to
+  `SanMatches`/`BuildSanMove`; `FairyProfile()` reads it from the answered
+  prelude.
+- *[Variant] on the way out and in.* Arrangement 0 **is** the S-Chess, so it
+  declares `pgnVariant: "seirawan"` — that is what a PGN must say to be read
+  elsewhere, and what `FairyGameIndex` maps back to arrangement 0. The other
+  arrangements keep their section name (`jocly-seirawan-chu`…), which only
+  Tabulon and the engine understand.
+- *The [FEN] of a PyChess file* carries the waiting pieces in a pocket and
+  the still-open gating squares in the castling field
+  (`…/RNBQKBNR[HEhe] w KQBCDFGkqbcdfg - 0 1`). **jocly now reads and writes
+  that same shape** for this game (its old grid FEN lost the gating rights
+  altogether, so a saved middlegame reopened with all sixteen gates reopened).
+  What is left to Tabulon is the *alphabet*: `SChessFen()` turns the file's
+  letters into jocly's through the arrangement's `pieceMap` (`H`→`C`,
+  `E`→`M`). That is not cosmetic — `H` and `E` also exist here, as the chu
+  phoenix and the shako elephant, so an untranslated pocket would name two
+  pieces from two different arrangements; jocly refuses such a pocket rather
+  than open a plausible, wrong game. Starting position or middlegame, the same
+  path applies. `NormalizeBookFen()` holds the order of the dialects in one
+  place (S-Chess before `PgnFenToShogiSfen`, which would read that pocket as a
+  shogi hand) and is used by play.js, the hub and the book window alike.
+- *Older files.* A jocly predating the fix wrote a fake promotion when a
+  back-rank move gave check (`Qd1-h5=Q+`, `Qd1-h5=C+/C`).
+  `NormalizeSChessNatural()` puts those PJN tokens back into today's form
+  before replay — left alone, they are equidistant from two current moves and
+  `pickMove` could play the other one. `SanMatches` ignores the same artefact.
+
+Covered end to end by `tests/import/test-seirawan.mjs` (the PyChess fixture
+replayed and rewritten token for token, PGN and PJN round trips in two
+arrangements, a middlegame position translated and reloaded).
+
+**A file that cannot be opened says so, and opens nothing.** Two refusals used
+to be silent, and both ended the same way — a window opened on the wrong game
+or on an empty board, with the reason in the console only:
+
+- the hub fell back to the *selected* game whenever a file declared a game or
+  variant it could not map, so a PyChess file dropped while an Ultima card was
+  on screen opened Ultima. A file that declares nothing still falls back (the
+  user chose), but a declared-and-unknown one is now refused by name;
+- the book window opened the match before knowing whether its `[FEN]` loads.
+  It now tries the position first — `NormalizeBookFen()` then a throwaway
+  `Jocly.createMatch().load()` — and shows the engine's own reason in place,
+  keeping the list visible, since the other games in the file may be fine.
 
 ### The clock (JoclyBoard model, ported)
 

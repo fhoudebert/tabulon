@@ -8,25 +8,26 @@
 // remote-peer-channel.js ; ce module ne décide que de la FORME de ce qui
 // circule.
 //
-// ── Un seul écrivain par fil, et c'est ce qui rend le relais possible ────────
+// ── Sur un relai : le fil commun, que le serveur complete ────────────────────
 //
-// Les deux relais connus stockent une clé -> une valeur, en dernier-écrit-
-// gagne : fileio.php de joclymatch (gameid) et match.php de mogichex (mid).
-// Écrire une discussion à deux dans la même clé, c'est une lecture-modification-
-// écriture concurrente, donc des messages perdus dès que les deux joueurs
-// tapent en même temps. joclymatch a contourné le problème avec un fichier
-// séparé ouvert en AJOUT (chatioaction), ce que match.php ne propose pas.
+// Les relais stockent une cle -> une valeur, en dernier-ecrit-gagne. Ecrire
+// une discussion a deux dans la cle de la partie, ce serait une lecture-
+// modification-ecriture concurrente -- des messages perdus, et un coup pas
+// encore lu ecrase. La discussion passe donc par un point d'entree a part,
+// `chatioaction=save|load` de fileio.php, ou le SERVEUR ajoute une ligne par
+// message : un seul fichier pour les deux joueurs, aucune concurrence a
+// eviter, rien a reecrire.
 //
-// La solution retenue ne demande rien au serveur : DEUX clés, une par joueur.
-// Chacun n'écrit QUE dans la sienne et ne lit QUE celle d'en face. Il n'y a
-// alors plus aucune concurrence -- un seul écrivain par fichier -- et le
-// dernier-écrit-gagne devient exact plutôt que dangereux. Le prix est que
-// chaque joueur réécrit son fil entier à chaque message ; un fil de partie
-// tient largement dans la limite de 1 Mo de match.php.
+// C'est le fil de joclymatch, et depuis sa version `next` celui de mogichex
+// (son deploy/fileio.php le sert au-dessus de match.php) : les trois
+// applications se lisent dans une meme partie. Le relai retire les plus
+// anciens messages quand le fil atteint son plafond ; le client FUSIONNE ce
+// qu'il relit avec ce qu'il a deja (mergeThreads), rien ne disparait donc de
+// l'ecran d'un joueur.
 //
-// Cela vaut aussi pour le pair-à-pair, où il n'y a pas de stockage du tout :
-// le même message part sur le fil TCP et les deux côtés fusionnent ce qu'ils
-// ont. mergeThreads() est écrit pour être appelé dans les deux cas.
+// Cela vaut aussi pour le pair-a-pair, ou il n'y a pas de stockage du tout :
+// le meme message part sur le fil TCP et les deux cotes fusionnent ce qu'ils
+// ont. mergeThreads() est ecrit pour etre appele dans les deux cas.
 //
 // ── Ce qui n'est PAS ici ────────────────────────────────────────────────────
 //
@@ -154,11 +155,114 @@ export function newMessage({ kind, side, body = null, quick = null, state = null
     if (kind === ENVELOPE_KIND.PRESENCE && !PRESENCE_VALUES.includes(state))
         throw new Error('newMessage: état de présence inconnu : ' + state);
 
-    const msg = { v: THREAD_VERSION, kind, side, at, id: messageId(rand) };
+    /*
+     * L'identifiant est « horodatage-alea », et non un alea seul : c'est la
+     * forme que joclymatch construit de son cote (time + "-" + key). Les deux
+     * applications relisent le MEME fil ; si elles n'y calculaient pas le meme
+     * identifiant, chacune dedupliquerait dans son coin et un message relu
+     * apparaitrait deux fois chez l'une, une seule chez l'autre.
+     */
+    const msg = { v: THREAD_VERSION, kind, side, at, id: at + '-' + messageId(rand) };
     if (kind === ENVELOPE_KIND.CHAT && quick) msg.quick = String(quick);
     else if (kind === ENVELOPE_KIND.CHAT) msg.body = String(body);
     if (kind === ENVELOPE_KIND.PRESENCE) msg.state = state;
     return msg;
+}
+
+// ── L'enveloppe de joclymatch ────────────────────────────────────────────────
+
+/**
+ * Traduit un message vers la forme que joclymatch depose et relit.
+ *
+ * LES DEUX FORMATS SE REJOIGNAIENT DEJA SUR L'ESSENTIEL : le camp s'y ecrit
+ * `1` / `-1` des deux cotes. Le reste est un changement de nom -- `body` ->
+ * `msg`, `at` -> `time` -- plus une part aleatoire `key`, dont joclymatch fait
+ * son identifiant en la collant a l'horodatage.
+ *
+ * C'est pourquoi notre `id` PREND cette forme (« time-key ») au lieu d'etre un
+ * aleatoire independant : les deux applications relisent le meme fil, et il
+ * faut qu'elles y dedupliquent les memes messages. Deux schemas d'identifiant
+ * donneraient un message affiche deux fois chez l'un et une seule chez
+ * l'autre.
+ *
+ * Les champs que joclymatch ne connait pas -- `kind`, `quick`, `state`, `enc`
+ * -- voyagent a cote : il les ignore, et son durcissement garantit qu'il ne
+ * s'y casse pas.
+ *
+ * @param {object} msg    - un message produit par newMessage()
+ * @param {string} [seal] - le corps SCELLE, quand il doit l'etre
+ */
+export function toRelayMessage(msg, seal = null, quickText = null) {
+    const [time, key] = String(msg.id).split('-');
+    /*
+     * UN MESSAGE RAPIDE DOIT RESTER LISIBLE PAR QUI NE CONNAIT PAS `quick`.
+     *
+     * Le champ `quick` est un identifiant que Tabulon traduit chez le lecteur.
+     * joclymatch ne le connait pas : il affiche `msg`, qui valait la chaine
+     * vide -- donc une BULLE VIDE dans le fil, mesuree telle quelle. On y met
+     * donc le libelle traduit, dans la langue de celui qui l'envoie : imparfait
+     * si les deux joueurs n'ont pas la meme, mais infiniment mieux qu'une bulle
+     * sans contenu.
+     *
+     * Rien n'est perdu pour autant : `quick` part AUSSI, et un client qui le
+     * comprend continue de traduire chez lui. `msg` n'est qu'un repli.
+     *
+     * Et rien n'est trahi : un message rapide ne porte aucun texte personnel
+     * -- c'est precisement ce qui lui permet de circuler dans une partie sans
+     * cle.
+     */
+    let corps = seal !== null ? seal : (msg.body ?? '');
+    if (seal === null && msg.quick && typeof quickText === 'string' && quickText.length)
+        corps = quickText;
+    const out = {
+        msg: corps,
+        player: msg.side,
+        time: Number(time) || msg.at,
+        key: key || '',
+    };
+    if (seal !== null) out.enc = 1;
+    // `chat` est le defaut cote joclymatch : ne pas l'ecrire evite un champ
+    // inutile sur chaque ligne d'un fichier plafonne a 256 Ko.
+    if (msg.kind !== ENVELOPE_KIND.CHAT) out.kind = msg.kind;
+    if (msg.quick) out.quick = msg.quick;
+    if (msg.state) out.state = msg.state;
+    return out;
+}
+
+/**
+ * Relit une ligne deposee par l'une ou l'autre application.
+ *
+ * Rend null pour tout ce qui n'est pas exploitable, plutot que de lever : un
+ * fil partage contient des lignes ecrites par un client qu'on ne connait pas,
+ * et une seule d'entre elles ne doit pas emporter la conversation.
+ *
+ * LE CAMP 0 EXISTE : joclymatch s'en sert pour ses messages de service. Il est
+ * conserve, parce qu'un message qui disparait sans laisser de trace est pire
+ * qu'un message qu'on ne sait pas attribuer.
+ */
+export function fromRelayMessage(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const data = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+    if (typeof data.msg !== 'string') return null;
+    const side = data.player;
+    if (side !== 1 && side !== -1 && side !== 0) return null;
+    const at = Number(data.time);
+    if (!Number.isFinite(at)) return null;
+    const out = {
+        v: THREAD_VERSION,
+        kind: typeof data.kind === 'string' ? data.kind : ENVELOPE_KIND.CHAT,
+        side, at,
+        id: at + '-' + (data.key ?? ''),
+        body: data.msg,
+    };
+    if (data.enc) out.enc = 1;
+    if (typeof data.quick === 'string') out.quick = data.quick;
+    if (typeof data.state === 'string') out.state = data.state;
+    // Le pseudo de joclymatch : conserve pour l'affichage, jamais emis par
+    // nous -- en regime scelle il annoncerait une protection que le fil n'a
+    // pas.
+    if (typeof data.pseudo === 'string') out.pseudo = data.pseudo;
+    return out;
 }
 
 // ── Fils ─────────────────────────────────────────────────────────────────────
@@ -221,7 +325,24 @@ export async function sealMessage(message, sealer = null) {
  * l'utilisateur voit qu'un message existe et qu'il lui manque la clé, ce qui
  * vaut mieux qu'un trou silencieux dans la conversation.
  */
-export async function decodeThread(text, { sealer = null } = {}) {
+/**
+ * Reporte le pseudo de joclymatch sur le message reconstruit.
+ *
+ * decodeThread rebatit chaque message a partir d'une liste FIXE de champs --
+ * c'est ce qui empeche un client inconnu d'injecter n'importe quoi. Mais
+ * `pseudo`, que fromRelayMessage prend soin de conserver, tombait dans ce
+ * filtre : le joueur joclymatch qui s'etait donne un nom s'affichait
+ * « Joueur B » chez son correspondant Tabulon.
+ *
+ * Il est recopie ici, et nulle part ailleurs, pour que la liste fixe reste la
+ * seule porte d'entree.
+ */
+function avecPseudo(out, source) {
+    if (typeof source.pseudo === 'string' && source.pseudo.length) out.pseudo = source.pseudo;
+    return out;
+}
+
+export async function decodeThread(text, { sealer = null, allowClear = false } = {}) {
     if (typeof text !== 'string' || !text.trim()) return [];
     let data;
     try { data = JSON.parse(text); } catch { return []; }
@@ -231,7 +352,13 @@ export async function decodeThread(text, { sealer = null } = {}) {
     for (const m of data.msgs) {
         if (!m || typeof m !== 'object') continue;
         if (typeof m.id !== 'string' || !m.id) continue;
-        if (m.side !== 1 && m.side !== -1) continue;
+        /*
+         * LE CAMP 0 EST CELUI DES MESSAGES DE SERVICE de joclymatch. Il est
+         * accepte plutot qu'ecarte : un message qui disparait sans laisser de
+         * trace est pire qu'un message qu'on ne sait pas attribuer, et les deux
+         * applications relisent desormais le meme fil.
+         */
+        if (m.side !== 1 && m.side !== -1 && m.side !== 0) continue;
         if (!Number.isFinite(m.at)) continue;
         if (m.kind === ENVELOPE_KIND.PRESENCE) {
             if (!PRESENCE_VALUES.includes(m.state)) continue;
@@ -243,25 +370,42 @@ export async function decodeThread(text, { sealer = null } = {}) {
             // ouvrir, rien à sceller -- il passe dans une partie sans clé.
             if (typeof m.quick === 'string') {
                 if (!/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(m.quick)) continue;
-                out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, quick: m.quick });
+                out.push(avecPseudo(
+                    { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, quick: m.quick }, m));
                 continue;
             }
             if (typeof m.body !== 'string') continue;
             if (!m.enc) {
+                /*
+                 * REGIME CLAIR ASSUME : la partie n'a pas de cle, l'autre bout
+                 * n'en a pas non plus, et le texte circule en clair parce que
+                 * c'est le seul regime possible -- typiquement une partie
+                 * rejointe par un lien joclymatch. On l'affiche.
+                 *
+                 * La permission vient de l'APPELANT, jamais de l'absence de
+                 * scelleur : un scelleur qui n'a pas pu se construire ne doit
+                 * pas valoir permission de lire du clair sur une partie
+                 * protegee.
+                 */
+                if (allowClear) {
+                    out.push(avecPseudo(
+                        { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body: m.body }, m));
+                    continue;
+                }
                 // En clair alors que le genre exige un scellement : on le
                 // garde, verrouillé. Refuser l'affichage effacerait la trace
                 // d'un correspondant mal configuré ; l'afficher tel quel
                 // laisserait croire que le canal protège quelque chose.
-                out.push({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id,
-                    body: null, locked: true, reason: 'unsealed' });
+                out.push(avecPseudo({ v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id,
+                    body: null, locked: true, reason: 'unsealed' }, m));
                 continue;
             }
             let body = null;
             try { body = sealer ? await sealer.open(m.body) : null; } catch { body = null; }
-            out.push(body === null
+            out.push(avecPseudo(body === null
                 ? { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id,
                     body: null, locked: true, reason: sealer ? 'badKey' : 'noKey' }
-                : { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body });
+                : { v: m.v ?? 1, kind: m.kind, side: m.side, at: m.at, id: m.id, body }, m));
         }
         // Genre inconnu : ignoré en silence. C'est ce qui permettra d'ajouter
         // un quatrième genre sans casser les clients d'aujourd'hui.

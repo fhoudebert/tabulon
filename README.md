@@ -28,12 +28,13 @@ Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-def
 These pre-built versions are not fixed: the game library of any installed Tabulon can be **customized** — up to the **full 125-game library** — in two ways:
 
 1. **Install extensions (add or remove games)** — the easiest way. Open the **Extensions** screen (hub sidebar, Configuration group) and import downloaded `.tabulon-ext` files. Browse the catalogue:
-The easiest way to add or remove games is through Configuration → Extensions.
 
    - [Modules](https://fhoudebert.github.io/tabulon/ext/modules/index.html) — complete game families containing their shared resources.
    - [Games](https://fhoudebert.github.io/tabulon/ext/games/index.html) — individual games; the corresponding module must already be installed.
 
    The "Get extensions…" link in the Extensions screen takes you straight there. Extensions can also be **uninstalled** from the same screen, so you can add and remove games at any time.
+
+   **Only install extensions you trust** — the catalogue above, or someone you know. A game is program code: once installed it runs inside Tabulon with the same rights as the application, including writing files.
 
 2. **Replace the game library with a published Jocly `dist`** — ready-made `dist` builds are published on the [jocly2 releases page](https://github.com/fhoudebert/jocly2/releases/). Download one and place the complete Jocly `dist/` folder beside the Tabulon executable (or point the `TABULON_DIST` environment variable at it) — no rebuild, no reinstall: Tabulon picks it up at launch.
 
@@ -44,7 +45,7 @@ Two ways to play against a remote human, both from the **Players** window of any
 - **Through a relay server** — create or join a match on a shared relay (compatible with existing [joclymatch](https://github.com/fhoudebert/joclymatch) or [mogichex](https://github.com/fhoudebert/mogichex) servers). An **invitation screen** lets you create a game and hand the match link to your opponent, or join one you received. You can even play against someone using the original jocly-simple-match web page.
 - **Peer-to-peer, no server at all** — one player hosts and gets a short **connection code**; the other pastes it and the game connects directly between the two machines. Works on a LAN out of the box; across the internet, the host opens a port (or uses any port-forwarding/VPN setup) and can embed the public address in the code. No account, no third party, nothing stored anywhere.
 
-Both modes are marked **experimental**: they cover normal play well, but takeback/rollback during a remote game can desynchronize the two sides (a limitation stated in the app's design notes).
+Taking back a move is a setting of the match, chosen when creating the invitation (off by default): when allowed, a player can, on their own turn, take back their last move together with the opponent's reply, and the opponent's board follows. Restarting is not available in a remote game — the same rules as joclymatch and mogichex. Both modes are marked **experimental**. During a remote game the move history can be read but not used to jump back, and loading a game or a position is disabled: those would change only your own board.
 
 ## Languages
 

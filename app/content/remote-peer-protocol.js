@@ -27,6 +27,9 @@
 //     p : port TCP (ephemere, choisi par l'OS au moment de "Creer un code")
 //     t : jeton de session (non-devinable ; verifie par l'hote au handshake,
 //         seule "authentification" -- meme modele que le matchId du relai)
+//   champs optionnels (absents d'un code d'une version anterieure) :
+//     k  : cle de discussion
+//     tb : reprise de coup autorisee (1) ou non (0) -- reglage de la partie
 
 const CODE_PREFIX = 'TBP1-';
 
@@ -71,7 +74,7 @@ export function generatePeerToken() {
  * @param {{gameName:string, ips:string[], port:number, token:string}} info
  * @returns {string|null} null si un champ requis manque/est invalide
  */
-export function encodePeerCode({ gameName, ips, port, token, chatKey = null }) {
+export function encodePeerCode({ gameName, ips, port, token, chatKey = null, allowTakeback = null }) {
     if (!gameName || typeof gameName !== 'string') return null;
     if (!Array.isArray(ips) || ips.length === 0 || !ips.every(a => typeof a === 'string' && a)) return null;
     if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
@@ -95,6 +98,10 @@ export function encodePeerCode({ gameName, ips, port, token, chatKey = null }) {
         if (typeof chatKey !== 'string' || !/^[0-9a-f]{64}$/.test(chatKey)) return null;
         payload.k = chatKey;
     }
+    // `tb` : reprise de coup autorisee (1) ou non (0), reglage de la partie
+    // fixe par l'hote. Meme regle d'additivite que `k` : un client ancien ne
+    // lit pas ce champ.
+    if (typeof allowTakeback === 'boolean') payload.tb = allowTakeback ? 1 : 0;
     return CODE_PREFIX + toBase64Url(JSON.stringify(payload));
 }
 
@@ -131,5 +138,8 @@ export function decodePeerCode(code) {
     // Une cle abimee est traitee comme une absence de cle : la partie doit
     // pouvoir demarrer, sans discussion, plutot que d'echouer entierement.
     const chatKey = typeof parsed.k === 'string' && /^[0-9a-f]{64}$/.test(parsed.k) ? parsed.k : null;
-    return { gameName, ips, port, token, chatKey };
+    // Absent (code d'un Tabulon anterieur) ou abime : null, « le code ne dit
+    // rien ». C'est le canal qui decide alors, et en pair-a-pair il interdit.
+    const allowTakeback = parsed.tb === 1 ? true : parsed.tb === 0 ? false : null;
+    return { gameName, ips, port, token, chatKey, allowTakeback };
 }

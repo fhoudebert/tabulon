@@ -731,7 +731,19 @@ async function OpenGameFile(text, fileName, hintGame) {
     } catch (e) { console.warn('[hub] parse_pjn:', e.message || e); }
 
     const r = ResolveGame(declared, selected);
-    if (!r.game) return Notify(r.unknown ? t('hub.loadUnknownGame') : t('hub.loadNoGame'));
+    /*
+     * UN JEU DECLARE ET INTROUVABLE EST UN REFUS, pas un repli.
+     *
+     * On ouvrait alors le jeu SELECTIONNE dans la fiche -- Ultima, parce que
+     * c'est la derniere fiche consultee -- avec les coups d'un fichier qui
+     * parle d'autre chose. La fenetre s'ouvrait, la position etait refusee en
+     * console, et rien a l'ecran ne disait ce qui s'etait passe.
+     *
+     * Le repli sur le jeu selectionne garde son sens pour un fichier qui ne
+     * declare RIEN : c'est alors a l'utilisateur de choisir, et il l'a fait.
+     */
+    if (r.unknown) return Notify(t('hub.loadUnknownNamed', { game: declared }));
+    if (!r.game) return Notify(t('hub.loadNoGame'));
     if (r.mismatch) console.info('[hub] le fichier designe', r.game, '— ouvert dans ce jeu');
     await store.set('book:' + r.game, { fileName, data: text, preludeSetup });
     tRpc.call('open_book', r.game, fileName, '');
@@ -774,7 +786,11 @@ async function OpenVariantsIni(text, fileName) {
         game: map[v.name.toLowerCase()].game,
         kind: 'position',
         fileName: v.name + '.pjn',
-        text: '[JoclyGame "' + map[v.name.toLowerCase()] + '"]\n[Event "' + v.name + '"]\n'
+        // `.game` : l'index rend { game, setup }, et l'objet entier s'ecrivait
+        // « [object Object] » dans le tag. Le repli sur la fiche selectionnee
+        // le masquait ; depuis qu'un jeu declare et introuvable est refuse,
+        // la vignette n'ouvrait plus rien.
+        text: '[JoclyGame "' + map[v.name.toLowerCase()].game + '"]\n[Event "' + v.name + '"]\n'
             + (v.startFen ? '[FEN "' + v.startFen.replace(/"/g, "'") + '"]\n[SetUp "1"]\n' : '')
             + '[PlyCount "0"]\n\n',
     })));
@@ -1095,11 +1111,15 @@ function InitInvitationPane() {
      * FENETRE Invitation marchait alors qu'elle echouait depuis ici. Les deux
      * portes doivent deposer la meme chose.
      */
-    async function startMatch({ gameName, matchId, relayUrl, player, peer, chatKey = null, chatKeyId = null }) {
+    async function startMatch({ gameName, matchId, relayUrl, player, peer, chatKey = null, chatKeyId = null,
+                                allowTakeback = null }) {
         const inviteId = 'inv-' + Date.now();
+        // Meme depot que la fenetre Invitation, reglage de reprise compris :
+        // les deux portes doivent deposer la meme chose.
         await store.set('invite:' + inviteId, {
             matchId, relayUrl, gameName, player, creator: false, peer: !!peer,
             chatKey: chatKey || null, chatKeyId: chatKeyId || null,
+            allowTakeback: typeof allowTakeback === 'boolean' ? allowTakeback : null,
         });
         await tRpc.call('new_match', gameName, null, undefined, inviteId);
     }
@@ -1125,9 +1145,9 @@ function InitInvitationPane() {
         if (!raw.trim()) { setStatus(peerStatus, t('invitation.peerInvalidCode'), 'fail'); return; }
         setStatus(peerStatus, t('invitation.peerConnecting'), '');
         try {
-            const { gameName, token, chatKey } = await joinPeerMatch(raw);
+            const { gameName, token, chatKey, allowTakeback } = await joinPeerMatch(raw);
             await startMatch({ gameName, matchId: 'p2p:' + token.slice(0, 12), player: 'b',
-                peer: true, chatKey });
+                peer: true, chatKey, allowTakeback });
             setStatus(peerStatus, '');
         } catch (e) {
             console.warn('[hub] peer join failed:', e.message || e);
@@ -1328,7 +1348,6 @@ tRpc.listen({
         if (await store.get('nav-last') === 'templates') UpdateTemplateList();
         UpdateDetailTemplates();    // synchroniser les templates du détail
     },
-    // update-available vient du plugin updater
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@
 // message d'erreur actionnable en console.
 // Usage : node test-hub-degraded.mjs   (depuis tabulon/)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 import { createRequire } from 'module';
@@ -47,7 +48,7 @@ if (html.includes('id="game-detail"')) { console.error('amputation échouée'); 
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/hub.html' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 const BASE = 'https://tauri.localhost/';
 dom.window.BrowserScriptLoader = {
   getBaseURL: () => BASE,
@@ -105,9 +106,19 @@ assert(invokeCalls.some(c => c.cmd === 'new_match'), 'raccourci Quick play fonct
 assert(!li0.querySelector('.list-shortcut-clock'), 'raccourci horloge absent (retiré)');
 
 // 4. Cliquer un jeu ne plante pas (SelectGame court-circuité proprement)
+const errorsBeforeClick = errors.length;
+const pageErrors = [];
+window.addEventListener('error', (e) => pageErrors.push(String(e.error || e.message)));
+window.addEventListener('unhandledrejection', (e) => pageErrors.push(String(e.reason)));
+process.on('unhandledRejection', (r) => pageErrors.push(String(r)));
 li0.click();
 await sleep(200);
-assert(true, 'clic sur un jeu : aucun crash (panneau désactivé proprement)');
+// « Aucun crash » se VERIFIE : un gestionnaire qui leve dans jsdom ne tue pas
+// le processus, il est rapporte a la console et sur la fenetre. Sans ce
+// controle, l'assertion passait quoi qu'il arrive.
+assert(!pageErrors.length && errors.length === errorsBeforeClick,
+  'clic sur un jeu : aucune erreur (panneau désactivé proprement)'
+  + (pageErrors.length ? ' — ' + pageErrors[0] : ''));
 
 console.log(`\n${passed} assertions OK — mode dégradé validé.`);
 process.exit(0);

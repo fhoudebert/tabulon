@@ -5,6 +5,7 @@
 // reproduit le contrat émis par play.js (play-rep/play-event get-clock).
 // Usage : node test-clock.mjs   (depuis tabulon/)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 
@@ -35,7 +36,7 @@ const html = readFileSync('./app/content/clock.html', 'utf-8')
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/clock.html?id=7' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 globalThis.Jocly = { PLAYER_A, PLAYER_B };
 
 // Le répondeur play.js doit être branché AVANT que clock.js n'émette sa requête

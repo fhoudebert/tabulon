@@ -14,8 +14,8 @@
 
 import { httpFetch } from './tauri-bridge.js';
 import {
-    encodeEnvelope, decodeEnvelope, hasOpponentMoved,
-    buildSaveBody, buildLoadBody,
+    encodeEnvelope, decodeEnvelope, hasOpponentMoved, hasOpponentTakenBack,
+    resolveAllowTakeback, buildSaveBody, buildLoadBody,
     encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope,
 } from './remote-relay-protocol.js';
 
@@ -41,6 +41,64 @@ export class RemoteChannel {
      * @param {(payload:{nbTurns:number, lastMove:*, state:*}) => void} callback
      */
     onRemoteMove(_callback) { throw new Error('RemoteChannel.onRemoteMove() non implémenté'); }
+
+    /*
+     * REPRISE DE COUP -- commun aux deux implementations.
+     *
+     * Une annulation adverse se reconnait a un nbTurns qui BAISSE ; elle est
+     * remise a onRemoteTakeback avec l'etat complet, jamais a onRemoteMove
+     * (voir hasOpponentTakenBack pour le piege evite).
+     *
+     * Le reglage `allowTakeback` est une propriete de la PARTIE : chaque
+     * enveloppe recue qui le porte le met a jour (le fichier fait foi), chaque
+     * enveloppe emise le recopie. `allowTakeback` a la construction est ce
+     * que l'invitation annoncait ; quand personne ne dit rien, la reprise
+     * est interdite (voir resolveAllowTakeback).
+     */
+    _initTakeback({ allowTakeback = null } = {}) {
+        this._linkAllowTakeback = typeof allowTakeback === 'boolean' ? allowTakeback : null;
+        this._fileAllowTakeback = null;
+        this._onRemoteTakeback = null;
+        this._onSettingsChange = null;
+    }
+
+    /** Le reglage effectif, toujours un booleen. */
+    get allowTakeback() {
+        return resolveAllowTakeback(this._fileAllowTakeback, this._linkAllowTakeback);
+    }
+
+    /** Ce qu'on ECRIT : la valeur connue, ou null (champ omis) si personne ne l'a dite. */
+    _knownAllowTakeback() {
+        return this._fileAllowTakeback ?? this._linkAllowTakeback;
+    }
+
+    /**
+     * Callback appele quand l'adversaire a repris un ou plusieurs coups (ou
+     * recommence) : payload {nbTurns, state, ...}, a CHARGER tel quel.
+     */
+    onRemoteTakeback(callback) { this._onRemoteTakeback = callback; }
+
+    /** Callback {allowTakeback} quand le reglage effectif change. */
+    onSettingsChange(callback) { this._onSettingsChange = callback; }
+
+    _learnSettings(remote) {
+        if (typeof remote?.allowTakeback !== 'boolean') return;
+        const before = this.allowTakeback;
+        this._fileAllowTakeback = remote.allowTakeback;
+        if (this.allowTakeback !== before) this._onSettingsChange?.({ allowTakeback: this.allowTakeback });
+    }
+
+    /** Aiguille une enveloppe recue : coup, annulation, ou rien. */
+    _dispatchRemote(remote) {
+        this._learnSettings(remote);
+        if (hasOpponentMoved(this._localNbTurns, remote)) {
+            this._localNbTurns = remote.nbTurns;
+            this._onRemoteMove?.(remote);
+        } else if (hasOpponentTakenBack(this._localNbTurns, remote)) {
+            this._localNbTurns = remote.nbTurns;
+            this._onRemoteTakeback?.(remote);
+        }
+    }
 }
 
 /**
@@ -72,10 +130,13 @@ export class HttpRelayChannel extends RemoteChannel {
      *   de Tabulon. Necessite opts.gameName.
      * @param {string} [opts.gameName] - requis si codec='jocly-simple-match'
      *   (attendu dans matchDetails.gameName par control.js).
+     * @param {boolean|null} [opts.allowTakeback=null] - reprise de coup telle
+     *   que l'invitation l'annonce (null = elle ne dit rien) ; le fichier du
+     *   relai la remplace des qu'il la porte ; ni l'un ni l'autre = interdite.
      */
     constructor({
         relayUrl, matchId, localNbTurns = 0, pollIntervalMs = 1500, fetchImpl = httpFetch,
-        codec = 'tabulon', gameName = null,
+        codec = 'tabulon', gameName = null, allowTakeback = null,
     }) {
         super();
         if (!relayUrl) throw new Error('HttpRelayChannel: relayUrl requis');
@@ -93,6 +154,22 @@ export class HttpRelayChannel extends RemoteChannel {
         this._timer = null;
         this._polling = false;
         this._lastError = null;
+        /*
+         * DEUX GARDES CONTRE UNE LECTURE PERIMEE.
+         *
+         * Un sondage parti AVANT une ecriture peut revenir APRES : il rapporte
+         * alors l'ancien fichier. Tant qu'on ne faisait qu'avancer, c'etait
+         * sans consequence (l'ancien compte est plus petit, donc ignore).
+         * Depuis qu'on peut reculer, l'ancien compte est PLUS GRAND que le
+         * notre, et serait pris pour un coup adverse -- celui-la meme qu'on
+         * vient d'annuler, rejoue sous nos yeux. `_generation` change a chaque
+         * ecriture et chaque recalage ; `_pushing` couvre une ecriture encore
+         * en vol. Une reponse lue sous l'une ou l'autre est jetee : le sondage
+         * suivant relira le fichier a jour.
+         */
+        this._generation = 0;
+        this._pushing = 0;
+        this._initTakeback({ allowTakeback });
     }
 
     get matchId() { return this._matchId; }
@@ -115,6 +192,7 @@ export class HttpRelayChannel extends RemoteChannel {
      */
     resetBaseline(nbTurns) {
         this._localNbTurns = nbTurns;
+        this._generation++;
     }
 
     async start() {
@@ -130,11 +208,16 @@ export class HttpRelayChannel extends RemoteChannel {
 
     async push({ nbTurns, lastMove = null, state = null }) {
         this._localNbTurns = nbTurns;
+        this._generation++;
+        const allowTakeback = this._knownAllowTakeback();
         const envelope = this._codec === 'jocly-simple-match'
-            ? encodeJoclySimpleMatchEnvelope({ matchId: this._matchId, gameName: this._gameName, nbTurns, matchdata: state })
-            : encodeEnvelope({ nbTurns, lastMove, state });
+            ? encodeJoclySimpleMatchEnvelope({ matchId: this._matchId, gameName: this._gameName, nbTurns,
+                matchdata: state, allowTakeback })
+            : encodeEnvelope({ nbTurns, lastMove, state, allowTakeback });
         const body = buildSaveBody(this._matchId, envelope);
-        await this._post(body);
+        this._pushing++;
+        try { await this._post(body); }
+        finally { this._pushing--; }
     }
 
     // -- interne ---------------------------------------------------------------
@@ -147,16 +230,16 @@ export class HttpRelayChannel extends RemoteChannel {
     async _pollOnce() {
         if (!this._polling) return;
         try {
+            const generation = this._generation;
             const res = await this._post(buildLoadBody(this._matchId));
             const text = await res.text();
             this._lastError = null;
             const remote = this._codec === 'jocly-simple-match'
                 ? decodeJoclySimpleMatchEnvelope(text)
                 : decodeEnvelope(text);
-            if (hasOpponentMoved(this._localNbTurns, remote)) {
-                this._localNbTurns = remote.nbTurns;
-                this._onRemoteMove?.(remote);
-            }
+            // Lecture perimee (voir le constructeur) : on la jette.
+            if (generation === this._generation && this._pushing === 0)
+                this._dispatchRemote(remote);
         } catch (e) {
             // Panne réseau ponctuelle : on ne fait pas planter la partie, on
             // relogue et on retente au prochain cycle (même logique que

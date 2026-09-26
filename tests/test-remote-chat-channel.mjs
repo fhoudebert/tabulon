@@ -22,10 +22,62 @@
 // ── Mock relai (équivalent en mémoire de fileio.php) ─────────────────────────
 const store = new Map();          // gameid -> texte brut
 const writes = [];                // trace des clés écrites, pour l'assertion
+/*
+ * Le relai en mémoire imite désormais `chatioaction` de fileio.php : c'est le
+ * SERVEUR qui ajoute une ligne au fichier `<gameid>-chat.txt`, là où Tabulon
+ * réécrivait deux fichiers entiers. La différence est le fond du
+ * déménagement — plus de concurrence à éviter, donc plus de dispositif à deux
+ * clés — et c'est ce que ce mock doit reproduire fidèlement.
+ */
+const chatLog = new Map();       // gameid -> [ligne, …] (le fichier -chat.txt)
+let chatCap = null;              // plafond du fichier, comme $chatMaxBytes
+/*
+ * Le serveur RETIRE-T-IL les plus anciens pour faire de la place ?
+ *
+ * C'est ce que fait fileio.php depuis qu'un fil plein ne ferme plus la
+ * conversation ($chatTrimOldest). Le mock reproduit les deux regimes : un
+ * relai a jour, et un relai ancien qui refuse encore.
+ */
+let chatTrims = false;
 async function mockFetch(url, init) {
     const params = new URLSearchParams(init.body);
-    const action = params.get('gameioaction');
+    const chat = params.get('chatioaction');
     const gameid = params.get('gameid');
+    if (chat === 'save') {
+        const line = params.get('chatmsg');
+        // Le vrai serveur plafonne le fichier ($chatMaxBytes) et REFUSE
+        // au-delà, avec un 413. Ce n'est pas une panne réseau : réessayer n'y
+        // changerait rien.
+        const size = (chatLog.get(gameid) || []).join('\n').length;
+        // Un message plus gros que le fil entier ne rentrera jamais : refus
+        // NOMME, distinct du fil plein (aucun retrait n'y changerait rien).
+        if (chatCap !== null && line.length > chatCap)
+            return { status: 413, text: async () => '{"error":"chat message too large"}' };
+        let trimmed = 0;
+        if (chatCap !== null && size + line.length > chatCap) {
+            if (!chatTrims)
+                return { status: 413, text: async () => '{"error":"chat log full"}' };
+            // Comme fileio.php : on retire par le DEBUT jusqu'a ce que le
+            // nouveau message tienne.
+            const lines = chatLog.get(gameid) || [];
+            while (lines.length && lines.join('\n').length + line.length > chatCap) {
+                lines.shift();
+                trimmed++;
+            }
+        }
+        // Le vrai serveur refuse (400) un message multiligne : il relit le
+        // fichier ligne par ligne.
+        if (/[\r\n]/.test(line)) return { status: 400, text: async () => 'single line' };
+        writes.push(gameid);
+        if (!chatLog.has(gameid)) chatLog.set(gameid, []);
+        chatLog.get(gameid).push(line);
+        return { status: 200, text: async () => JSON.stringify({ ok: true, trimmed }) };
+    }
+    if (chat === 'load') {
+        const lines = chatLog.get(gameid) || [];
+        return { status: 200, text: async () => '{"messages":[' + lines.join(',') + ']}' };
+    }
+    const action = params.get('gameioaction');
     if (action === 'save') {
         writes.push(gameid);
         store.set(gameid, params.get('gamedata'));
@@ -40,7 +92,7 @@ globalThis.window = { __TAURI__: { http: { fetch: mockFetch } } };
 
 const { RelayChatChannel, PeerChatChannel } =
     await import('../app/content/remote-chat-channel.js');
-const { ENVELOPE_KIND, PRESENCE, chatMidFor } =
+const { ENVELOPE_KIND, PRESENCE } =
     await import('../app/content/remote-chat-protocol.js');
 const { encodeEnvelope } = await import('../app/content/remote-relay-protocol.js');
 
@@ -66,8 +118,14 @@ const sealer = {
 const A = 1, B = -1;
 const MATCH = 'match-0001-abcd';
 
-// ── 1. Deux joueurs, deux clés ───────────────────────────────────────────────
-console.log('Relai : chacun n’écrit que dans son fil');
+// ── 1. Un seul fil, partagé — et c'est le point du déménagement ─────────────
+//
+// Les deux joueurs écrivaient chacun dans SA clé, et chacun réécrivait son fil
+// entier à chaque message : un fil de 200 messages coûtait 200 écritures de
+// taille croissante. Le serveur AJOUTE désormais une ligne, sous la clé de la
+// partie — celle que joclymatch emploie déjà. Plus de concurrence à éviter,
+// donc plus de dispositif à deux clés.
+console.log('Relai : un seul fil, que le serveur complète');
 {
     const alice = new RelayChatChannel({
         relayUrl: 'https://relai.test/fileio.php', matchId: MATCH, side: A,
@@ -84,53 +142,53 @@ console.log('Relai : chacun n’écrit que dans son fil');
     await bob.start();
 
     await alice.send({ kind: ENVELOPE_KIND.CHAT, body: 'bonjour' });
-    assert(writes.every(w => w === chatMidFor(MATCH, A)),
-        'Alice n’a écrit que dans sa clé : ' + [...new Set(writes)].join(', '));
-    assert(store.has(chatMidFor(MATCH, A)) && !store.has(chatMidFor(MATCH, B)),
-        'et la clé de Bob n’a pas été touchée');
-
+    assert(writes.every(w => w === MATCH),
+        'tout part sous la clé de la partie : ' + [...new Set(writes)].join(', '));
     // Ce que voit le serveur : rien de lisible.
-    assert(!store.get(chatMidFor(MATCH, A)).includes('bonjour'),
+    assert(!(chatLog.get(MATCH) || []).join('').includes('bonjour'),
         'le texte n’apparaît pas dans ce qui est déposé sur le relai');
 
     await waitFor(() => seenByBob.some(m => m.body === 'bonjour'), 'Bob reçoit le message');
-    assert(true, 'Bob le lit dans le fil d’Alice');
+    assert(true, 'Bob le lit dans le fil commun');
 
-    // Les deux écrivent « en même temps » : sur une clé commune, l’un des deux
-    // messages serait perdu. Sur deux clés, il n’y a pas de concurrence.
+    // Les deux écrivent « en même temps ». Sur une clé commune RÉÉCRITE, l'un
+    // des deux messages serait perdu ; sur un fichier que le serveur complète,
+    // il n'y a rien à perdre.
     await Promise.all([
         alice.send({ kind: ENVELOPE_KIND.CHAT, body: 'moi d’abord' }),
         bob.send({ kind: ENVELOPE_KIND.CHAT, body: 'non, moi' }),
     ]);
     await waitFor(() => bob.conversation.length === 3, 'les trois messages arrivent chez Bob');
     assert(bob.conversation.length === 3, 'aucun message perdu malgré l’écriture simultanée');
+    // Un message écrit ET relu ne doit apparaître qu'une fois : c'est
+    // l'identifiant partagé « horodatage-aléa » qui le garantit.
+    assert(new Set(alice.conversation.map(m => m.id)).size === alice.conversation.length,
+        'et aucun doublon, le fil étant relu en entier à chaque sondage');
 
     alice.stop(); bob.stop();
 }
 
-// ── 2. Une fenêtre rouverte ne s’efface pas elle-même ────────────────────────
+// ── 2. Une fenêtre rouverte retrouve le fil ────────────────────────────────
+//
+// Elle devait auparavant relire son propre fil AVANT d'écrire, sous peine
+// d'écraser son historique au premier message — le fil étant déposé en entier.
+// Le serveur complétant le fichier, cette précaution n'a plus d'objet : il n'y
+// a plus rien à écraser, et le premier sondage rapporte tout.
 console.log('');
-console.log('Relai : relire son propre fil avant d’y écrire');
+console.log('Relai : rouvrir ne perd rien');
 {
-    // Le fil est déposé ENTIER à chaque message. Une fenêtre qui repartirait
-    // d’une liste vide écraserait tout son historique dès le premier envoi.
     const again = new RelayChatChannel({
         relayUrl: 'https://relai.test/fileio.php', matchId: MATCH, side: A,
         sealer, pollIntervalMs: 20,
     });
     await again.start();
-    assert(again.conversation.length === 2, 'au démarrage, Alice retrouve ses deux messages');
+    await waitFor(() => again.conversation.length === 3, 'le fil revient au premier sondage');
+    assert(again.conversation.length === 3, 'les trois messages sont là');
 
-    await again.send({ kind: ENVELOPE_KIND.CHAT, body: 'et de trois' });
-    const reread = await (async () => {
-        const probe = new RelayChatChannel({
-            relayUrl: 'https://relai.test/fileio.php', matchId: MATCH, side: A,
-            sealer, pollIntervalMs: 20,
-        });
-        await probe.start(); probe.stop();
-        return probe.conversation;
-    })();
-    assert(reread.length === 3, 'et son ancien fil n’a pas été écrasé');
+    await again.send({ kind: ENVELOPE_KIND.CHAT, body: 'et de quatre' });
+    await waitFor(() => again.conversation.length === 4, 'le nouveau message s’ajoute');
+    assert((chatLog.get(MATCH) || []).length === 4,
+        'et le fichier compte quatre lignes, pas un fil réécrit');
     again.stop();
 }
 
@@ -147,16 +205,39 @@ console.log('Relai : pas de clé, pas de texte libre');
     try { await naked.send({ kind: ENVELOPE_KIND.CHAT, body: 'secret' }); }
     catch { failed = true; }
     assert(failed, 'un message de discussion sans scelleur échoue plutôt que de partir en clair');
-    assert(!store.has(chatMidFor('nu-0001-abcd', A)), 'et rien n’est déposé');
-    // Le fil est déposé ENTIER à chaque message : un message refusé qui
-    // resterait dans la liste serait réencodé à chaque envoi et les ferait
-    // tous échouer ensuite, y compris ceux qui n’ont rien à se reprocher.
+    assert(!chatLog.has('nu-0001-abcd'), 'et rien n’est déposé');
     assert(naked.conversation.length === 0, 'et le refus ne laisse aucune trace dans le fil');
 
     // La présence, elle, ne porte aucun texte : elle passe sans clé. C’est ce
-    // qui permet de dire « je fais une pause » même discussion désactivée.
+    // qui permet de dire « je fais une pause » à un joueur joclymatch.
     await naked.send({ kind: ENVELOPE_KIND.PRESENCE, state: PRESENCE.PAUSED });
-    assert(store.has(chatMidFor('nu-0001-abcd', A)), 'un état de présence passe sans clé');
+    assert(chatLog.has('nu-0001-abcd'), 'un état de présence passe sans clé');
+
+    /*
+     * LE RÉGIME CLAIR EST UNE PERMISSION EXPLICITE, PAS UNE CONSÉQUENCE.
+     *
+     * Sans scelleur, le refus ci-dessus est le comportement voulu : une partie
+     * créée par Tabulon porte une clé, et un scelleur manquant signale une
+     * panne — clé abîmée, commande Rust indisponible. Le laisser valoir
+     * permission d'écrire en clair serait exactement le chemin par lequel une
+     * protection se perd sans que personne l'ait décidé.
+     *
+     * Une partie rejointe par un lien joclymatch, elle, n'a AUCUNE clé : le
+     * clair y est le seul régime possible, et c'est celui que l'autre joueur
+     * attend. L'appelant le dit, et seulement dans ce cas.
+     */
+    const open = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: 'clair-0001', side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await open.start();
+    await open.send({ kind: ENVELOPE_KIND.CHAT, body: 'bonjour joclymatch' });
+    assert((chatLog.get('clair-0001') || []).join('').includes('bonjour joclymatch'),
+        'régime clair assumé : le texte part, lisible, comme joclymatch l’attend');
+    await waitFor(() => open.conversation.some(m => m.body === 'bonjour joclymatch'),
+        'et se relit sans cadenas');
+    assert(open.conversation.every(m => !m.locked), 'aucun message verrouillé en régime clair');
+    open.stop();
     naked.stop();
 }
 
@@ -322,10 +403,203 @@ console.log('Pas de réveil pour rien');
     });
     await nokey.start();
     await nokey.send({ kind: ENVELOPE_KIND.CHAT, quick: 'wellPlayed' });
-    const stored = JSON.parse(store.get(chatMidFor('rapide-0001', A)));
-    assert(stored.msgs[0].quick === 'wellPlayed', 'un message rapide passe sans scelleur');
-    assert(!('body' in stored.msgs[0]), 'et ne dépose aucun texte');
+    const line = JSON.parse((chatLog.get('rapide-0001') || [])[0]);
+    assert(line.data.quick === 'wellPlayed', 'un message rapide passe sans scelleur');
+    // `msg` vide et non absent : joclymatch ignore une ligne sans `msg`, et
+    // c'est ainsi qu'un message rapide y reste invisible au lieu d'y afficher
+    // « undefined ».
+    assert(line.data.msg === '', 'et ne dépose aucun texte');
+    // Le camp voyage sous le nom de joclymatch, avec les mêmes valeurs : c'est
+    // le seul endroit où les deux formats se rejoignaient déjà.
+    assert(line.data.player === A, 'le camp s’écrit `player`, aux mêmes valeurs');
     nokey.stop();
+}
+
+// ── 7. Le fil plein est un ÉTAT, pas une panne ─────────────────────────────
+//
+// fileio.php plafonne le fichier de conversation par partie et refuse au-delà.
+// Cela arrive à deux joueurs bavards sur une partie par correspondance, et
+// c'est définitif : réessayer n'y changerait rien.
+//
+// Le plafond est désormais PARTAGÉ — un seul fichier pour les deux joueurs, là
+// où chacun avait le sien. Le traiter comme une erreur réseau ferait retaper le
+// même message indéfiniment.
+console.log('');
+console.log('Relai : le fil plein');
+{
+    chatCap = 400;              // quelques messages, pas plus
+    const chan = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: 'plein-0001', side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await chan.start();
+    await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'premier' });
+    await waitFor(() => chan.conversation.length === 1, 'le premier message passe');
+    assert(!chan.full, 'et le fil n’est pas encore plein');
+
+    let code = null;
+    for (let k = 0; k < 12 && !code; k++)
+        try { await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'message numéro ' + k }); }
+        catch (e) { code = e.code; }
+
+    assert(code === 'chat-full', 'le refus porte un code nommé : ' + code);
+    assert(chan.full, 'et le canal retient l’état');
+
+    /*
+     * LE MESSAGE REFUSÉ NE DOIT PAS RESTER AFFICHÉ. Il est ajouté localement
+     * avant l'envoi, pour s'afficher sans attendre l'aller-retour ; le laisser
+     * après un refus serait un mensonge — l'autre joueur ne le verra jamais, et
+     * rien à l'écran ne le dirait.
+     */
+    await waitFor(() => chan.conversation.length === (chatLog.get('plein-0001') || []).length,
+        'le fil affiché rejoint le fil déposé');
+    assert(chan.conversation.length === (chatLog.get('plein-0001') || []).length,
+        `rien d’affiché qui ne soit sur le relai (${chan.conversation.length} = ${(chatLog.get('plein-0001') || []).length})`);
+
+    // ET LA LECTURE CONTINUE : un fil plein reste lisible. Couper la
+    // conversation entière parce qu'on ne peut plus y ajouter serait
+    // disproportionné.
+    const before = chan.conversation.length;
+    chatCap = null;
+    chatLog.get('plein-0001').push(JSON.stringify({ data: {
+        msg: 'venu d’en face', player: B, time: Date.now(), key: 'zz' } }));
+    await waitFor(() => chan.conversation.length > before, 'un message d’en face arrive encore');
+    assert(chan.conversation.some(m => m.body === 'venu d’en face'), 'et s’affiche');
+    chan.stop();
+    chatCap = null;
+}
+
+// ── Bascule explicite en clair ───────────────────────────────────────────────
+//
+// LE CAS : une partie creee par Tabulon porte une cle, mais son lien pointe
+// vers index.php et peut donc etre ouvert dans joclymatch, qui ignore le
+// fragment et ecrit en clair. Sans bascule, la conversation est a sens unique
+// des deux cotes -- ses messages « non montres » chez nous, les notres
+// illisibles chez lui.
+{
+    const sealer = {
+        seal: (t) => 'S:' + t,
+        open: (s) => (String(s).startsWith('S:') ? String(s).slice(2) : null),
+    };
+    const mid = 'bascule-0001';
+    const chan = new RelayChatChannel({
+        relayUrl: 'http://relai/fileio.php', matchId: mid, side: A,
+        sealer, pollIntervalMs: 20, fetchImpl: mockFetch,
+    });
+    await chan.start();
+
+    // Le correspondant ecrit en clair : refuse, mais VISIBLE.
+    chatLog.set(mid, [JSON.stringify({ data: {
+        msg: 'bonjour en clair', player: B, time: Date.now(), key: 'cc' } })]);
+    await waitFor(() => chan.conversation.length > 0, 'le message en clair arrive');
+    const avant = chan.conversation.find(m => m.side === B);
+    assert(avant.locked === true && avant.reason === 'unsealed',
+        'avant la bascule : garde, marque « sans protection », corps masque');
+    assert(avant.body === null, 'et son texte n’est pas affiche');
+    assert(chan.sealing === true, 'ce qui part est encore scelle');
+
+    // L'utilisateur accepte.
+    chan.allowClearFrom();
+    await waitFor(() => chan.conversation.some(m => m.body === 'bonjour en clair'),
+        'apres la bascule : le message devient lisible');
+    assert(chan.sealing === false, 'et ce qui part ne l’est plus');
+
+    // Ce qui a deja ete dit sous protection reste lisible : le scelleur n'est
+    // pas jete, il ne sert plus qu'a ouvrir.
+    chatLog.get(mid).push(JSON.stringify({ data: {
+        msg: 'S:dit avant la bascule', player: B, time: Date.now() + 1, key: 'dd', enc: 1 } }));
+    await waitFor(() => chan.conversation.some(m => m.body === 'dit avant la bascule'),
+        'un message scelle reste ouvrable apres la bascule');
+
+    // Et le texte libre part desormais en clair, donc lisible par l'autre.
+    await chan.send({ kind: 'chat', body: 'et voila' });
+    const depose = JSON.parse(chatLog.get(mid).at(-1)).data;
+    assert(depose.msg === 'et voila', 'le texte libre part en clair');
+    assert(depose.enc === undefined, 'et sans marqueur de scellement');
+    chan.stop();
+}
+
+// ── Le fil plein qui se VIDE par le debut ───────────────────────────────────
+//
+// LE CAS : une partie par correspondance dure des semaines, le fichier de
+// conversation est plafonne, et il finissait par se fermer -- plus un mot
+// n'etait echange alors que la partie, elle, continuait. Le relai retire
+// desormais les plus anciens messages pour loger les nouveaux.
+//
+// Ce que le canal doit en faire : continuer a ecrire, et NE RIEN FAIRE
+// DISPARAITRE de ce que le joueur a deja sous les yeux.
+console.log('');
+console.log('Relai : le fil se vide par le debut');
+{
+    chatTrims = true;
+    chatCap = 700;
+    const mid = 'rotation-0001';
+    const chan = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: mid, side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await chan.start();
+    await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'tout premier' });
+    await waitFor(() => chan.conversation.length === 1, 'le premier message passe');
+
+    // Assez de messages pour que le relai doive faire de la place.
+    for (let k = 0; k < 12; k++)
+        await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'message numéro ' + k });
+
+    assert(!chan.full, 'le fil n’est jamais declare plein');
+    assert(chan.trimmed > 0, 'le relai a retire des messages (' + chan.trimmed + ')');
+    const onRelay = chatLog.get(mid) || [];
+    assert(onRelay.length < 13, 'le relai n’en garde qu’une partie (' + onRelay.length + ')');
+    assert(JSON.parse(onRelay.at(-1)).data.msg.length > 0, 'et ce sont les derniers');
+
+    /*
+     * CE QUE LE JOUEUR VOIT NE RECULE PAS. Le relai a beau oublier le debut,
+     * notre fenetre garde ce qu'elle a affiche -- comme le panneau de
+     * joclymatch, qui n'enleve jamais un message. Sinon la conversation se
+     * raccourcirait toute seule sous les yeux de celui qui la lit.
+     */
+    await waitFor(() => chan.conversation.length === 13, 'les treize messages restent affiches');
+    // Le tout premier n'est plus sur le relai, et reste pourtant a l'ecran.
+    assert(!onRelay.some(l => JSON.parse(l).data.msg === 'tout premier'),
+        'le relai ne porte plus le tout premier message');
+    assert(chan.conversation.some(m => m.body === 'tout premier'),
+        'mais la fenetre le garde : rien ne disparait sous les yeux du joueur');
+
+    // Et la conversation continue d'aller dans les deux sens.
+    chatLog.get(mid).push(JSON.stringify({ data: {
+        msg: 'et moi je reponds', player: B, time: Date.now(), key: 'rr' } }));
+    await waitFor(() => chan.conversation.some(m => m.body === 'et moi je reponds'),
+        'un message d’en face arrive toujours');
+    chan.stop();
+    chatCap = null;
+    chatTrims = false;
+}
+
+// ── Un message plus long que le fil entier ──────────────────────────────────
+//
+// Aucun retrait n'y changerait rien, et ce n'est pas le fil qui est ferme :
+// il n'y a qu'a raccourcir. Deux refus, deux reactions, donc deux codes.
+{
+    chatTrims = true;
+    chatCap = 300;
+    const chan = new RelayChatChannel({
+        relayUrl: 'https://relai.test/fileio.php', matchId: 'trop-long-0001', side: A,
+        allowClear: true, pollIntervalMs: 20,
+    });
+    await chan.start();
+    let code = null;
+    try { await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'x'.repeat(400) }); }
+    catch (e) { code = e.code; }
+    assert(code === 'chat-too-long', 'le refus porte son propre code : ' + code);
+    assert(!chan.full, 'et le fil n’est PAS declare plein — la saisie reste ouverte');
+    assert(!chan.conversation.some(m => (m.body || '').length > 300),
+        'le message refuse ne reste pas affiche comme s’il etait parti');
+    // Un message ordinaire passe juste apres.
+    await chan.send({ kind: ENVELOPE_KIND.CHAT, body: 'plus court' });
+    await waitFor(() => chan.conversation.some(m => m.body === 'plus court'), 'le suivant passe');
+    chan.stop();
+    chatCap = null;
+    chatTrims = false;
 }
 
 console.log(`\n${passed} assertions OK — transport de la discussion validé.`);

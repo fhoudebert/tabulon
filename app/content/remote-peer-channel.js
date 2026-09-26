@@ -18,7 +18,7 @@
 // relecture inoffensive, exactement comme pour le polling du relai HTTP.
 
 import { invoke as tauriInvoke, listen as tauriListen } from './tauri-bridge.js';
-import { encodeEnvelope, decodeEnvelope, hasOpponentMoved } from './remote-relay-protocol.js';
+import { encodeEnvelope, decodeEnvelope } from './remote-relay-protocol.js';
 import { encodePeerCode, decodePeerCode, generatePeerToken } from './remote-peer-protocol.js';
 import { RemoteChannel } from './remote-channel.js';
 
@@ -31,8 +31,13 @@ export class PeerChannel extends RemoteChannel {
      * @param {number} [opts.localNbTurns=0] - baseline de coups deja connus.
      * @param {Function} [opts.invokeImpl] / @param {Function} [opts.listenImpl]
      *   injectables pour les tests (tests/test-remote-peer-channel.mjs).
+     * @param {boolean|null} [opts.allowTakeback=null] - reprise de coup telle
+     *   que le code d'invitation l'annonce ; les enveloppes recues la
+     *   remplacent des qu'elles la portent ; ni l'un ni l'autre = interdite
+     *   (voir resolveAllowTakeback).
      */
-    constructor({ matchId = 'p2p', localNbTurns = 0, invokeImpl = tauriInvoke, listenImpl = tauriListen } = {}) {
+    constructor({ matchId = 'p2p', localNbTurns = 0, invokeImpl = tauriInvoke, listenImpl = tauriListen,
+                  allowTakeback = null } = {}) {
         super();
         this._matchId = matchId;
         this._localNbTurns = localNbTurns;
@@ -43,6 +48,7 @@ export class PeerChannel extends RemoteChannel {
         this._unlisteners = [];
         this._started = false;
         this._lastError = null;
+        this._initTakeback({ allowTakeback });
     }
 
     get matchId() { return this._matchId; }
@@ -93,19 +99,21 @@ export class PeerChannel extends RemoteChannel {
 
     async push({ nbTurns, lastMove = null, state = null }) {
         this._localNbTurns = nbTurns;
-        await this._invoke('peer_send', { line: encodeEnvelope({ nbTurns, lastMove, state }) });
+        await this._invoke('peer_send', { line: encodeEnvelope({ nbTurns, lastMove, state,
+            allowTakeback: this._knownAllowTakeback() }) });
     }
 
     // -- interne ---------------------------------------------------------------
 
     _handleLine(line) {
         // decodeEnvelope renvoie null (jamais d'exception) sur un contenu
-        // illisible ; hasOpponentMoved(_, null) est faux -- rien a faire.
-        const remote = decodeEnvelope(line);
-        if (hasOpponentMoved(this._localNbTurns, remote)) {
-            this._localNbTurns = remote.nbTurns;
-            this._onRemoteMove?.(remote);
-        }
+        // illisible ; _dispatchRemote(null) ne fait rien.
+        //
+        // Pas de garde contre une lecture perimee ici, contrairement au
+        // relai : un flux TCP livre les lignes dans l'ordre, et chacune est
+        // un message NEUF de l'adversaire -- pas une relecture d'un fichier
+        // que nous avons peut-etre deja reecrit.
+        this._dispatchRemote(decodeEnvelope(line));
     }
 }
 
@@ -129,12 +137,13 @@ export class PeerChannel extends RemoteChannel {
  *   connexion). Les adresses locales restent dans le code, en secours.
  * @returns {Promise<{code:string, token:string, port:number}>}
  */
-export async function hostPeerMatch(gameName, { port = null, extraAddresses = [], chatKey = null, invokeImpl = tauriInvoke } = {}) {
+export async function hostPeerMatch(gameName, { port = null, extraAddresses = [], chatKey = null,
+                                               allowTakeback = null, invokeImpl = tauriInvoke } = {}) {
     const token = generatePeerToken();
     const info = await invokeImpl('peer_host_start', { token, port });
     const extras = (extraAddresses || []).map(a => String(a).trim()).filter(Boolean);
     const ips = [...extras, ...info.ips.filter(a => !extras.includes(a))];
-    const code = encodePeerCode({ gameName, ips, port: info.port, token, chatKey });
+    const code = encodePeerCode({ gameName, ips, port: info.port, token, chatKey, allowTakeback });
     if (!code) throw new Error('code d\'invitation impossible a construire');
     return { code, token, port: info.port, chatKey };
 }
@@ -152,5 +161,6 @@ export async function joinPeerMatch(code, { invokeImpl = tauriInvoke } = {}) {
     // La cle de discussion voyage avec le code : elle est nulle si l'hote n'en
     // a pas propose, ou si celle du code etait abimee (decodePeerCode traite
     // les deux pareil -- la partie doit pouvoir demarrer sans discussion).
-    return { gameName: parsed.gameName, token: parsed.token, chatKey: parsed.chatKey };
+    return { gameName: parsed.gameName, token: parsed.token, chatKey: parsed.chatKey,
+        allowTakeback: parsed.allowTakeback };
 }

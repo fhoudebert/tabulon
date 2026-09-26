@@ -1,7 +1,7 @@
 {
   "name": "tabulon",
   "description": "Desktop application for playing board games (Tauri)",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "productName": "Tabulon",
   "keywords": [
     "board games",
@@ -26,6 +26,8 @@
     "lint": "node scripts/check-syntax.mjs",
     "tauri": "tauri",
     "test": "node tests/run-tests.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:all": "npm test && npm run test:rust",
     "check:dist": "node scripts/check-dist.mjs",
     "set-version": "node scripts/set-version.mjs",
     "version": "node scripts/set-version.mjs && git add package-lock.json app/package.json src-tauri/Cargo.toml"

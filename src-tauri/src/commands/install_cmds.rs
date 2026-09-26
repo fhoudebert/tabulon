@@ -256,9 +256,10 @@ mod tests {
         } else {
             assert!(!status.engine_file.ends_with(".exe"));
         }
-        // Quatre elements decrits, chacun avec un identifiant stable.
+        // Les elements decrits, chacun avec un identifiant stable (le panneau
+        // d'installation s'y accroche) : ajouter un element doit passer par ici.
         let ids: Vec<&str> = status.items.iter().map(|i| i.id).collect();
-        assert_eq!(ids, vec!["dist", "engine", "scan", "nnue"]);
+        assert_eq!(ids, vec!["dist", "engine", "scan", "katago", "katago-network", "katago-config", "nnue"]);
         // Un element absent doit dire OU le poser, sinon le panneau ne sert a
         // rien : c'est tout l'objet de cette commande.
         for item in &status.items {

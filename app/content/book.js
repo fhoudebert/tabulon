@@ -14,7 +14,7 @@ import twu  from './tabulon-winutils.js';
 import { Store } from './tauri-bridge.js';
 import { initI18n, t, getLocale } from './tabulon-i18n.js';
 import { gameTitle } from './localized-field.js';
-import { ExtractMoves, BookFen, BookLabel, BookGame, IsTsume } from './book-format.js';
+import { ExtractMoves, BookFen, BookLabel, BookGame, IsTsume, NormalizeBookFen } from './book-format.js';
 
 // Re-export : tests/test-book.mjs importe ExtractMoves depuis ce module.
 export { ExtractMoves };
@@ -31,6 +31,26 @@ const fileName = (function () {
     }
     return 'PJN';
 })();
+
+/*
+ * REFUS VISIBLE, ET DANS CETTE FENETRE-CI.
+ *
+ * Une position que jocly ne sait pas lire faisait quand meme ouvrir une
+ * fenetre de jeu : elle s'y plaignait en console -- « import failed: parse
+ * error » -- posait un plateau vide et n'en disait rien. L'utilisateur voyait
+ * une partie qui ne s'ouvre pas, sans savoir pourquoi ni ou regarder.
+ *
+ * On essaie donc la position AVANT d'ouvrir quoi que ce soit, ici ou le clic
+ * a eu lieu, et on garde la liste affichee : les autres parties du livre,
+ * elles, sont peut-etre lisibles.
+ */
+function ShowWarning(text) {
+    const box = document.querySelector('.book-content .message');
+    const msg = box.querySelector('div > div');
+    msg.textContent = text;
+    msg.style.display = '';
+    box.style.display = '';
+}
 
 function ShowError(error) {
     document.querySelector('.book-content ul').style.display = 'none';
@@ -84,6 +104,40 @@ async function MatchGame(match) {
     return declared;
 }
 
+/**
+ * Les lettres de l'arrangement joue, quand le jeu en a (`pieceMap` du
+ * manifeste) : un [FEN] de S-Chess ecrit « H » la ou jocly attend « C ».
+ */
+async function SetupPieceMap(game, setup) {
+    const config = await Jocly.getGameConfig(game).catch(() => null);
+    const level = (config?.model?.levels || []).find(l => l && l.ai === 'fairy-stockfish');
+    if (!level) return null;
+    if (level.variant) return level.pieceMap || null;
+    if (!Number.isInteger(setup)) return null;
+    const found = (level.variants || []).find(v => v && v.setup === setup);
+    return (found && found.pieceMap) || level.pieceMap || null;
+}
+
+/** La position se charge-t-elle ? Rend le message d'erreur, ou null. */
+async function PositionRefused(game, board, tsume) {
+    if (!board) return null;
+    let trial = null;
+    try {
+        trial = await Jocly.createMatch(game);
+        await trial.load({ game, initialBoard: board, playedMoves: [], tsume: !!tsume });
+        return null;
+    } catch (e) {
+        return e && e.message ? e.message : String(e);
+    } finally {
+        // Une partie d'essai par fichier ouvert : la rendre. Depuis jocly2
+        // next, destroy() libere aussi le jeu lui-meme (GameDestroyGame :
+        // worker d'IA, moteur Fairy-Stockfish), pas seulement sa vue. Un
+        // echec ici ne change rien au verdict.
+        if (trial && typeof trial.destroy === 'function')
+            Promise.resolve().then(() => trial.destroy()).catch(() => {});
+    }
+}
+
 async function OpenBookMatch(match, index, count) {
     const moves = ExtractMoves(match.text);
     const id = 'book-' + Date.now();
@@ -104,6 +158,20 @@ async function OpenBookMatch(match, index, count) {
      */
     const source = await store.get('book:' + gameName).catch(() => null);
     const setup = Number.isInteger(source?.preludeSetup) ? source.preludeSetup : null;
+
+    // La position d'abord : c'est le seul refus qui ne se rattrape pas plus
+    // loin. Les coups, eux, peuvent echouer en cours de route sans que la
+    // partie soit perdue -- la fenetre de jeu le dit et garde ce qu'elle a pu
+    // rejouer.
+    const declaredFen = BookFen(match.tags);
+    const refusal = await PositionRefused(game,
+        NormalizeBookFen(declaredFen, game, await SetupPieceMap(game, setup)),
+        IsTsume(match.text, match.tags));
+    if (refusal) {
+        console.warn('[book] position refusee :', refusal, '—', declaredFen);
+        return ShowWarning(t('book.positionRefused', { reason: refusal }));
+    }
+
     await store.set('fork:' + id, {
         book: {
             moves,

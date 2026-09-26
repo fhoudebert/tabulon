@@ -10,6 +10,7 @@
 //   package-lock.json     deux emplacements (racine + packages[""])
 //   app/package.json      version du paquet frontend
 //   src-tauri/Cargo.toml  version du crate
+//   src-tauri/Cargo.lock  entree du crate tabulon (le lock est versionne)
 //
 // Ce qui n'est PAS écrit, et pourquoi : src-tauri/tauri.conf.json porte
 // désormais `"version": "../package.json"`. Ce n'est pas une astuce, c'est le
@@ -95,6 +96,19 @@ function setVersion(version) {
     if (!line.test(head))
         throw new Error('src-tauri/Cargo.toml : aucune clé `version` dans [package]');
     if (write(cargoFile, head.replace(line, `$1"${version}"`) + rest)) touched.push('src-tauri/Cargo.toml');
+
+    // 5. Cargo.lock — l'entree du crate lui-meme, et elle seule. Le lock est
+    //    versionne (builds reproductibles) ; sans cette copie, cargo la
+    //    reecrirait au premier build apres un changement de version, et
+    //    l'arbre serait sale sans que personne n'y ait touche.
+    const lockRs = at('src-tauri', 'Cargo.lock');
+    if (existsSync(lockRs)) {
+        const text = readFileSync(lockRs, 'utf-8');
+        const entry = /(\[\[package\]\]\r?\nname = "tabulon"\r?\nversion = )"[^"]*"/;
+        if (!entry.test(text))
+            throw new Error('src-tauri/Cargo.lock : entree du crate tabulon introuvable');
+        if (write(lockRs, text.replace(entry, `$1"${version}"`))) touched.push('src-tauri/Cargo.lock');
+    }
 
     return { version, previous, touched };
 }

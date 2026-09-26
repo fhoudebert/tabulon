@@ -116,36 +116,3 @@ fn save_geometry(app: &AppHandle, key: &str, win: &WebviewWindow) -> tauri::Resu
     }
     Ok(())
 }
-
-/// Vérifie s'il existe une mise à jour disponible et l'installe si oui.
-/// Appelé une seule fois au démarrage (release uniquement, voir lib.rs).
-///
-/// Actuellement non appelée : le plugin updater est désactivé dans lib.rs
-/// tant que sa config (pubkey + endpoints) n'est pas définie — l'enregistrer
-/// sans elle fait paniquer l'app au démarrage. Cette fonction sera de nouveau
-/// utile une fois le plugin reconfiguré (pubkey + endpoints à définir).
-#[allow(dead_code)]
-pub async fn check_update(app: AppHandle) -> anyhow::Result<()> {
-    use tauri_plugin_updater::UpdaterExt;
-
-    let Some(update) = app.updater()?.check().await? else {
-        return Ok(());
-    };
-
-    log::info!("Update available: {} → {}", update.current_version, update.version);
-
-    let mut downloaded = 0u64;
-    update
-        .download_and_install(
-            |chunk_len, total| {
-                downloaded += chunk_len as u64;
-                if let Some(total) = total {
-                    log::info!("Update download: {downloaded}/{total} bytes");
-                }
-            },
-            || log::info!("Update downloaded, installing…"),
-        )
-        .await?;
-
-    Ok(())
-}
