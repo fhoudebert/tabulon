@@ -920,16 +920,28 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 ### Dependencies
 
 `npm audit` is clean in both workspaces and no install prints a deprecation
-warning; keep it that way. Two deliberate non-upgrades, so they don't get
-"fixed" by reflex:
+warning; keep it that way.
 
-- **jquery stays on 3.x.** It is not used by Tabulon's own code at all — it is
-  loaded as a global because *Jocly* needs it (`jocly.game.js`,
-  `jocly-xdview.js`). jQuery 4 removes long-deprecated APIs, so bumping it
-  would be a change to a third party's runtime, decided from the wrong repo.
-  3.7.1 carries no advisory.
-- **`@tauri-apps/*` are `^2` ranges** and already resolve to the latest 2.x;
-  there is nothing to pin or bump by hand.
+- **jquery 4** (from 1.0.x). Tabulon's own code does not use it, and neither
+  does Jocly *in these pages*: when a game is attached, `jocly.game.js`
+  loads its **own** `jquery.js` and `three.js` from the dist
+  (`BrowserScriptLoader.import`), which is what its views run on. The
+  `<script src="../node_modules/jquery/...">` tags of the app pages are an
+  inheritance from JoclyBoard; checked with jQuery 4 in Chromium (pages load,
+  `jQuery.fn.jquery === "4.0.0"`, a real game plays, replays and takes back).
+  If nothing turns up during the 1.0.x cycle, the tags and the dependency can
+  go.
+- **Rust crates**: `zip` 8, `json5` 1, `chacha20poly1305` 0.11 (RustCrypto's
+  `aead` 0.6: `Generate`/`TryFrom` replace `generate_nonce`/`from_slice`).
+  Two tests pin what must not change across such upgrades: a message sealed
+  by mogichex (`opens_a_message_sealed_by_mogichex`) and an archive written
+  by Info-ZIP like the published catalogue (`lit_une_archive_info_zip`,
+  fixture in `src-tauri/tests/fixtures/`).
+- **`Cargo.lock` is committed**; `cargo update` refreshes it within the
+  ranges of `Cargo.toml`. `rust-version` is the minimum the locked
+  dependencies require (`cargo metadata`), not a guess.
+- **`@tauri-apps/cli`** is the only npm dependency of the root package; the
+  crates are `"2"` ranges pinned by the lock.
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the

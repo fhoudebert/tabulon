@@ -551,6 +551,50 @@ mod tests {
 
     /// Booleens minifies par terser : `!0`/`!1` -> true/false, mais JAMAIS
     /// a l'interieur d'une chaine.
+    /// ARCHIVE DE REFERENCE : produite par Info-ZIP (`zip -r`), comme celles du
+    /// catalogue publie (scripts/make-extension.mjs), avec une entree
+    /// compressee en deflate et des repertoires. Epingle ce que la crate zip
+    /// doit savoir lire quelle que soit sa version : les extensions deja
+    /// telechargees par les utilisateurs ne changent pas avec elle.
+    #[test]
+    fn lit_une_archive_info_zip() {
+        use std::io::{Cursor, Read};
+        let bytes = include_bytes!("../../tests/fixtures/info-zip.tabulon-ext");
+        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes[..])).expect("archive lisible");
+        let mut manifest = String::new();
+        zip.by_name("extension.json").expect("manifeste").read_to_string(&mut manifest).unwrap();
+        let m: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+        assert_eq!(m["game"], "fixture-game");
+        let mut code = String::new();
+        zip.by_name("games/checkers/fixture-game-config.js").expect("entree deflate")
+            .read_to_string(&mut code).unwrap();
+        assert!(code.starts_with("exports.config") && code.len() == 1815, "contenu decompresse intact");
+        // Le parcours par index (import d'un module) voit aussi les repertoires.
+        let names: Vec<String> = (0..zip.len()).map(|i| zip.by_index(i).unwrap().name().to_string()).collect();
+        assert!(names.contains(&"games/checkers/".to_string()));
+    }
+
+    /// Ce que l'export ECRIT doit se relire : meme options que export_extension.
+    #[test]
+    fn ecrit_puis_relit_une_archive() {
+        use std::io::{Cursor, Read, Write};
+        let mut buf = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut buf);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file("extension.json", opts).unwrap();
+            zip.write_all(b"{\"formatVersion\":2}").unwrap();
+            zip.start_file("games/m/x.js", opts).unwrap();
+            zip.write_all("é".repeat(500).as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        let mut zip = zip::ZipArchive::new(Cursor::new(buf.into_inner())).unwrap();
+        let mut s = String::new();
+        zip.by_name("games/m/x.js").unwrap().read_to_string(&mut s).unwrap();
+        assert_eq!(s, "é".repeat(500));
+    }
+
     #[test]
     fn booleens_minifies_restaures() {
         assert_eq!(restore_minified_booleans("{obsolete:!1}"), "{obsolete:false}");

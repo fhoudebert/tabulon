@@ -23,7 +23,7 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chacha20poly1305::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, Generate, KeyInit},
     Key, XChaCha20Poly1305, XNonce,
 };
 
@@ -50,10 +50,10 @@ fn key_from_hex(hex: &str) -> Result<Key, String> {
         let s = std::str::from_utf8(chunk).map_err(|_| "cle non ASCII".to_string())?;
         bytes[i] = u8::from_str_radix(s, 16).map_err(|_| "cle non hexadecimale".to_string())?;
     }
-    // `Key::from_slice` PANIQUE si la longueur ne convient pas ; la garde
-    // ci-dessus est donc ce qui evite de faire tomber le processus sur une
-    // saisie de l'utilisateur.
-    Ok(*Key::from_slice(&bytes))
+    // Depuis un tableau de taille fixe : la longueur est garantie par le type,
+    // rien ne peut paniquer ici (l'ancien `Key::from_slice` paniquait sur une
+    // mauvaise longueur, d'ou la garde ci-dessus, toujours utile au message).
+    Ok(Key::from(bytes))
 }
 
 /// Scelle un texte. Rend `base64(nonce || chiffre)`.
@@ -65,7 +65,9 @@ fn key_from_hex(hex: &str) -> Result<Key, String> {
 #[tauri::command]
 pub fn seal_text(key: String, text: String) -> Result<String, String> {
     let cipher = XChaCha20Poly1305::new(&key_from_hex(&key)?);
-    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
+    // Aleatoire du systeme. `try_generate` plutot que `generate` : une
+    // source d'entropie indisponible rend une erreur, pas une panique.
+    let nonce = XNonce::try_generate().map_err(|_| "scellement impossible".to_string())?;
     let mut out = cipher
         .encrypt(&nonce, text.as_bytes())
         .map_err(|_| "scellement impossible".to_string())?;
@@ -91,7 +93,7 @@ pub fn open_text(key: String, sealed: String) -> Result<String, String> {
     }
     let (nonce, body) = raw.split_at(NONCE_LEN);
     let clear = cipher
-        .decrypt(XNonce::from_slice(nonce), body)
+        .decrypt(&XNonce::try_from(nonce).map_err(|_| "message illisible".to_string())?, body)
         .map_err(|_| "message illisible".to_string())?;
     String::from_utf8(clear).map_err(|_| "message illisible".to_string())
 }
@@ -165,6 +167,18 @@ mod tests {
 
     const KEY: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
     const OTHER: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+
+    /// VECTEUR FIXE, produit par le scelleur de mogichex (noble-ciphers,
+    /// js/remote/chat-sealer.js) avec un nonce impose. Les autres tests font
+    /// l'aller-retour Rust -> Rust : ils passeraient encore si une montee de
+    /// version de chacha20poly1305 changeait le format. Celui-ci epingle ce
+    /// qui circule reellement entre Tabulon, mogichex et joclymatch.
+    #[test]
+    fn opens_a_message_sealed_by_mogichex() {
+        let key = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string();
+        let sealed = "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXllBgHvCKFmNMXadcLwhFUTKa2at6eTf/SluSMGx2A3KPZ779Qa8OQjXIeDAFZqenCI4=";
+        assert_eq!(open_text(key, sealed.to_string()).unwrap(), "Bien joué — à toi de jouer ♞");
+    }
 
     #[test]
     fn seals_and_opens() {

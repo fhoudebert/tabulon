@@ -2,7 +2,7 @@
 name        = "tabulon"
 version     = "1.0.0"
 edition     = "2021"
-rust-version = "1.77"
+rust-version = "1.88"   # minimum exige par les dependances du Cargo.lock (cargo metadata)
 
 [lib]
 name       = "tabulon_lib"
@@ -21,8 +21,8 @@ tauri-plugin-shell   = "2"   # shell.openExternal + spawn moteurs (remplace chil
 tauri-plugin-dialog  = "2"   # boîtes de dialogue (remplace electron.dialog)
 tauri-plugin-os      = "2"   # détection plateforme (remplace os.platform())
 tauri-plugin-http    = "2"   # client HTTP cote Rust (relai jeu a distance) -- pas de CORS navigateur
-zip                  = { version = "2", default-features = false, features = ["deflate"] }  # extensions .tabulon-ext
-json5                = "0.4" # lecture de jocly-allgames.js (clés non quotées)
+zip                  = { version = "8", default-features = false, features = ["deflate"] }  # extensions .tabulon-ext
+json5                = "1" # lecture de jocly-allgames.js (clés non quotées)
 
 # ── Sérialisation ─────────────────────────────────────────────────────────────
 serde      = { version = "1", features = ["derive"] }
@@ -39,7 +39,7 @@ base64      = "0.22"      # décodage des frames JPEG vidéo, et scellement des 
 # distance (seal_cmds.rs). Pur Rust, aucune dépendance C — donc rien à
 # installer sur les trois plateformes. Le nonce de 192 bits est ce qui permet
 # de le tirer au hasard à chaque message sans compter les collisions.
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 # HMAC-SHA256 : dérivation de la clé d'une partie à partir de la clé de
 # communauté (seal_cmds.rs). Dériver plutôt qu'envoyer évite de faire circuler
 # quoi que ce soit — les deux joueurs recalculent la même clé chacun de leur
