@@ -57,7 +57,7 @@ From the `tabulon/` root, once `dist/` is in place:
 # 1. Root dependencies (Tauri CLI wrapper scripts)
 npm install
 
-# 2. Frontend dependencies (@tauri-apps/*, jquery, photonkit, jsdom for tests)
+# 2. Frontend test dependency (jsdom) -- the app itself has no npm runtime dependency
 npm --prefix app install
 
 # 3. Run in development mode
@@ -922,21 +922,32 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 `npm audit` is clean in both workspaces and no install prints a deprecation
 warning; keep it that way.
 
-- **jquery 4** (from 1.0.x). Tabulon's own code does not use it, and neither
-  does Jocly *in these pages*: when a game is attached, `jocly.game.js`
-  loads its **own** `jquery.js` and `three.js` from the dist
+- **No jQuery** (removed in 1.0.x). Tabulon's own code never used it, and
+  neither does Jocly in these pages: when a game is attached,
+  `jocly.game.js` loads its **own** `jquery.js` and `three.js` from the dist
   (`BrowserScriptLoader.import`), which is what its views run on. The
-  `<script src="../node_modules/jquery/...">` tags of the app pages are an
-  inheritance from JoclyBoard; checked with jQuery 4 in Chromium (pages load,
-  `jQuery.fn.jquery === "4.0.0"`, a real game plays, replays and takes back).
-  If nothing turns up during the 1.0.x cycle, the tags and the dependency can
-  go.
+  `<script>` tags inherited from JoclyBoard went, with the Electron
+  `window.module` shim that preceded them. Checked in Chromium: the 17 pages
+  load with no new error and no `jQuery` global, and a real game plays,
+  replays and takes back. The app now has **no npm runtime dependency**;
+  `npm run build` still runs `build:frontend` (`--omit=dev`), which prunes
+  jsdom from `app/node_modules` before `app/` is embedded, and
+  `test-html-assets` refuses any page loading from `node_modules/`.
 - **Rust crates**: `zip` 8, `json5` 1, `chacha20poly1305` 0.11 (RustCrypto's
   `aead` 0.6: `Generate`/`TryFrom` replace `generate_nonce`/`from_slice`).
   Two tests pin what must not change across such upgrades: a message sealed
   by mogichex (`opens_a_message_sealed_by_mogichex`) and an archive written
   by Info-ZIP like the published catalogue (`lit_une_archive_info_zip`,
   fixture in `src-tauri/tests/fixtures/`).
+- **Rust edition 2024** (from 1.0.x). `cargo fix --edition` changed two
+  things: `std::env::set_var` is now `unsafe` (the AppImage workaround in
+  `appimage_compat.rs`, called before any thread exists — see its SAFETY
+  comment), and a test helper's `impl Fn` return gained `+ use<>` (explicit
+  captures). It also flagged three *drop-order* changes of temporaries in
+  tail expressions (`engine_cmds.rs` around the engine read loop,
+  `peer_cmds.rs` around the guest handshake): in both, the temporaries are
+  completed futures or a socket already moved out, so dropping them earlier
+  changes nothing observable. `cargo test`: 81 passed, no warning.
 - **`Cargo.lock` is committed**; `cargo update` refreshes it within the
   ranges of `Cargo.toml`. `rust-version` is the minimum the locked
   dependencies require (`cargo metadata`), not a guess.

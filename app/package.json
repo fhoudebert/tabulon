@@ -3,9 +3,6 @@
   "private": true,
   "version": "1.0.0",
   "description": "Frontend HTML/JS de Tabulon (WebViews Tauri)",
-  "dependencies": {
-    "jquery": "^4.0.0"
-  },
   "devDependencies": {
     "jsdom": "^30.0.1"
   }
