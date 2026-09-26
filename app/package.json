@@ -1,11 +1,8 @@
 {
   "name": "tabulon-app",
   "private": true,
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "Frontend HTML/JS de Tabulon (WebViews Tauri)",
-  "dependencies": {
-    "jquery": "^3.7.1"
-  },
   "devDependencies": {
     "jsdom": "^30.0.1"
   }

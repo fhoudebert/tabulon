@@ -54,8 +54,15 @@ pub(crate) fn appimage_env_fixes(
 pub(crate) fn apply() {
     let is_appimage = std::env::var_os("APPIMAGE").is_some();
     for (name, value) in appimage_env_fixes(is_appimage, |k| std::env::var(k).ok()) {
-        // set_var avant tout thread GTK/webview : appele en tete de run().
-        std::env::set_var(name, value);
+        // SAFETY (set_var est `unsafe` depuis l'edition 2024 : modifier
+        // l'environnement pendant qu'un autre thread le lit est un
+        // comportement indefini). apply() est la PREMIERE instruction de
+        // run(), appele par main() avant tout le reste : aucun thread n'existe
+        // encore -- ni GTK/WebKit, ni le runtime tokio de Tauri, crees plus
+        // loin par tauri::Builder. C'est d'ailleurs la raison d'etre de cet
+        // emplacement : WebKitGTK lit ces variables a la creation du premier
+        // webview.
+        unsafe { std::env::set_var(name, value) };
         eprintln!("[tabulon] AppImage : {name}={value} (contournement WebKitGTK/EGL, \
                    posez la variable vous-meme pour un autre reglage)");
     }
@@ -66,7 +73,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {
         let map: HashMap<String, String> =
             pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         move |k: &str| map.get(k).cloned()

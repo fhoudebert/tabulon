@@ -37,15 +37,19 @@ let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
 
 /*
- * Les deux dossiers REMPLIS AU BUILD, et eux seuls.
+ * Le seul dossier REMPLI AU BUILD : ../browser/, le dist de jocly2 copié à
+ * côté de app/ (voir check-dist). Il n'est pas dans le dépôt, donc l'exiger
+ * sur le disque ferait échouer ce test sur un clone neuf — ce qui apprendrait
+ * vite à l'ignorer. Tout le reste doit exister : c'est précisément ce qui
+ * manquait.
  *
- * ../browser/ est le dist de jocly2 copié à côté de app/ (voir check-dist), et
- * ../node_modules/ vient de `npm --prefix app install`. Ni l'un ni l'autre
- * n'est dans le dépôt, donc les exiger sur le disque ferait échouer ce test
- * sur un clone neuf — ce qui apprendrait vite à l'ignorer. Tout le reste doit
- * exister : c'est précisément ce qui manquait.
+ * ../node_modules/ n'en fait PLUS partie : depuis le retrait de jQuery,
+ * l'application n'a plus aucune dépendance npm d'exécution, et `npm run
+ * build` élague app/node_modules (--omit=dev) avant de l'embarquer. Une page
+ * qui y chercherait un script le trouverait en développement et pas dans le
+ * binaire livré -- le test ci-dessous le refuse donc explicitement.
  */
-const BUILT = ['../browser/', '../node_modules/'];
+const BUILT = ['../browser/'];
 
 const pages = readdirSync(content).filter(f => f.endsWith('.html')).sort();
 ok(pages.length > 0, `${pages.length} pages inspectées`);
@@ -62,6 +66,13 @@ for (const page of pages) {
         if (BUILT.some(p => ref.startsWith(p))) continue;
         ok(existsSync(path.resolve(content, ref)), `${page} : ${ref} existe`);
     }
+}
+
+console.log('Aucune dépendance npm chargée par les pages');
+for (const page of pages) {
+    const text = readFileSync(path.join(content, page), 'utf-8');
+    ok(!/(?:href|src)\s*=\s*"[^"]*node_modules\//.test(text),
+        `${page} : rien sous node_modules/ (élagué du binaire livré)`);
 }
 
 console.log('Politique de sécurité');

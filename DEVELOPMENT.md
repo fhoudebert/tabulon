@@ -10,9 +10,12 @@ For the internal architecture (window inventory, JS ⇄ Rust protocol, satellite
 
 ## Prerequisites
 
-- **Rust** (stable) + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
-- **Node.js ≥ 20** (npm)
-- **Tauri CLI**: `cargo install tauri-cli --version "^2"`
+- **Rust ≥ 1.88** + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
+  (edition 2024; 1.88 is the minimum the locked dependencies require)
+- **Node.js 22.22+ or 24.15+** (npm) — the floor set by jocly2's build
+  (`engines` in its `package.json`); the CI uses Node 22
+- **Tauri CLI**: nothing to install globally — it is the `@tauri-apps/cli`
+  dev dependency, installed by `npm install` and used by the npm scripts
 - **ffmpeg** (only needed for the in-app video recording feature)
 - **Linux only** — system packages for Tauri's WebView (Debian/Ubuntu):
 
@@ -34,7 +37,9 @@ copied as-is to the root of this repo (`tabulon/dist/`, **not**
 `node_modules/`):
 
 ```bash
-git clone https://github.com/fhoudebert/jocly2.git
+# the jocly2 branch this Tabulon branch is developed against -- the same
+# as JOCLY2_REF in .github/workflows/tests.yml (2.9.x for Tabulon 1.0.x)
+git clone -b 2.9.x https://github.com/fhoudebert/jocly2.git
 cd jocly2
 npm install
 npm run build          # runs `gulp build --prod`, produces jocly2/dist/
@@ -57,7 +62,7 @@ From the `tabulon/` root, once `dist/` is in place:
 # 1. Root dependencies (Tauri CLI wrapper scripts)
 npm install
 
-# 2. Frontend dependencies (@tauri-apps/*, jquery, photonkit, jsdom for tests)
+# 2. Frontend test dependency (jsdom) -- the app itself has no npm runtime dependency
 npm --prefix app install
 
 # 3. Run in development mode
@@ -65,7 +70,13 @@ npm run dev            # equivalent to: cargo tauri dev
 
 # 4. Production build
 npm run build          # bundles in src-tauri/target/release/bundle/
+./compil.sh            # Linux: same build, then the AppImage fixes (below)
 ```
+
+Release builds are validated on **Linux (Debian/Ubuntu and Manjaro)** and
+**Windows**. On Linux prefer `./compil.sh`: it purges the AppImage's
+`libwayland-*` (see *Troubleshooting*) and sets what linuxdeploy needs on
+rolling distributions.
 
 > **After changing files in `app/`** (or deleting/adding any frontend file),
 > remove `src-tauri/target/` before rebuilding: stale embedded assets are the
@@ -920,16 +931,40 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 ### Dependencies
 
 `npm audit` is clean in both workspaces and no install prints a deprecation
-warning; keep it that way. Two deliberate non-upgrades, so they don't get
-"fixed" by reflex:
+warning; keep it that way.
 
-- **jquery stays on 3.x.** It is not used by Tabulon's own code at all — it is
-  loaded as a global because *Jocly* needs it (`jocly.game.js`,
-  `jocly-xdview.js`). jQuery 4 removes long-deprecated APIs, so bumping it
-  would be a change to a third party's runtime, decided from the wrong repo.
-  3.7.1 carries no advisory.
-- **`@tauri-apps/*` are `^2` ranges** and already resolve to the latest 2.x;
-  there is nothing to pin or bump by hand.
+- **No jQuery** (removed in 1.0.x). Tabulon's own code never used it, and
+  neither does Jocly in these pages: when a game is attached,
+  `jocly.game.js` loads its **own** `jquery.js` and `three.js` from the dist
+  (`BrowserScriptLoader.import`), which is what its views run on. The
+  `<script>` tags inherited from JoclyBoard went, with the Electron
+  `window.module` shim that preceded them. Checked in Chromium: the 17 pages
+  load with no new error and no `jQuery` global, and a real game plays,
+  replays and takes back. The app now has **no npm runtime dependency**;
+  `npm run build` still runs `build:frontend` (`--omit=dev`), which prunes
+  jsdom from `app/node_modules` before `app/` is embedded, and
+  `test-html-assets` refuses any page loading from `node_modules/`.
+- **Rust crates**: `zip` 8, `json5` 1, `chacha20poly1305` 0.11 (RustCrypto's
+  `aead` 0.6: `Generate`/`TryFrom` replace `generate_nonce`/`from_slice`).
+  Two tests pin what must not change across such upgrades: a message sealed
+  by mogichex (`opens_a_message_sealed_by_mogichex`) and an archive written
+  by Info-ZIP like the published catalogue (`lit_une_archive_info_zip`,
+  fixture in `src-tauri/tests/fixtures/`).
+- **Rust edition 2024** (from 1.0.x). `cargo fix --edition` changed two
+  things: `std::env::set_var` is now `unsafe` (the AppImage workaround in
+  `appimage_compat.rs`, called before any thread exists — see its SAFETY
+  comment), and a test helper's `impl Fn` return gained `+ use<>` (explicit
+  captures). It also flagged three *drop-order* changes of temporaries in
+  tail expressions (`engine_cmds.rs` around the engine read loop,
+  `peer_cmds.rs` around the guest handshake): in both, the temporaries are
+  completed futures or a socket already moved out, so dropping them earlier
+  changes nothing observable. `cargo test`: 81 passed, no warning; release
+  builds validated on Linux (Debian/Ubuntu, Manjaro) and Windows.
+- **`Cargo.lock` is committed**; `cargo update` refreshes it within the
+  ranges of `Cargo.toml`. `rust-version` is the minimum the locked
+  dependencies require (`cargo metadata`), not a guess.
+- **`@tauri-apps/cli`** is the only npm dependency of the root package; the
+  crates are `"2"` ranges pinned by the lock.
 
 Environment variables understood by the app itself: `TABULON_DIST`
 (absolute path to an external dist, or `embedded`/empty to force the
@@ -1394,6 +1429,31 @@ The startup safeguard in `src-tauri/src/appimage_compat.rs`
 remains: it addresses the *other*, driver-level failure mode of the same
 symptom (NVIDIA-proprietary and similar mixes) and was confirmed harmless
 on the machine above.
+
+### Building the AppImage outside Debian/Ubuntu: `failed to run linuxdeploy`
+
+An AppImage built on Debian runs on Manjaro, but building it *on* Manjaro
+stopped at `failed to bundle project: failed to run linuxdeploy`. Tauri
+bundles with linuxdeploy, itself an AppImage, which strips every embedded
+library. Two known failures outside Debian/Ubuntu end in that same line:
+
+- **FUSE** — running an AppImage needs `libfuse2`; Arch/Manjaro ship fuse3
+  only. `APPIMAGE_EXTRACT_AND_RUN=1` makes linuxdeploy extract itself and
+  run without FUSE.
+- **strip** — linuxdeploy's bundled `strip` is old and rejects the
+  libraries of rolling distributions (`.relr.dyn` sections, "unknown type
+  [0x13] section"). `NO_STRIP=true` skips it.
+
+`compil.sh` sets `APPIMAGE_EXTRACT_AND_RUN=1` everywhere (no effect where
+FUSE works) and `NO_STRIP=true` only on rolling distributions detected from
+`/etc/os-release` (`arch`, `manjaro`, `endeavouros`, `opensuse-tumbleweed`,
+`gentoo`) — elsewhere stripping works and keeps the AppImage smaller. A
+value already set in the environment wins. If the build still fails, it
+prints what to look for; `./compil.sh --verbose` passes `--verbose` to
+`tauri build` and shows linuxdeploy's own error.
+
+Validated: `./compil.sh` now builds the AppImage on Manjaro as well as on
+Debian/Ubuntu (and the Windows build is unaffected).
 
 ## License
 
