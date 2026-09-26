@@ -50,6 +50,9 @@ pub fn run() {
                         if let Ok(path) = video_cmds::finalize_recording(&state, match_id) {
                             log::info!("fenêtre play-{match_id} fermée : vidéo finalisée → {path}");
                         }
+                        // Les fenêtres liées à CETTE partie (horloge,
+                        // historique, joueurs...) n'ont plus rien à montrer.
+                        window_manager::close_match_satellites(window.app_handle(), match_id);
                     }
                 }
             }

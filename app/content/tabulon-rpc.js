@@ -101,7 +101,7 @@ function buildPayload(method, args) {
     // history
     // players
     // clock
-    open_clock:          ([matchId])               => ({ matchId }),
+    open_clock:          ([matchId, auto])         => ({ matchId, auto: !!auto }),
     // view
     // favorites
     is_favorite:         ([gameName])              => ({ gameName }),

@@ -1203,6 +1203,28 @@ Served actions: `get-clock`, `get-view-options`/`set-view-options`,
 `rollback-to`, `get-played-moves`… Pushes: `update-clock` (turn change,
 game end), `move-played` (after every move, a Load or a book replay).
 
+**Lifetime of the satellites.** The windows tied to *one match* — label
+`<prefix>-<matchId>` for `history`, `clock`, `chat`, `players`,
+`view-options`, `camera`, `save-template`, `moves`, plus
+`board-state-<game>-<matchId>` — close when that match's `play-<id>` window
+is destroyed (`lib.rs` → `window_manager::close_match_satellites`, the
+matching rule being `is_match_satellite`, unit-tested). Windows tied to a
+*game* (`info-`, `book-`, `invitation-`, `clock-setup-`, `open-position-`)
+serve other matches and stay open.
+
+**The clock of a timed game opens by itself.** When the match has a
+`countdown` clock (Clocked play, or a template with a clock), `play.js`
+calls `open_clock(matchId, auto = true)` right after
+`initSatelliteListeners()`, so the clock's first `get-clock` is answered.
+With `auto`, the window does not take the focus (the player plays on the
+board) and, when no position is remembered, is placed beside the board
+(`window_manager::beside`: right of it, else left, else against the screen
+edge — unit-tested). Its geometry is remembered under **one** key,
+`window:clock`, for all matches: the former per-match key was hardly ever
+read again, each match having a new id. Other matches keep their
+`countup` clock, not shown unless asked for
+(`tests/test-play-clock-open.mjs`).
+
 **PGN/PJN books**: hub.js drops the file content into the store
 (`book:{game}`); book.html parses it through the Rust `parse_pjn` command
 (tolerates \r\n and repeated empty lines) and lists the games; on click,
@@ -1348,6 +1370,25 @@ Sounds were the same gap in a different disguise: jocly builds them in
 element, and neither the tag list of the `setAttribute` hook nor the
 observer's selector included `source`/`audio`/`video` — so `.ogg`/`.mp3`
 came back 500 for externally-loaded games. Both lists now cover them.
+
+Backgrounds set from JS were a third one, and a **moving** one. Jocly's xd
+views draw 2D targets with jQuery `.css({"background-image": "url(…)"})`,
+i.e. `style.backgroundImage = …` (Annexation's `select-target-2d.png`,
+seen as a 500 "text" response). The hook wrapped the `backgroundImage`
+accessor of `CSSStyleDeclaration.prototype` — but where that accessor
+lives depends on the engine, and it has changed: the CSSOM spec introduced
+`CSSStyleProperties`, and **WebKitGTK 2.52** moved the properties onto
+`CSSStyleProperties.prototype`; **Chromium (WebView2)** has no accessor at
+all (a data property per instance). The hook no longer installed itself,
+silently. It now wraps the accessor on every prototype that carries it,
+and the document observer also watches the **`style` attribute**
+(`attributeFilter: ['style']`) to catch the Chromium case — its callback
+runs as a microtask, before the style recalc that would fetch the image
+(checked in Chromium: only the `tabulon-dist://` request goes out).
+Verified in the real WebKitGTK 2.52 (`python3-gi`, Xvfb) and in Chromium,
+for `style.backgroundImage`, `style['background-image']`, `cssText` and
+`setAttribute('style')`; `tests/test-dist-override.mjs` replays the three
+layouts (jsdom itself now uses the `CSSStyleProperties` one).
 **A 500 is the signature of this whole family**: `dist_override.rs` only
 ever answers 200 or 404, so a 500 means the asset was never rewritten and
 went to the app protocol.

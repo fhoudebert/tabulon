@@ -97,6 +97,18 @@ function __applyDistRewrite() {
     } catch (e) { /* style non modifiable : ignore */ }
   }
 
+  // Attribut style d'un element : ses url(...) vers le dist externe. Ne
+  // reecrit que si quelque chose change -- une URL deja reecrite l'est a
+  // l'identique, ce qui evite de relancer l'observateur en boucle.
+  function rewriteInlineStyle(el) {
+    try {
+      var v = el.getAttribute && el.getAttribute('style');
+      if (!v || v.indexOf('url(') === -1) return;
+      var r = rewriteCssText(v);
+      if (r !== v) el.setAttribute('style', r);
+    } catch (e) { /* ignore */ }
+  }
+
   function rewriteEl(el) {
     var attr = el.tagName === 'LINK' ? 'href' : 'src';
     var v = el.getAttribute && el.getAttribute(attr);
@@ -144,8 +156,15 @@ function __applyDistRewrite() {
   try {
     new MutationObserver(function (muts) {
       muts.forEach(function (mu) {
+        // 7 bis. Un style inline qui a change (style.backgroundImage = …
+        // la ou aucun accesseur n'est interceptable, voir 5). Le callback
+        // passe en microtache, avant le recalcul de style qui lancerait le
+        // chargement de l'image.
+        if (mu.type === 'attributes') { rewriteInlineStyle(mu.target); return; }
         mu.addedNodes && mu.addedNodes.forEach(function (n) {
           if (n.nodeType !== 1) return;
+          rewriteInlineStyle(n);
+          n.querySelectorAll && n.querySelectorAll('[style*="url("]').forEach(rewriteInlineStyle);
           if (n.tagName === 'IFRAME') injectIntoIframe(n);
           if (/^(SCRIPT|IMG|LINK|SOURCE|AUDIO|VIDEO)$/.test(n.tagName)) rewriteEl(n);
           if (n.tagName === 'STYLE') rewriteStyleEl(n);
@@ -154,7 +173,7 @@ function __applyDistRewrite() {
           n.querySelectorAll && n.querySelectorAll('iframe').forEach(injectIntoIframe);
         });
       });
-    }).observe(document, { childList: true, subtree: true });
+    }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
   } catch (e) { console.warn('[dist-rewrite] MutationObserver non installe:', e); }
 
   // 2. fetch() — les règles/descriptions/crédits et data des jeux.
@@ -202,8 +221,19 @@ function __applyDistRewrite() {
     }
   } catch (e) { /* non redéfinissable : ignore */ }
 
-  // 5. style.backgroundImage: url(...) posé en JS (vignettes du hub). Passe par
-  //    le CSSOM, hors fetch/img/observer. On réécrit les url(...) au setter.
+  // 5. style.backgroundImage: url(...) posé en JS (vignettes du hub, cibles
+  //    2D des vues xd de Jocly via jQuery .css()). Passe par le CSSOM, hors
+  //    fetch/img/observer. On réécrit les url(...) au setter.
+  //
+  //    OU vit l'accesseur depend du moteur, et il a BOUGE : la spec CSSOM a
+  //    cree l'interface CSSStyleProperties, et WebKitGTK 2.52 y a deplace les
+  //    proprietes (CSSStyleProperties.prototype, plus sur
+  //    CSSStyleDeclaration.prototype). Le crochet ne cherchait que ce
+  //    dernier : il ne se posait plus, silencieusement, et la cible 2D
+  //    d'Annexation partait sur le protocole d'app -> 500. On pose donc le
+  //    crochet sur TOUT prototype qui porte l'accesseur. Chromium (WebView2)
+  //    n'en a aucun -- une propriete de donnees par instance : c'est
+  //    l'observateur d'attribut `style` (7 bis) qui couvre ce cas.
   try {
     var SP = window.CSSStyleDeclaration && window.CSSStyleDeclaration.prototype;
     if (SP && SP.setProperty) {
@@ -212,17 +242,23 @@ function __applyDistRewrite() {
         if (/background/i.test(prop) && val) val = rewriteCssText(val);
         return _setProp.call(this, prop, val, prio);
       };
-      ['backgroundImage', 'background'].forEach(function (name) {
-        var d = Object.getOwnPropertyDescriptor(SP, name);
-        if (d && d.set) {
-          Object.defineProperty(SP, name, {
+    }
+    [window.CSSStyleProperties, window.CSSStyleDeclaration].forEach(function (C) {
+      var P = C && C.prototype;
+      if (!P) return;
+      ['backgroundImage', 'background', 'background-image'].forEach(function (name) {
+        var d = Object.getOwnPropertyDescriptor(P, name);
+        if (d && d.set && !d.set.__distRewrite) {
+          var set = function (v) { d.set.call(this, rewriteCssText(v)); };
+          set.__distRewrite = true;
+          Object.defineProperty(P, name, {
             configurable: true, enumerable: d.enumerable,
             get: function () { return d.get.call(this); },
-            set: function (v) { d.set.call(this, rewriteCssText(v)); },
+            set: set,
           });
         }
       });
-    }
+    });
   } catch (e) { /* CSSOM non redéfinissable : ignore */ }
 
   // 6. Web Worker de l'IA. Après un coup, Jocly fait
