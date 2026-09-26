@@ -761,6 +761,58 @@ function PlayerLabel(key) {
     return translateLevelLabel(value.label) || value.name || t('common.computer');
 }
 
+/*
+ * TENIR LA BOUCLE PENDANT QU'ON DEPLACE LA POSITION.
+ *
+ * Interrompre la saisie (abortUserTurn) ou la recherche en cours REVEILLE la
+ * boucle de jeu, qui repart aussitot sur la position du moment. Or reculer
+ * puis rejouer passe par des positions INTERMEDIAIRES : « Rejouer le dernier
+ * coup » recule d'un coup, et pendant ce laps c'est au tour de l'ordinateur.
+ * La boucle y lancait une recherche ; le coup rejoue arrivait, puis la
+ * recherche aboutissait et jouait PAR-DESSUS -- un coup du mauvais camp,
+ * suivi de la reponse de l'ordinateur. Mesure au navigateur avec le vrai
+ * jocly : 2 coups avant « Rejouer », 4 apres.
+ *
+ * holdLoop() demande a la boucle de s'arreter au DEBUT de son prochain tour
+ * (elle y attend releaseLoop()) et rend une promesse resolue quand elle y est
+ * -- ou tout de suite si elle ne tourne pas. withLoopHeld() enchaine le tout :
+ * demander l'arret, interrompre saisie / recherche / attente distante, attendre
+ * l'arret, changer la position, relacher.
+ */
+let loopHoldRequested = false;
+let loopParked = false;
+let loopParkWaiters = [];
+let loopRelease = null;
+
+function holdLoop() {
+    loopHoldRequested = true;
+    if (!loopActive || loopParked) return Promise.resolve();
+    return new Promise(r => loopParkWaiters.push(r));
+}
+
+function releaseLoop() {
+    loopHoldRequested = false;
+    const r = loopRelease;
+    loopRelease = null;
+    if (r) r();
+}
+
+function wakeLoopHolders() {
+    const waiters = loopParkWaiters;
+    loopParkWaiters = [];
+    waiters.forEach(r => r());
+}
+
+async function withLoopHeld(reason, fn) {
+    const parked = holdLoop();
+    await joclyMatch.abortMachineSearch().catch(() => {});
+    await joclyMatch.abortUserTurn().catch(() => {});
+    cancelRemoteWait(reason);
+    await parked;
+    try { return await fn(); }
+    finally { releaseLoop(); }
+}
+
 async function rearmAfterPositionChange() {
     gameResult = null;
     await joclyMatch?.abortUserTurn().catch(() => {});
@@ -773,6 +825,16 @@ async function gameLoop() {
     console.info('[play] gameLoop started');
     try {
         while (loopActive) {
+            if (loopHoldRequested) {
+                // Arret demande (withLoopHeld) : on se signale, puis on attend
+                // d'etre relache avant de relire la position.
+                loopParked = true;
+                const released = new Promise(r => { loopRelease = r; });
+                wakeLoopHolders();
+                await released;
+                loopParked = false;
+                continue;
+            }
             if (paused) {
                 await new Promise(r => setTimeout(r, 200));
                 continue;
@@ -950,6 +1012,9 @@ async function gameLoop() {
         console.error('[play] gameLoop error:', e);
         UpdateFooter('');
     }
+    // Une boucle qui s'arrete (fin de partie) ne se garera plus : ne laisser
+    // personne attendre qu'elle le fasse.
+    wakeLoopHolders();
     console.info('[play] gameLoop ended');
 }
 
@@ -2297,29 +2362,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         const block = takebackBlock();
         if (block) { UpdateFooter(t(block)); return; }
         const remote = hasRemoteSide();
-        await joclyMatch.abortUserTurn().catch(() => {});
-        await joclyMatch.abortMachineSearch().catch(() => {});
-        cancelRemoteWait('takeback');
+        const changed = await withLoopHeld('takeback', async () => {
+            const moves = await joclyMatch.getPlayedMoves().catch(() => []);
+            const n = moves?.length || 0;
+            if (n === 0) return false;
 
-        const moves = await joclyMatch.getPlayedMoves().catch(() => []);
-        const n = moves?.length || 0;
-        if (n === 0) return;
-
-        // Reculer coup par coup jusqu'à trouver une position où c'est
-        // au tour d'un humain de jouer, en utilisant getTurn() comme
-        // source de vérité (fiable pour tous les jeux, y compris ceux
-        // où le premier joueur n'est pas PLAYER_A).
-        // Un adversaire distant n'est pas un humain LOCAL (players[turn] est
-        // son descripteur) : on revient donc a NOTRE tour precedent, ce qui
-        // retire notre coup et sa reponse -- « je reprends ma betise ».
-        for (let target = n - 1; target >= 0; target--) {
-            await joclyMatch.rollback(target);
-            if (target === 0) break;  // début de partie, on s'arrête
-            const turn = await joclyMatch.getTurn().catch(() => null);
-            if (!players[turn]) break;  // tour humain trouvé
-        }
-        if (remote) await PublishTakeback();
-        else await resyncRemoteChannelBaseline();
+            // Reculer coup par coup jusqu'à trouver une position où c'est
+            // au tour d'un humain de jouer, en utilisant getTurn() comme
+            // source de vérité (fiable pour tous les jeux, y compris ceux
+            // où le premier joueur n'est pas PLAYER_A).
+            // Un adversaire distant n'est pas un humain LOCAL (players[turn] est
+            // son descripteur) : on revient donc a NOTRE tour precedent, ce qui
+            // retire notre coup et sa reponse -- « je reprends ma betise ».
+            for (let target = n - 1; target >= 0; target--) {
+                await joclyMatch.rollback(target);
+                if (target === 0) break;  // début de partie, on s'arrête
+                const turn = await joclyMatch.getTurn().catch(() => null);
+                if (!players[turn]) break;  // tour humain trouvé
+            }
+            if (remote) await PublishTakeback();
+            else await resyncRemoteChannelBaseline();
+            return true;
+        });
+        if (!changed) { await rearmAfterPositionChange(); return; }
         UpdateFooter('');
         emit(`play-event:${matchId}:move-played`, null).catch(() => {});
         await rearmAfterPositionChange();
@@ -2329,11 +2394,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!joclyMatch) return;
         const block = restartBlock();
         if (block) { UpdateFooter(t(block)); return; }
-        await joclyMatch.abortUserTurn().catch(() => {});
-        await joclyMatch.abortMachineSearch().catch(() => {});
-        cancelRemoteWait('restart');
-        await joclyMatch.rollback(0);
-        await resyncRemoteChannelBaseline();
+        await withLoopHeld('restart', async () => {
+            await joclyMatch.rollback(0);
+            await resyncRemoteChannelBaseline();
+        });
         paused = false;
         UpdatePause();
         UpdateFooter('');
@@ -2390,18 +2454,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         const n = moves?.length || 0;
         if (n === 0) return;
 
-        // La recherche machine d'abord : reculer sous une recherche en cours
-        // la ferait aboutir sur une position qui n'est plus la.
-        await joclyMatch.abortMachineSearch().catch(() => {});
-        await joclyMatch.abortUserTurn().catch(() => {});
-
-        await joclyMatch.rollback(n - 1).catch(() => {});
-        // Et on le rejoue : c'est tout l'objet du bouton. En cas d'echec, on
-        // ne laisse PAS la partie un demi-coup en arriere -- mieux vaut une
-        // animation manquee qu'une position fausse.
-        await joclyMatch.playMove(moves[n - 1]).catch(async (e) => {
-            console.warn('[play] rejeu impossible :', e.message || e);
-            await joclyMatch.rollback(n).catch(() => {});
+        // Boucle TENUE pendant tout le rejeu : la position intermediaire
+        // (un coup en arriere) est le plus souvent au tour de l'ordinateur,
+        // et la boucle y lancait une recherche qui jouait ensuite par-dessus
+        // le coup rejoue (voir withLoopHeld).
+        await withLoopHeld('replay', async () => {
+            await joclyMatch.rollback(n - 1).catch(() => {});
+            // Et on le rejoue : c'est tout l'objet du bouton. En cas d'echec,
+            // on ne laisse PAS la partie un demi-coup en arriere -- mieux vaut
+            // une animation manquee qu'une position fausse.
+            await joclyMatch.playMove(moves[n - 1]).catch(async (e) => {
+                console.warn('[play] rejeu impossible :', e.message || e);
+                await joclyMatch.rollback(n).catch(() => {});
+            });
         });
 
         await rearmAfterPositionChange();

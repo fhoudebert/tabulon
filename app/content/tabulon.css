@@ -1039,6 +1039,9 @@ strong { font-weight: 600; }
 /* Les sections de l'ecran Preferences : un peu d'air entre elles, sinon les
    deux sujets -- l'affichage et les conversations -- se lisent comme un seul. */
 .prefs-section { margin-top: 22px; }
+/* Et une marge a gauche : sans elle, titres, cases et explications collaient
+   au bord du volet. Meme retrait que le volet « A propos ». */
+#display { padding: 0 24px 24px; }
 
 #button-chat { position: relative; }
 #button-chat.has-unread::after {

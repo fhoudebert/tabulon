@@ -13,7 +13,8 @@
 // rétablirait silencieusement la divergence.
 //
 // Usage : npm test  (ou node tests/test-version-sync.mjs)
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, copyFileSync, rmSync } from 'fs';
+import os from 'os';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -55,6 +56,14 @@ console.log('Fichiers dérivés');
     const head = cargo.slice(0, cargo.indexOf('\n[', cargo.indexOf('[package]') + 1));
     const found = /^\s*version\s*=\s*"([^"]*)"/m.exec(head);
     ok(found && found[1] === version, `src-tauri/Cargo.toml (trouvé : ${found?.[1]})`);
+
+    // Cargo.lock est versionné : son entrée du crate doit suivre, sinon cargo
+    // la réécrit au premier build et l'arbre est sale sans raison apparente.
+    if (existsSync(at('src-tauri', 'Cargo.lock'))) {
+        const lock = readFileSync(at('src-tauri', 'Cargo.lock'), 'utf-8');
+        const entry = /\[\[package\]\]\r?\nname = "tabulon"\r?\nversion = "([^"]*)"/.exec(lock);
+        ok(entry && entry[1] === version, `src-tauri/Cargo.lock (trouvé : ${entry?.[1]})`);
+    }
 }
 
 console.log('Outillage');
@@ -69,7 +78,20 @@ console.log('Outillage');
     // Le script doit être idempotent : relancé sur un dépôt à jour, il ne doit
     // rien réécrire. Sinon `npm test` salirait l'arbre de travail, et un
     // horodatage modifié sur Cargo.toml relancerait une compilation complète.
-    const out = execFileSync(process.execPath, [at('scripts', 'set-version.mjs')], { encoding: 'utf-8' });
+    //
+    // On le lance sur une COPIE des fichiers VERSIONNÉS. Lancé sur le dépôt
+    // lui-même, il corrigeait au passage app/package-lock.json -- fichier
+    // ignoré par git, propre à chaque poste, et resté sur l'ancien numéro
+    // après un changement de branche : la suite échouait au premier passage
+    // et passait au second, parce qu'elle avait elle-même modifié l'arbre.
+    const tmp = mkdtempSync(path.join(os.tmpdir(), 'tabulon-version-'));
+    for (const rel of ['package.json', 'package-lock.json', 'app/package.json',
+                       'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'scripts/set-version.mjs']) {
+        mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
+        copyFileSync(at(rel), path.join(tmp, rel));
+    }
+    const out = execFileSync(process.execPath, [path.join(tmp, 'scripts', 'set-version.mjs')], { encoding: 'utf-8' });
+    rmSync(tmp, { recursive: true, force: true });
     ok(/déjà à jour/.test(out), 'relancé sur un dépôt à jour, il n\'écrit rien');
 
     // Et il refuse un numéro qui ne passerait ni chez npm ni chez cargo.
@@ -89,7 +111,7 @@ console.log('Aucune copie oubliée ailleurs');
     try {
         files = execFileSync('git', ['-C', root, 'grep', '-l', '-F', version, '--',
             ':!package.json', ':!package-lock.json', ':!app/package.json',
-            ':!src-tauri/Cargo.toml', ':!tests/test-version-sync.mjs'],
+            ':!src-tauri/Cargo.toml', ':!src-tauri/Cargo.lock', ':!tests/test-version-sync.mjs'],
             { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
     } catch { /* git grep sort en 1 quand il ne trouve rien : c'est le cas nominal */ }
     ok(files.length === 0,

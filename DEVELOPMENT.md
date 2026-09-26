@@ -915,7 +915,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
 | `check-syntax.mjs` | `npm run lint`. Runs `node --check` over `app/content/`, `scripts/` and `tests/` — real syntax errors only, no style rules, **no dependency**, and it exits non-zero when it finds something. Replaces `jshint`, removed in favour of this: jshint's own last release (2.13.6) pinned `cli@1.0.1`, which brought every security advisory and both deprecation warnings in the repo, and with no `.jshintrc` it linted ES2020 code as ES5 and reported 2169 false errors that `|| true` silently discarded. If real linting is wanted later, ESLint is the candidate — there were no jshint rules to preserve. |
-| `set-version.mjs` | Propagates the release number. **`package.json` (root) is the single source**; `npm version <x.y.z>` bumps it and the `version` lifecycle hook runs this script to update `app/package.json`, `src-tauri/Cargo.toml` and both spots in `package-lock.json`. `npm run set-version <x.y.z>` does the same without the git commit/tag; with no argument it just re-propagates the current number. `src-tauri/tauri.conf.json` is *not* written: its `version` field holds `"../package.json"`, a documented form of the field, so Tauri reads the source directly. `tests/test-version-sync.mjs` fails the build if any of these drift apart. |
+| `set-version.mjs` | Propagates the release number. **`package.json` (root) is the single source**; `npm version <x.y.z>` bumps it and the `version` lifecycle hook runs this script to update `app/package.json`, `src-tauri/Cargo.toml`, the `tabulon` entry of the committed `src-tauri/Cargo.lock` and both spots in `package-lock.json`. `npm run set-version <x.y.z>` does the same without the git commit/tag; with no argument it just re-propagates the current number. `src-tauri/tauri.conf.json` is *not* written: its `version` field holds `"../package.json"`, a documented form of the field, so Tauri reads the source directly. `tests/test-version-sync.mjs` fails the build if any of these drift apart. |
 
 ### Dependencies
 
@@ -1084,6 +1084,16 @@ necessary, both fixed there:
   board, "player B wins" still on screen. The helper restarts the loop in
   that case, and the take-back handler now also clears the footer and emits
   `move-played` (the History window was not refreshed either).
+- *Intermediate positions.* Replay last move, Take back and Restart go
+  through positions that are not the final one (Replay steps back one move
+  before playing it again, usually landing on the computer's turn).
+  Aborting the input woke the loop, which started a search there; the
+  search then played over the final position — 2 moves before Replay, 4
+  after, measured with the real jocly. These handlers run inside
+  `withLoopHeld()`: the loop is asked to stop at the top of its next turn,
+  input / search / remote wait are aborted, the handler waits until the
+  loop is parked, changes the position, then releases it
+  (`tests/test-play-replay.mjs`).
 
 `HumanTurn()` is never called directly — it is jocly-internal, reached
 through `userTurn()`.
