@@ -10,9 +10,12 @@ For the internal architecture (window inventory, JS ⇄ Rust protocol, satellite
 
 ## Prerequisites
 
-- **Rust** (stable) + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
-- **Node.js ≥ 20** (npm)
-- **Tauri CLI**: `cargo install tauri-cli --version "^2"`
+- **Rust ≥ 1.88** + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
+  (edition 2024; 1.88 is the minimum the locked dependencies require)
+- **Node.js 22.22+ or 24.15+** (npm) — the floor set by jocly2's build
+  (`engines` in its `package.json`); the CI uses Node 22
+- **Tauri CLI**: nothing to install globally — it is the `@tauri-apps/cli`
+  dev dependency, installed by `npm install` and used by the npm scripts
 - **ffmpeg** (only needed for the in-app video recording feature)
 - **Linux only** — system packages for Tauri's WebView (Debian/Ubuntu):
 
@@ -34,7 +37,9 @@ copied as-is to the root of this repo (`tabulon/dist/`, **not**
 `node_modules/`):
 
 ```bash
-git clone https://github.com/fhoudebert/jocly2.git
+# the jocly2 branch this Tabulon branch is developed against -- the same
+# as JOCLY2_REF in .github/workflows/tests.yml (2.9.x for Tabulon 1.0.x)
+git clone -b 2.9.x https://github.com/fhoudebert/jocly2.git
 cd jocly2
 npm install
 npm run build          # runs `gulp build --prod`, produces jocly2/dist/
@@ -65,7 +70,13 @@ npm run dev            # equivalent to: cargo tauri dev
 
 # 4. Production build
 npm run build          # bundles in src-tauri/target/release/bundle/
+./compil.sh            # Linux: same build, then the AppImage fixes (below)
 ```
+
+Release builds are validated on **Linux (Debian/Ubuntu and Manjaro)** and
+**Windows**. On Linux prefer `./compil.sh`: it purges the AppImage's
+`libwayland-*` (see *Troubleshooting*) and sets what linuxdeploy needs on
+rolling distributions.
 
 > **After changing files in `app/`** (or deleting/adding any frontend file),
 > remove `src-tauri/target/` before rebuilding: stale embedded assets are the
@@ -947,7 +958,8 @@ warning; keep it that way.
   tail expressions (`engine_cmds.rs` around the engine read loop,
   `peer_cmds.rs` around the guest handshake): in both, the temporaries are
   completed futures or a socket already moved out, so dropping them earlier
-  changes nothing observable. `cargo test`: 81 passed, no warning.
+  changes nothing observable. `cargo test`: 81 passed, no warning; release
+  builds validated on Linux (Debian/Ubuntu, Manjaro) and Windows.
 - **`Cargo.lock` is committed**; `cargo update` refreshes it within the
   ranges of `Cargo.toml`. `rust-version` is the minimum the locked
   dependencies require (`cargo metadata`), not a guess.
@@ -1440,10 +1452,8 @@ value already set in the environment wins. If the build still fails, it
 prints what to look for; `./compil.sh --verbose` passes `--verbose` to
 `tauri build` and shows linuxdeploy's own error.
 
-Checked on Ubuntu with both variables forced: release build, `.deb`,
-`.rpm` and AppImage produced, libwayland purge verified, the AppImage
-starts under Xvfb. **Not** reproduced on Manjaro itself — which of the two
-causes applies there is to be confirmed with `--verbose`.
+Validated: `./compil.sh` now builds the AppImage on Manjaro as well as on
+Debian/Ubuntu (and the Windows build is unaffected).
 
 ## License
 
