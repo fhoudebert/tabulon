@@ -89,6 +89,19 @@ function ClockPayload() {
     };
 }
 
+// Partie CHRONOMETREE (mode countdown : « Clocked play » ou modele avec
+// horloge) : l'horloge s'ouvre d'elle-meme -- c'est l'information qu'on
+// surveille, et elle n'apparaissait que si l'on pensait a cliquer. Ouverte
+// APRES initSatelliteListeners() : sa premiere demande (get-clock) trouve
+// ainsi quelqu'un pour repondre. `auto` : sans prendre le focus au plateau,
+// et placee a cote de lui (voir open_clock, cote Rust). Les autres parties
+// ont une horloge countup, qu'on ne montre pas d'office.
+function OpenClockIfTimed() {
+    if (clockConfig?.mode !== 'countdown') return;
+    tRpc.call('open_clock', matchId, true)
+        .catch(e => console.warn('[play] ouverture de l’horloge :', e));
+}
+
 function EmitClock() {
     emit(`play-event:${matchId}:update-clock`, ClockPayload()).catch(() => {});
 }
@@ -3088,6 +3101,7 @@ async function BookReplay(book) {
     // Convention : requête  = 'play-req:{matchId}:{action}'
     //              réponse  = 'play-rep:{matchId}:{action}'
     initSatelliteListeners();
+    OpenClockIfTimed();
 
     UpdatePause();
     await twu.ready();

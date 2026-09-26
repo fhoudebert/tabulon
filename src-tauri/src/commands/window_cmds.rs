@@ -28,8 +28,8 @@ pub async fn open_clock_setup(app: AppHandle, game_name: String) -> Result<(), S
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-use crate::window_manager::{open_window, WindowOptions};
-use tauri::{AppHandle, Emitter};
+use crate::window_manager::{beside, open_window, open_window_with, OpenExtras, WindowOptions};
+use tauri::{AppHandle, Emitter, Manager};
 use serde_json::Value;
 // urlencoding est déjà une dépendance transitive de Tauri
 
@@ -54,17 +54,46 @@ pub async fn open_history(app: AppHandle, match_id: u32, game_name: String) -> R
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// rpc.call("openClock", matchId)
+/// rpc.call("open_clock", matchId, auto)
+///
+/// `auto` : ouverture d'office par la fenêtre de jeu d'une partie
+/// chronométrée -- sans prendre le focus (le joueur joue sur le plateau) et,
+/// faute de position mémorisée, à côté du plateau plutôt que là où le système
+/// la poserait, souvent par-dessus.
+///
+/// La géométrie est mémorisée sous UNE clé pour toutes les parties : chaque
+/// partie a un nouvel identifiant, et une clé par partie (l'ancien
+/// `window:clock-<id>`) n'était donc presque jamais relue.
 #[tauri::command]
-pub async fn open_clock(app: AppHandle, match_id: u32) -> Result<(), String> {
-    open_window(&app, WindowOptions {
+pub async fn open_clock(app: AppHandle, match_id: u32, auto: Option<bool>) -> Result<(), String> {
+    const WIDTH: f64 = 400.0;
+    let auto = auto.unwrap_or(false);
+    let extras = OpenExtras {
+        focused: !auto,
+        default_position: if auto { clock_position(&app, match_id, WIDTH) } else { None },
+    };
+    open_window_with(&app, WindowOptions {
         label: &format!("clock-{match_id}"),
         url:   &format!("content/clock.html?id={match_id}"),
         title: &format!("Clock #{match_id}"),
-        width: 400.0, height: 220.0,
+        width: WIDTH, height: 220.0,
         min_width: 200.0, min_height: 100.0,
-        persist_key: Some(format!("window:clock-{match_id}")),
-    }).map(|_| ()).map_err(|e| e.to_string())
+        persist_key: Some("window:clock".to_string()),
+    }, extras).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// À côté de la fenêtre de jeu `play-<id>`, dans les bornes de son écran.
+/// None si l'une ou l'autre information manque : le système place alors la
+/// fenêtre, comme avant.
+fn clock_position(app: &AppHandle, match_id: u32, width: f64) -> Option<(f64, f64)> {
+    let play = app.get_webview_window(&format!("play-{match_id}"))?;
+    let scale = play.scale_factor().ok()?;
+    let pos = play.outer_position().ok()?.to_logical::<f64>(scale);
+    let size = play.outer_size().ok()?.to_logical::<f64>(scale);
+    let monitor = play.current_monitor().ok()??;
+    let mpos = monitor.position().to_logical::<f64>(scale);
+    let msize = monitor.size().to_logical::<f64>(scale);
+    Some(beside((pos.x, pos.y, size.width), width, (mpos.x, msize.width)))
 }
 
 /// rpc.call("open_chat", matchId)

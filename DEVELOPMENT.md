@@ -1203,6 +1203,28 @@ Served actions: `get-clock`, `get-view-options`/`set-view-options`,
 `rollback-to`, `get-played-moves`… Pushes: `update-clock` (turn change,
 game end), `move-played` (after every move, a Load or a book replay).
 
+**Lifetime of the satellites.** The windows tied to *one match* — label
+`<prefix>-<matchId>` for `history`, `clock`, `chat`, `players`,
+`view-options`, `camera`, `save-template`, `moves`, plus
+`board-state-<game>-<matchId>` — close when that match's `play-<id>` window
+is destroyed (`lib.rs` → `window_manager::close_match_satellites`, the
+matching rule being `is_match_satellite`, unit-tested). Windows tied to a
+*game* (`info-`, `book-`, `invitation-`, `clock-setup-`, `open-position-`)
+serve other matches and stay open.
+
+**The clock of a timed game opens by itself.** When the match has a
+`countdown` clock (Clocked play, or a template with a clock), `play.js`
+calls `open_clock(matchId, auto = true)` right after
+`initSatelliteListeners()`, so the clock's first `get-clock` is answered.
+With `auto`, the window does not take the focus (the player plays on the
+board) and, when no position is remembered, is placed beside the board
+(`window_manager::beside`: right of it, else left, else against the screen
+edge — unit-tested). Its geometry is remembered under **one** key,
+`window:clock`, for all matches: the former per-match key was hardly ever
+read again, each match having a new id. Other matches keep their
+`countup` clock, not shown unless asked for
+(`tests/test-play-clock-open.mjs`).
+
 **PGN/PJN books**: hub.js drops the file content into the store
 (`book:{game}`); book.html parses it through the Rust `parse_pjn` command
 (tolerates \r\n and repeated empty lines) and lists the games; on click,

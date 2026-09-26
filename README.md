@@ -16,7 +16,7 @@ Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-def
 - **Take your time, or race the clock** — configurable game clocks, move history with takeback and replay, and rollback to any earlier position.
 - **Save and resume** — save games to files, reload them later, save favorite setups as templates, and mark favorite games for quick access.
 - **Capture your games** — record a video of the board or take 3D screenshots, right from the app.
-- **Open as many boards as you like** — every game runs in its own window; satellite windows (history, clock, players, possible moves…) follow the one you're playing.
+- **Open as many boards as you like** — every game runs in its own window; satellite windows (history, clock, players, possible moves…) follow the one you're playing and close with it. In a timed game the clock opens by itself, next to the board.
 - **Use it in English or French** — the interface follows your system language.
 
 ![A game in progress](game.png)
