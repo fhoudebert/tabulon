@@ -1,43 +1,15 @@
 // src-tauri/src/commands/fs_cmds.rs
 //
-// Accès aux fichiers locaux depuis les renderers WebView.
+// Accès aux fichiers locaux depuis les renderers WebView : lecture d'un
+// PJN, écriture des fichiers choisis par le dialogue natif (sauvegarde de
+// partie, instantané), informations sur le dist.
 //
-// Contexte : info.js chargeait les fichiers HTML de règles (rules.html,
-// description.html, credits.html) via XMLHttpRequest vers file://.
-// Tauri bloque les requêtes file:// depuis la WebView par conception.
-//
-// Solution : la commande read_text_file lit le fichier côté Rust et
-// retourne son contenu en String. info.js l'appelle via tRpc.call().
-//
-// Sécurité : les chemins autorisés sont limités aux répertoires déclarés
-// dans tauri.conf.json sous plugins.fs.scope.allow.
-// En pratique, les fichiers de règles Jocly sont dans l'AppDir (assets
-// bundlés) ou dans les répertoires de l'utilisateur ($DOCUMENT, $HOME).
+// Les règles des jeux ne passent plus par ici : info.js les charge par
+// fetch() (protocole de l'application ou tabulon-dist://), d'où le retrait de
+// read_text_file, qui lisait n'importe quel fichier absolu du disque.
 
 use std::fs;
 use std::path::Path;
-
-/// Lit un fichier texte (UTF-8) et retourne son contenu.
-///
-/// Utilisé par :
-///   - info.js     : charge rules.html / description.html / credits.html
-///                   depuis config.view.fullPath (répertoire asset Jocly)
-///
-/// Le chemin est validé : il doit être absolu et pointer vers un fichier
-/// existant. Le scope de tauri-plugin-fs applique en plus une whitelist
-/// de répertoires autorisés (définie dans tauri.conf.json).
-#[tauri::command]
-pub fn read_text_file(path: String) -> Result<String, String> {
-    let p = Path::new(&path);
-
-    // Refuser les chemins relatifs (évite les traversals naïfs)
-    if !p.is_absolute() {
-        return Err(format!("read_text_file: path must be absolute, got '{path}'"));
-    }
-
-    fs::read_to_string(p)
-        .map_err(|e| format!("read_text_file: cannot read '{path}': {e}"))
-}
 
 /// Parse un fichier PJN/PGN/PDN et retourne la liste des parties.
 /// Utilisé par jb-controller.js::openBook() car PJNParser.js n'est

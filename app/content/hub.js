@@ -1348,7 +1348,6 @@ tRpc.listen({
         if (await store.get('nav-last') === 'templates') UpdateTemplateList();
         UpdateDetailTemplates();    // synchroniser les templates du détail
     },
-    // update-available vient du plugin updater
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

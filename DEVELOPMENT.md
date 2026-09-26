@@ -98,6 +98,16 @@ Configuration group) lets you export any installed game as a single
 strictly what the game's config declares: the code bundles
 (`<game>-config/-model/-view.js`), the rules/credits/description pages, the
 thumbnail and the visuals — plus the index declaration in `extension.json`.
+
+**Trust model.** An extension is *code*, not data: its model and view run
+in the Jocly iframe, which is same-origin with the app and therefore
+reaches `window.__TAURI__` and every Rust command (`save_text_file` writes
+any absolute path). Its title, summary and rules are also inserted with
+`innerHTML`. Sanitizing that HTML would not change anything while the game
+code itself runs, so the boundary is the install step: the README tells
+users to install only trusted extensions. Hardening worth doing later:
+limit `save_text_file` / `save_data_uri_file` to paths the native save
+dialog just returned, and set a CSP (`app.security.csp` is `null`).
 Shared module resources (css, sounds, `res/` sprites/textures, rules graphs,
 fairy-stockfish engines) always stay with the module: importing a game
 requires its module to already exist in the target external dist, and
@@ -935,7 +945,16 @@ mocked, plus the real Jocly `dist/` for game data:
 ```bash
 npm test               # runs every tests/test-*.mjs and summarizes
 node tests/test-i18n.mjs   # or any single suite
+npm run test:rust      # Rust unit tests (cargo test in src-tauri)
+npm run test:all       # both
 ```
+
+**Continuous integration.** `.github/workflows/tests.yml` runs both on every
+push and pull request: it builds the jocly2 dist from the branch named by
+`JOCLY2_REF` (the one this Tabulon branch ships with — update it together
+with the target branch), then `check:dist`, `npm test` and `npm run
+test:rust`. Before the workflow existed, a Rust test had gone stale for
+weeks without anyone noticing.
 
 Prerequisites: `dist/` in place (see above), `dist-minimal/` generated
 (`npm run check:dist`) and `npm --prefix app install` (jsdom). The runner
@@ -1098,7 +1117,7 @@ dist), `tabulon.css`.
 in `tabulon-rpc.js`: **every new Rust command must be added there.**
 Current inventory (from `lib.rs`'s `generate_handler`):
 
-- `fs_cmds`: `parse_pjn`, `read_text_file`, `save_text_file`,
+- `fs_cmds`: `parse_pjn`, `save_text_file`,
   `save_data_uri_file`, `get_dist_info`
 - `hub_cmds`: `get_app_info`, `notify_user_response`
 - `match_cmds`: `new_match`, `is_favorite`, `set_favorite`,

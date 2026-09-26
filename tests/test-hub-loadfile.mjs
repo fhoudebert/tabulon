@@ -95,6 +95,8 @@ document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles: true 
 await waitFor(() => document.querySelectorAll('#game-list li.list-group-item').length > 0,
   'liste des jeux rendue');
 
+const notifierText = () => document.querySelector('.hub-notifier-text')?.textContent || '';
+
 // Depose un fichier dans #fileElem et declenche l'evenement change, comme le
 // ferait le selecteur natif.
 async function DropFile(name, text) {
@@ -104,14 +106,21 @@ async function DropFile(name, text) {
     configurable: true,
     value: [new dom.window.File([text], name, { type: 'text/plain' })],
   });
+  const errorsBefore = errors.length;
+  const bannerBefore = notifierText();
   input.dispatchEvent(new dom.window.Event('change'));
-  await waitFor(() => invokeCalls.length > before || errors.length,
-    'reaction au chargement de ' + name);
+  // Attendre l'ISSUE du chargement, pas le premier appel venu : le hub en
+  // emet d'autres en tache de fond (is_favorite...), et s'arreter au premier
+  // laissait new_match arriver apres la lecture -- echec une fois sur deux.
+  // Issues possibles : une partie ou un livre s'ouvre, la banniere change,
+  // ou une erreur est journalisee.
+  await waitFor(() => invokeCalls.slice(before).some(c => c.cmd === 'new_match' || c.cmd === 'open_book')
+      || notifierText() !== bannerBefore || errors.length > errorsBefore,
+    'issue du chargement de ' + name);
+  // Laisser passer un eventuel appel en trop (les cas negatifs le cherchent).
   await sleep(30);
   return invokeCalls.slice(before);
 }
-
-const notifierText = () => document.querySelector('.hub-notifier-text')?.textContent || '';
 
 // ── 1. Solution JSON : le fichier dit de quel jeu il s'agit ───────────────────
 console.log('Solution JSON (es3-solution.json)');

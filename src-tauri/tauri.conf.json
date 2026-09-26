@@ -30,16 +30,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "cli": {
-      "description": "Tabulon",
-      "args": [
-        {
-          "name": "no-autoupdate",
-          "description": "Disable the startup update check (no-op while tauri-plugin-updater is disabled, see ARCHITECTURE.md)"
-        }
-      ]
-    }
   }
 }

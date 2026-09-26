@@ -168,7 +168,6 @@ function buildPayload(method, args) {
     derive_chat_key:     ([master, info])          => ({ master, info }),
     chat_key_id:         ([master])                => ({ master }),
     // fs
-    read_text_file:      ([path])                  => ({ path }),
     save_text_file:      ([path, contents])        => ({ path, contents }),
     save_data_uri_file:  ([path, dataUri])         => ({ path, dataUri }),
     // camera

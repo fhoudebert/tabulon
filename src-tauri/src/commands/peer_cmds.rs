@@ -509,7 +509,7 @@ mod tests {
         assert!(err.is_err(), "un jeton faux doit etre refuse");
 
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        run_guest_handshake(stream, &token).await.expect("le bon jeton doit passer apres un refus");
+        let _ = run_guest_handshake(stream, &token).await.expect("le bon jeton doit passer apres un refus");
         assert!(matches!(recv_until_status(&mut h_events).await,
             PeerEvent::Status { connected: true, role: "host", .. }));
     }

@@ -10,7 +10,6 @@ use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
-use tauri_plugin_cli::CliExt;
 
 const ASSET_REWRITE_JS: &str = include_str!("../../app/content/asset-rewrite.js");
 
@@ -31,8 +30,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_http::init())
         // ── États partagés ───────────────────────────────────────────────────
         .manage(AppState::default())
@@ -68,19 +65,6 @@ pub fn run() {
                     b = b.initialization_script(ASSET_REWRITE_JS);
                 }
                 b.build()?;
-            }
-            let cli_matches = app.cli().matches()?;
-            if !cli_matches.args.contains_key("no-autoupdate") {
-                #[cfg(not(debug_assertions))]
-                {
-                    // Désactivé : updater non encore configuré (pubkey/endpoints).
-                    // let handle = app.handle().clone();
-                    // tauri::async_runtime::spawn(async move {
-                    //     if let Err(e) = window_manager::check_update(handle).await {
-                    //         log::warn!("Update check failed: {e}");
-                    //     }
-                    // });
-                }
             }
             Ok(())
         })
@@ -125,7 +109,6 @@ pub fn run() {
             video_cmds::stop_recording,
             video_cmds::record_frame,
             // ── Fichiers ─────────────────────────────────────────────────────
-            fs_cmds::read_text_file,
             fs_cmds::get_dist_info,
             fs_cmds::save_text_file,
             fs_cmds::save_data_uri_file,

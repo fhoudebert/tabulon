@@ -26,6 +26,8 @@
     "lint": "node scripts/check-syntax.mjs",
     "tauri": "tauri",
     "test": "node tests/run-tests.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:all": "npm test && npm run test:rust",
     "check:dist": "node scripts/check-dist.mjs",
     "set-version": "node scripts/set-version.mjs",
     "version": "node scripts/set-version.mjs && git add package-lock.json app/package.json src-tauri/Cargo.toml"
