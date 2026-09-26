@@ -10,7 +10,9 @@
 # Ce script enchaîne build → purge → PREUVE (ré-extraction et vérification
 # qu'aucune libwayland-* ne subsiste), et échoue bruyamment sinon.
 #
-# Usage :   ./compil.sh
+# Usage :   ./compil.sh              (arguments supplementaires passes a
+#           ./compil.sh --verbose     `tauri build`, ex. --verbose pour voir
+#                                     la sortie de linuxdeploy)
 # Sortie :  l'AppImage purgée et vérifiée, dans
 #           src-tauri/target/release/bundle/appimage/
 #           (l'originale non purgée est conservée en .AppImage.orig —
@@ -19,8 +21,50 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# ── Construire l'AppImage sur n'importe quelle distribution ─────────────────
+#
+# `tauri build` fabrique l'AppImage avec linuxdeploy, qui est LUI-MEME une
+# AppImage et qui passe `strip` sur toutes les bibliotheques embarquees. Deux
+# pannes connues hors Debian/Ubuntu, avec le meme message final
+# « failed to run linuxdeploy » :
+#
+#  1. FUSE. Lancer une AppImage demande libfuse2 ; Arch/Manjaro n'installent
+#     que fuse3 par defaut. APPIMAGE_EXTRACT_AND_RUN=1 fait extraire puis
+#     lancer linuxdeploy sans FUSE : sans effet la ou FUSE marche, donc pose
+#     partout.
+#  2. strip. Le strip embarque dans linuxdeploy est ancien : il ne sait pas
+#     traiter les bibliotheques des distributions recentes a mise a jour
+#     continue (sections .relr.dyn, « unknown type [0x13] section »). On le
+#     neutralise par NO_STRIP=true -- SEULEMENT sur ces distributions : ailleurs
+#     il marche et reduit la taille de l'AppImage.
+#
+# Une valeur deja posee dans l'environnement l'emporte toujours.
+export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
+if [ -z "${NO_STRIP+x}" ] && [ -r /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    os_ids="$(. /etc/os-release; echo " ${ID:-} ${ID_LIKE:-} ")"
+    case "$os_ids" in
+        *" arch "*|*" manjaro "*|*" endeavouros "*|*" opensuse-tumbleweed "*|*" gentoo "*)
+            export NO_STRIP=true
+            echo "compil.sh : distribution à mise à jour continue ($os_ids) → NO_STRIP=true" ;;
+    esac
+fi
+
 echo "== [1/3] Build (npm run build : check-dist + frontend + tauri build) =="
-npm run build
+if ! npm run build -- "$@"; then
+    cat >&2 <<'MSG'
+
+compil.sh : le build a échoué.
+Si le message final est « failed to run linuxdeploy », relancer avec
+    ./compil.sh --verbose
+pour voir la vraie erreur de linuxdeploy, puis selon ce qu'elle dit :
+  - « fuse » / « libfuse.so.2 »            → APPIMAGE_EXTRACT_AND_RUN=1 (posé par défaut)
+  - « strip » / « unknown type » / « .relr.dyn » → NO_STRIP=true ./compil.sh
+  - un fichier ou une bibliothèque introuvable → installer le paquet de
+    développement correspondant (webkit2gtk-4.1, gtk3, librsvg...).
+MSG
+    exit 1
+fi
 
 APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
 shopt -s nullglob

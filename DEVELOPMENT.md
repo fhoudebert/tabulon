@@ -1418,6 +1418,33 @@ remains: it addresses the *other*, driver-level failure mode of the same
 symptom (NVIDIA-proprietary and similar mixes) and was confirmed harmless
 on the machine above.
 
+### Building the AppImage outside Debian/Ubuntu: `failed to run linuxdeploy`
+
+An AppImage built on Debian runs on Manjaro, but building it *on* Manjaro
+stopped at `failed to bundle project: failed to run linuxdeploy`. Tauri
+bundles with linuxdeploy, itself an AppImage, which strips every embedded
+library. Two known failures outside Debian/Ubuntu end in that same line:
+
+- **FUSE** — running an AppImage needs `libfuse2`; Arch/Manjaro ship fuse3
+  only. `APPIMAGE_EXTRACT_AND_RUN=1` makes linuxdeploy extract itself and
+  run without FUSE.
+- **strip** — linuxdeploy's bundled `strip` is old and rejects the
+  libraries of rolling distributions (`.relr.dyn` sections, "unknown type
+  [0x13] section"). `NO_STRIP=true` skips it.
+
+`compil.sh` sets `APPIMAGE_EXTRACT_AND_RUN=1` everywhere (no effect where
+FUSE works) and `NO_STRIP=true` only on rolling distributions detected from
+`/etc/os-release` (`arch`, `manjaro`, `endeavouros`, `opensuse-tumbleweed`,
+`gentoo`) — elsewhere stripping works and keeps the AppImage smaller. A
+value already set in the environment wins. If the build still fails, it
+prints what to look for; `./compil.sh --verbose` passes `--verbose` to
+`tauri build` and shows linuxdeploy's own error.
+
+Checked on Ubuntu with both variables forced: release build, `.deb`,
+`.rpm` and AppImage produced, libwayland purge verified, the AppImage
+starts under Xvfb. **Not** reproduced on Manjaro itself — which of the two
+causes applies there is to be confirmed with `--verbose`.
+
 ## License
 
 AGPL-3.0 (see `package.json`).
