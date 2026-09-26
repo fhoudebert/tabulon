@@ -13,6 +13,7 @@
 // meme sauvegarder au bon nom.
 // Usage : npm test  (ou node tests/test-history-gamename.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 
@@ -60,7 +61,7 @@ const html = readFileSync('./app/content/history.html', 'utf-8').replace(/<scrip
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/history.html?id=7' });
 globalThis.window   = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 dom.window.HTMLElement.prototype.scrollIntoView = function () {};
 globalThis.Jocly = { getGameConfig: async () => ({ model: { 'title-en': 'Chu Shogi' } }) };
 

@@ -12,6 +12,7 @@
 //
 // Usage : node tests/import/test-book-position.mjs
 import { JSDOM } from '../../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from '../helpers/tauri-mock.mjs';
 process.chdir(new URL('../..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -61,7 +62,7 @@ const html = readFileSync(repo + '/app/content/book.html', 'utf-8').replace(/<sc
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/book.html?game=classic-chess&file=bancal.pgn' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 
 // Le moteur, réduit à ce que la fenêtre lui demande : la fiche du jeu, et un
 // match d'essai qui refuse la position — comme le vrai le fait.

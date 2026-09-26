@@ -5,6 +5,7 @@
 // nouveaux satellites get-board-state / load-board-state côté play (simulé).
 // Usage : npm test  (ou node tests/test-history.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 
@@ -44,7 +45,7 @@ const html = readFileSync('./app/content/history.html', 'utf-8').replace(/<scrip
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/history.html?game=classic-chess&id=4' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 dom.window.HTMLElement.prototype.scrollIntoView = function () {};   // absent de jsdom
 globalThis.Jocly = { getGameConfig: async () => ({ model: { 'title-en': 'Chess' } }) };
 
@@ -90,7 +91,7 @@ assert(invokeCalls.some(c => c.cmd === 'open_show_position' && c.payload.matchId
   const sdom = new JSDOM(shtml, { url: 'https://tauri.localhost/content/show-position.html?game=classic-chess&id=4' });
   globalThis.window = sdom.window;
   globalThis.document = sdom.window.document;
-  sdom.window.__TAURI__ = mockTauri;
+  sdom.window.__TAURI__ = completeTauriInjection(mockTauri);
   await import('../app/content/show-position.js');
   sdom.window.document.dispatchEvent(new sdom.window.Event('DOMContentLoaded', { bubbles: true }));
   await waitFor(() => sdom.window.document.querySelector('textarea')?.value.startsWith('rnbqkbnr'), 'état affiché');
@@ -105,7 +106,7 @@ assert(invokeCalls.some(c => c.cmd === 'open_show_position' && c.payload.matchId
   const odom = new JSDOM(ohtml, { url: 'https://tauri.localhost/content/open-position.html?game=classic-chess&id=4' });
   globalThis.window = odom.window;
   globalThis.document = odom.window.document;
-  odom.window.__TAURI__ = mockTauri;
+  odom.window.__TAURI__ = completeTauriInjection(mockTauri);
   await import('../app/content/open-position.js');
   odom.window.document.dispatchEvent(new odom.window.Event('DOMContentLoaded', { bubbles: true }));
   // le <title> statique du HTML n'est pas vide : on attend la valeur
@@ -130,7 +131,7 @@ assert(invokeCalls.some(c => c.cmd === 'open_show_position' && c.payload.matchId
   const odom = new JSDOM(ohtml, { url: 'https://tauri.localhost/content/open-position.html?game=classic-chess&id=' });
   globalThis.window = odom.window;
   globalThis.document = odom.window.document;
-  odom.window.__TAURI__ = mockTauri;
+  odom.window.__TAURI__ = completeTauriInjection(mockTauri);
   await import('../app/content/open-position.js?nomatch');   // module distinct (query)
   odom.window.document.dispatchEvent(new odom.window.Event('DOMContentLoaded', { bubbles: true }));
   await waitFor(() => odom.window.document.title === 'Chess', 'init');

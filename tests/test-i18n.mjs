@@ -8,6 +8,7 @@
 //      pas de fr (mécanisme demandé), avec fallback en pour description.
 // Usage : node test-i18n.mjs   (depuis tabulon/)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync, existsSync } from 'fs';
 import { createRequire } from 'module';
@@ -49,7 +50,7 @@ function assert(cond, msg) {
   const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/hub.html' });
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
-  dom.window.__TAURI__ = mockTauri;
+  dom.window.__TAURI__ = completeTauriInjection(mockTauri);
   dom.window.BrowserScriptLoader = {
     getBaseURL: () => 'https://tauri.localhost/',
     import: (p) => Promise.resolve(require('../dist/node/' + p)),
@@ -94,7 +95,7 @@ function assert(cond, msg) {
   const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/info.html?game=makromachy' });
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
-  dom.window.__TAURI__ = mockTauri;
+  dom.window.__TAURI__ = completeTauriInjection(mockTauri);
   dom.window.BrowserScriptLoader = {
     getBaseURL: () => 'https://tauri.localhost/',
     import: (p) => Promise.resolve(require('../dist/node/' + p)),

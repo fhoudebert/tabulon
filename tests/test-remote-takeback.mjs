@@ -37,6 +37,7 @@ globalThis.window = { __TAURI__: { http: { fetch: mockFetch } } };
 
 const {
     encodeEnvelope, decodeEnvelope, hasOpponentMoved, hasOpponentTakenBack, resolveAllowTakeback,
+    remoteTakebackBlock,
     encodeJoclySimpleMatchEnvelope, decodeJoclySimpleMatchEnvelope,
     parseInvitationUrl, buildInvitationUrl,
 } = await import('../app/content/remote-relay-protocol.js');
@@ -64,19 +65,18 @@ const RELAY = 'https://biscandine.fr/variantes/joclymatch/fileio.php';
     assert(parseInvitationUrl(off).allowTakeback === false, 'tb=0 se relit false');
     assert(parseInvitationUrl(old).allowTakeback === null, 'absence -> null (« le lien ne dit rien »)');
     assert(parseInvitationUrl(on.replace('tb=1', 'tb=oui')).allowTakeback === null, 'valeur abîmée -> null');
-    // Lien sans `tb` : c'est la PAGE emettrice qui decide. index.php est
-    // joclymatch (reprise toujours recue -> null, defaut du codec) ; toute
-    // autre page peut etre un mogichex qui ne recoit pas la reprise -> false.
-    const moBase = 'https://biscandine.fr/variantes/mogichex/';
+    // Lien sans `tb` : « le lien ne dit rien », quelle que soit la page qui
+    // l'a émis (joclymatch index.php, mogichex index.html ou répertoire nu).
+    // La page n'est plus un indice : joclymatch et mogichex appliquent tous
+    // deux « absent = interdit ».
     const q = '?game=go19&mid=1784023862731-pIUWbcgh0yDFVT&player=b';
-    assert(parseInvitationUrl(moBase + 'index.html' + q).allowTakeback === false,
-        'lien mogichex (index.html) sans tb -> interdit');
-    assert(parseInvitationUrl(moBase + q).allowTakeback === false,
-        'lien mogichex (répertoire nu) sans tb -> interdit');
-    assert(parseInvitationUrl(moBase + 'index.html' + q + '&tb=1').allowTakeback === true,
-        'lien mogichex AVEC tb=1 -> le lien fait foi');
-    assert(parseInvitationUrl('https://biscandine.fr/variantes/joclymatch/INDEX.PHP' + q).allowTakeback === null,
-        'lien joclymatch sans tb -> null, quelle que soit la casse');
+    for (const url of ['https://biscandine.fr/variantes/mogichex/index.html' + q,
+                       'https://biscandine.fr/variantes/mogichex/' + q,
+                       'https://biscandine.fr/variantes/joclymatch/INDEX.PHP' + q]) {
+        assert(parseInvitationUrl(url).allowTakeback === null, 'lien sans tb -> null : ' + new URL(url).pathname);
+    }
+    assert(parseInvitationUrl('https://biscandine.fr/variantes/mogichex/index.html' + q + '&tb=1').allowTakeback === true,
+        'lien AVEC tb=1 -> le lien fait foi');
     // La clé reste dans le fragment, le réglage dans la requête.
     const withKey = buildInvitationUrl({ relayUrl: RELAY, gameName: 'go19', matchId: 'm-1', player: 'b',
         chatKey: 'c'.repeat(64), allowTakeback: false });
@@ -109,11 +109,26 @@ assert(hasOpponentTakenBack(4, { kind: 'chat', nbTurns: 0 }) === false, 'un mess
 assert(hasOpponentMoved(5, { nbTurns: 4 }) === false, 'et une baisse n’est toujours pas un coup');
 
 // ── 4. Le fichier fait foi ───────────────────────────────────────────────────
-assert(resolveAllowTakeback(false, true, true) === false, 'fichier false l’emporte sur lien true');
-assert(resolveAllowTakeback(true, false, false) === true, 'fichier true l’emporte sur lien false');
-assert(resolveAllowTakeback(null, false, true) === false, 'fichier muet : le lien');
-assert(resolveAllowTakeback(null, null, true) === true, 'personne ne dit rien : la valeur par défaut');
-assert(resolveAllowTakeback(null, null, false) === false, '… quelle qu’elle soit');
+assert(resolveAllowTakeback(false, true) === false, 'fichier false l’emporte sur lien true');
+assert(resolveAllowTakeback(true, false) === true, 'fichier true l’emporte sur lien false');
+assert(resolveAllowTakeback(null, false) === false && resolveAllowTakeback(null, true) === true, 'fichier muet : le lien');
+assert(resolveAllowTakeback(null, null) === false, 'personne ne dit rien : INTERDITE (règle commune joclymatch / mogichex)');
+
+// ── 4b. Quand « Reculer » est permis à distance ─────────────────────────────
+{
+    const ok = { remote: true, allowed: true, localTurn: true, playedMoves: 2 };
+    assert(remoteTakebackBlock({ ...ok, remote: false, allowed: false, localTurn: false, playedMoves: 0 }) === null,
+        'partie locale : aucune restriction de ce côté');
+    assert(remoteTakebackBlock(ok) === null, 'autorisée, notre tour, deux coups : permis');
+    assert(remoteTakebackBlock({ ...ok, allowed: false }) === 'play.remoteTakebackForbidden', 'interdite par la partie');
+    assert(remoteTakebackBlock({ ...ok, localTurn: false }) === 'play.remoteTakebackNotYourTurn', 'pas notre tour');
+    // B à son premier tour : le seul coup joué est celui de A. Reculer
+    // défaisait LE COUP ADVERSE et lui rendait la main.
+    assert(remoteTakebackBlock({ ...ok, playedMoves: 1 }) === 'play.remoteTakebackNothingYet',
+        'un seul coup joué (celui de l’adversaire) : rien à nous');
+    assert(remoteTakebackBlock({ ...ok, allowed: false, playedMoves: 1 }) === 'play.remoteTakebackForbidden',
+        'le motif le plus durable est donné en premier');
+}
 
 // ── 5. Le code pair-à-pair ───────────────────────────────────────────────────
 {
@@ -177,12 +192,12 @@ assert(resolveAllowTakeback(null, null, false) === false, '… quelle qu’elle 
     assert(JSON.parse(relay.get(matchId)).matchDetails.nbTurns === 2, 'et le fichier porte bien la reprise');
 }
 {
-    // Valeur par défaut quand personne ne dit rien : c'est l'appelant qui la
-    // choisit (autorisée face à joclymatch, voir play.js).
+    // Personne ne dit rien : interdite, quel que soit le codec (joclymatch
+    // compris depuis qu'il applique la même règle).
     const a = new HttpRelayChannel({ relayUrl: RELAY, matchId: 'x', codec: 'jocly-simple-match', gameName: 'go' });
-    assert(a.allowTakeback === true, 'relai, par défaut : autorisée');
-    const b = new HttpRelayChannel({ relayUrl: RELAY, matchId: 'x', defaultAllowTakeback: false });
-    assert(b.allowTakeback === false, 'défaut réglable');
+    assert(a.allowTakeback === false, 'relai joclymatch, par défaut : interdite');
+    const b = new HttpRelayChannel({ relayUrl: RELAY, matchId: 'x', allowTakeback: true });
+    assert(b.allowTakeback === true, 'le lien l’ouvre tant que le fichier ne dit rien');
 }
 
 // ── 7. PeerChannel : même aiguillage ─────────────────────────────────────────
@@ -196,7 +211,7 @@ assert(resolveAllowTakeback(null, null, false) === false, '… quelle qu’elle 
         allowTakeback: true,
     });
     assert(new PeerChannel({ invokeImpl: async () => null, listenImpl: async () => () => {} }).allowTakeback === false,
-        'pair-à-pair, par défaut : interdite (un Tabulon ancien ne sait pas recevoir une annulation)');
+        'pair-à-pair, par défaut : interdite');
     let moved = 0, takenBack = null;
     chan.onRemoteMove(() => { moved++; });
     chan.onRemoteTakeback(p => { takenBack = p; });

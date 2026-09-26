@@ -4,6 +4,7 @@
 // avec le vrai dist jocly2 et window.__TAURI__ mocké.
 // Usage : node test-clock-setup.mjs   (depuis tabulon/)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 import { createRequire } from 'module';
@@ -30,7 +31,7 @@ const html = readFileSync('./app/content/clock-setup.html', 'utf-8')
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/clock-setup.html?game=classic-chess' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 const BASE = 'https://tauri.localhost/';
 dom.window.BrowserScriptLoader = {
   getBaseURL: () => BASE,

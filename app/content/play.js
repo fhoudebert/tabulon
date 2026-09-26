@@ -23,7 +23,7 @@ import { PeerChannel } from './remote-peer-channel.js';
 import { RelayChatChannel, PeerChatChannel } from './remote-chat-channel.js';
 import { ENVELOPE_KIND, PRESENCE, presenceOf } from './remote-chat-protocol.js';
 import { makeSealer, deriveChatKey, chatKeyId } from './remote-secret.js';
-import { isChatKey } from './remote-relay-protocol.js';
+import { isChatKey, remoteTakebackBlock } from './remote-relay-protocol.js';
 import { DEFAULT_RELAY_URL } from './remote-relay-protocol.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
@@ -297,18 +297,13 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
         });
         remoteChannel = chan;
     } else {
-        /*
-         * Reprise de coup quand ni le lien ni le fichier ne disent rien :
-         * AUTORISEE face au codec de joclymatch, qui la livre sans condition
-         * (l'interdire ferait regresser toutes ses parties) ; INTERDITE avec
-         * notre propre enveloppe, que seul Tabulon parle -- et un Tabulon
-         * anterieur a ce reglage ne sait pas recevoir une annulation.
-         */
-        const jsm = codec === 'jocly-simple-match';
+        // Reprise de coup : ce que l'invitation annonce ; le fichier du relai
+        // fait foi, et si personne ne dit rien elle est interdite (meme regle
+        // que joclymatch et mogichex, voir resolveAllowTakeback).
         remoteChannel = new HttpRelayChannel({
             relayUrl, matchId: remoteMatchId, localNbTurns: currentNbTurns,
             codec: codec || 'tabulon', gameName: remoteGameName || gameName,
-            allowTakeback, defaultAllowTakeback: jsm,
+            allowTakeback,
         });
     }
     remoteChannelKey = playerKey;
@@ -855,6 +850,7 @@ async function gameLoop() {
                     // « Notre tour » ouvre la reprise de coup face a un
                     // adversaire distant : c'est le seul moment ou il nous
                     // attend, donc ou il recevra l'annulation.
+                    localTurnMoves = (await joclyMatch.getPlayedMoves().catch(() => [])).length;
                     localHumanTurn = true;
                     updateRemoteRestrictedButtons();
                     let result;
@@ -1179,41 +1175,65 @@ function hasRemoteSide() {
     return [Jocly.PLAYER_A, Jocly.PLAYER_B].some(k => players[k]?.remote);
 }
 
-// Reculer/recommencer face a un joueur DISTANT : permis a DEUX conditions.
+// Reculer / recommencer face a un joueur DISTANT.
 //
-//  1. la partie l'autorise -- reglage pose par l'hote a la creation de
-//     l'invitation, porte par le lien puis par le fichier du relai (qui fait
-//     foi) ; voir remote-relay-protocol.js, resolveAllowTakeback ;
-//  2. c'est NOTRE tour. Ce n'est pas une politesse : joclymatch ne sonde le
-//     relai que pendant qu'il attend l'autre. Pendant son propre tour il est
-//     bloque dans sa saisie et ne verrait pas l'annulation -- son coup
-//     suivant, calcule sur la position d'avant, l'ecraserait en silence.
-//     Pendant le notre, il attend, donc il sonde, donc il verra.
+// RECULER : la regle vit dans remote-relay-protocol.js (remoteTakebackBlock),
+// commune a joclymatch et mogichex -- partie qui l'autorise, NOTRE tour, et
+// deux coups joues au moins. L'infobulle dit lequel des motifs bloque : ils ne
+// se corrigent pas de la meme facon.
 //
-// L'infobulle distingue les deux cas : « la partie ne le permet pas » et
-// « a votre tour » ne se corrigent pas de la meme facon. Les handlers
-// gardent une garde de fond qui dit la meme chose au pied.
-// Les doublons quick-* ont disparu avec la barre repliable : les deux boutons
-// du pied portent maintenant les identifiants principaux, et une seule entree
-// suffit ici comme ailleurs.
+// RECOMMENCER : jamais a distance, comme joclymatch et mogichex. Effacer toute
+// la partie d'un clic, sur le plateau de l'adversaire aussi, va bien au-dela
+// d'une reprise de coup. Une remise a zero RECUE d'un autre client reste
+// suivie (ApplyRemoteTakeback).
+//
+// Les handlers gardent une garde de fond qui dit la meme chose au pied.
 const REMOTE_RESTRICTED_BUTTONS = ['button-takeback', 'button-restart'];
 
-// true pendant qu'on attend une saisie du joueur local (voir gameLoop).
+// true pendant qu'on attend une saisie du joueur local (voir gameLoop), et le
+// nombre de coups joues a ce moment-la.
 let localHumanTurn = false;
+let localTurnMoves = 0;
 
 /** null si reculer est permis maintenant, sinon la cle i18n du motif. */
-function remoteTakebackBlock() {
-    if (!hasRemoteSide()) return null;
-    if (!remoteChannel?.allowTakeback) return 'play.remoteTakebackForbidden';
-    if (!localHumanTurn) return 'play.remoteTakebackNotYourTurn';
-    return null;
+function takebackBlock() {
+    return remoteTakebackBlock({
+        remote: hasRemoteSide(),
+        allowed: !!remoteChannel?.allowTakeback,
+        localTurn: localHumanTurn,
+        playedMoves: localTurnMoves,
+    });
+}
+
+/*
+ * CHANGER LA POSITION AUTREMENT QU'EN JOUANT OU EN REPRENANT -- navigation
+ * dans la fenetre Historique (rollback-to), chargement d'un fichier ou d'un
+ * etat saisi -- est refuse face a un joueur distant.
+ *
+ * Ces chemins ne changeaient QUE notre plateau : l'adversaire ne recevait
+ * rien, et son coup suivant, calcule sur l'ancienne position, etait ensuite
+ * rejoue sur la nouvelle -- deux plateaux differents, sans que personne le
+ * voie. mogichex et joclymatch n'offrent pas ces chemins en partie a distance
+ * (la liste des coups s'y LIT, on n'y revient pas). Reprendre son dernier coup
+ * reste possible par « Reculer », qui, lui, publie la position.
+ * @returns {boolean} true si refuse (le motif est affiche au pied)
+ */
+function remotePositionLocked() {
+    if (!hasRemoteSide()) return false;
+    UpdateFooter(t('play.remotePositionLocked'));
+    return true;
+}
+
+/** null si recommencer est permis, sinon la cle i18n du motif. */
+function restartBlock() {
+    return hasRemoteSide() ? 'play.remoteRestartForbidden' : null;
 }
 
 function updateRemoteRestrictedButtons() {
-    const block = remoteTakebackBlock();
     for (const id of REMOTE_RESTRICTED_BUTTONS) {
         const el = document.getElementById(id);
         if (!el) continue;
+        const block = id === 'button-restart' ? restartBlock() : takebackBlock();
         el.disabled = !!block;
         const normalKey = el.getAttribute('data-i18n-title');
         el.title = block ? t(block) : (normalKey ? t(normalKey) : el.title);
@@ -1529,6 +1549,14 @@ function initSatelliteListeners() {
     // rollback-to : annuler jusqu'a l'index demande
     listen(prefix + 'rollback-to', async ({ payload }) => {
         if (!joclyMatch) return;
+        if (remotePositionLocked()) {
+            // Accuser reception quand meme (la lecture automatique attend cet
+            // evenement), et faire relire l'historique pour que sa selection
+            // revienne sur la position reelle.
+            emit(`play-rep:${matchId}:rollback-to`, { index: payload?.index ?? 0 }).catch(() => {});
+            emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+            return;
+        }
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('rollback');
@@ -1564,6 +1592,7 @@ function initSatelliteListeners() {
     // fenêtre open-position (équivalent joclyboard::loadBoardState avec match)
     listen(prefix + 'load-board-state', async ({ payload }) => {
         if (!joclyMatch || !payload?.state) return;
+        if (remotePositionLocked()) return;
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('load-board-state');
@@ -2265,7 +2294,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Garde de fond (le bouton est deja grise dans ces cas-la). Evaluee
         // AVANT d'interrompre la saisie : c'est elle qui dit si c'est notre
         // tour.
-        const block = remoteTakebackBlock();
+        const block = takebackBlock();
         if (block) { UpdateFooter(t(block)); return; }
         const remote = hasRemoteSide();
         await joclyMatch.abortUserTurn().catch(() => {});
@@ -2298,15 +2327,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn('button-restart', async () => {
         if (!joclyMatch) return;
-        const block = remoteTakebackBlock();
+        const block = restartBlock();
         if (block) { UpdateFooter(t(block)); return; }
-        const remote = hasRemoteSide();
         await joclyMatch.abortUserTurn().catch(() => {});
         await joclyMatch.abortMachineSearch().catch(() => {});
         cancelRemoteWait('restart');
         await joclyMatch.rollback(0);
-        if (remote) await PublishTakeback();
-        else await resyncRemoteChannelBaseline();
+        await resyncRemoteChannelBaseline();
         paused = false;
         UpdatePause();
         UpdateFooter('');
@@ -2408,6 +2435,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fileElem = document.getElementById('fileElem');
     fileElem?.addEventListener('change', async () => {
         if (!joclyMatch || !fileElem.files[0]) return;
+        if (remotePositionLocked()) { fileElem.value = ''; return; }
         const reader = new FileReader();
         reader.readAsText(fileElem.files[0]);
         reader.onload = async (e) => {

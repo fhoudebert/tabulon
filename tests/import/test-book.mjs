@@ -6,6 +6,7 @@
 //      partie en pause, footer = le libelle de la partie
 // Usage : npm test  (ou node tests/test-book.mjs)
 import { JSDOM } from '../../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from '../helpers/tauri-mock.mjs';
 // cwd = racine tabulon/ : la suite vit un niveau plus bas depuis son
 // rangement dans tests/import/.
 process.chdir(new URL('../..', import.meta.url).pathname);
@@ -62,7 +63,7 @@ const mockTauri = {
   const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/book.html?game=classic-chess&file=test.pgn' });
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
-  dom.window.__TAURI__ = mockTauri;
+  dom.window.__TAURI__ = completeTauriInjection(mockTauri);
   globalThis.Jocly = { getGameConfig: async () => ({ model: { 'title-en': 'Chess' } }) };
 
   storeData.set('book:classic-chess', { fileName: 'test.pgn', data: PGN_TEXT });
@@ -158,7 +159,7 @@ const mockTauri = {
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
   globalThis.FileReader = dom.window.FileReader;
-  dom.window.__TAURI__ = mockTauri;
+  dom.window.__TAURI__ = completeTauriInjection(mockTauri);
   globalThis.Jocly = {
     PLAYER_A, PLAYER_B,
     getGameConfig: async () => ({ model: { 'title-en': 'Chess', levels: [] }, view: {} }),

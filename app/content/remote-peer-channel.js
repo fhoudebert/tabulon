@@ -33,14 +33,11 @@ export class PeerChannel extends RemoteChannel {
      *   injectables pour les tests (tests/test-remote-peer-channel.mjs).
      * @param {boolean|null} [opts.allowTakeback=null] - reprise de coup telle
      *   que le code d'invitation l'annonce ; les enveloppes recues la
-     *   remplacent des qu'elles la portent.
-     * @param {boolean} [opts.defaultAllowTakeback=false] - FAUX par defaut en
-     *   pair-a-pair : les deux cotes sont forcement Tabulon, et un Tabulon
-     *   anterieur a ce reglage ne sait pas recevoir une annulation (il
-     *   l'ignorerait, et son coup suivant l'ecraserait).
+     *   remplacent des qu'elles la portent ; ni l'un ni l'autre = interdite
+     *   (voir resolveAllowTakeback).
      */
     constructor({ matchId = 'p2p', localNbTurns = 0, invokeImpl = tauriInvoke, listenImpl = tauriListen,
-                  allowTakeback = null, defaultAllowTakeback = false } = {}) {
+                  allowTakeback = null } = {}) {
         super();
         this._matchId = matchId;
         this._localNbTurns = localNbTurns;
@@ -51,7 +48,7 @@ export class PeerChannel extends RemoteChannel {
         this._unlisteners = [];
         this._started = false;
         this._lastError = null;
-        this._initTakeback({ allowTakeback, defaultAllowTakeback });
+        this._initTakeback({ allowTakeback });
     }
 
     get matchId() { return this._matchId; }

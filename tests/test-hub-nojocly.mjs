@@ -5,6 +5,7 @@
 // vide muette. Après : message explicite dans la liste, About fonctionnel.
 // Usage : npm test  (ou node tests/test-hub-nojocly.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 
@@ -34,7 +35,7 @@ const html = readFileSync('./app/content/hub.html', 'utf-8').replace(/<script[\s
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/hub.html' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 // PAS de globalThis.Jocly — c'est le scénario
 
 const errors = [];

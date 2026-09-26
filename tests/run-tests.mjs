@@ -11,8 +11,9 @@
 //     problems/           problemes d'exemple, par jeu (voir l'ecran « Charger »)
 // Usage : npm test   (ou : node tests/run-tests.mjs)
 //
-// Prérequis : dist/ de jocly2 copié à la racine (voir README) et jsdom
-// installé dans app/ (npm --prefix app install).
+// Prérequis : dist/ de jocly2 copié à la racine (voir README), dist-minimal/
+// généré (npm run check:dist) et jsdom installé dans app/ (npm --prefix app
+// install).
 import { spawnSync } from 'child_process';
 import { readdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -24,6 +25,9 @@ const root     = path.dirname(testsDir);
 for (const [p, msg] of [
     [path.join(root, 'dist/node/jocly.core.js'), 'dist/ manquant — copier le build de jocly2 (voir README, section "Building Jocly")'],
     [path.join(root, 'app/node_modules/jsdom'),  'jsdom manquant — lancer : npm --prefix app install'],
+    // test-export-all tourne sur le dist EMBARQUE ; sans lui il plantait sur
+    // un ENOENT au milieu de la suite, sans dire quoi faire.
+    [path.join(root, 'dist-minimal/browser/jocly-allgames.js'), 'dist-minimal/ manquant — lancer : npm run check:dist'],
 ]) if (!existsSync(p)) { console.error('✗ ' + msg); process.exit(1); }
 
 // Les suites sont regroupees par theme : « import/ » pour la lecture des

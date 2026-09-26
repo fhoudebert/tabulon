@@ -11,6 +11,7 @@
 // verifier que le jeu declare par le fichier existe.
 // Usage : npm test  (ou node tests/test-hub-loadfile.mjs)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 
@@ -74,7 +75,7 @@ globalThis.document = dom.window.document;
 // sous Node il faut le republier depuis jsdom.
 globalThis.FileReader = dom.window.FileReader;
 globalThis.File       = dom.window.File;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 
 // Catalogue minimal : ResolveGame() ne retient un jeu declare que s'il y figure.
 const game = (title) => ({ title, summary: title, thumbnail: 'thumb.png' });

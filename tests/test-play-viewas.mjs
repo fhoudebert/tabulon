@@ -15,6 +15,7 @@
 //
 // Usage : node tests/test-play-viewas.mjs   (depuis tabulon/)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 
@@ -106,7 +107,7 @@ const dom = new JSDOM(html, { url: `https://tauri.localhost/content/play.html?ga
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 globalThis.FileReader = dom.window.FileReader;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 globalThis.Jocly = {
     PLAYER_A, PLAYER_B,
     getGameConfig: async () => ({ model: { 'title-en': 'Chess', levels: [] }, view: {} }),

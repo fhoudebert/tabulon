@@ -202,23 +202,29 @@ the development history.
   first save: the copy is deliberate on both sides.
   - **The file wins over the link** (`resolveAllowTakeback`): the relay
     file is the same for both players, survives a reload and a truncated
-    link. When nobody says anything, the default depends on who may be on
-    the other end: **allowed** with the jocly-simple-match codec
-    (joclymatch has shipped takeback unconditionally, forbidding it would
-    regress its matches), **forbidden** with our own envelope and in
-    peer-to-peer (only Tabulon speaks them, and a Tabulon predating this
-    setting cannot receive a takeback).
+    link. When nobody says anything, it is **forbidden** — the rule shared
+    with joclymatch and mogichex: the other end of such a match may be an
+    older client that cannot follow a takeback. Receiving a takeback never
+    depends on the setting.
   - **Only on your own turn.** joclymatch polls the relay only while it
     waits for the opponent; during its own turn it sits in `userTurn()` and
     would never see a takeback — its next move, computed on the old
     position, would silently overwrite it. During *our* turn it is waiting,
-    hence polling. The Take back / Restart buttons are therefore enabled
-    when the match allows it **and** a local human input is pending
-    (`localHumanTurn`, set around `userTurn()` in `gameLoop`); the tooltip
-    tells the two refusals apart (`play.remoteTakebackForbidden` /
-    `play.remoteTakebackNotYourTurn`), and the handlers keep a defensive
-    guard. Against a remote side, Take back returns to *our* previous turn
-    (our move and its answer).
+    hence polling. Take back is therefore enabled when the match allows it,
+    a local human input is pending (`localHumanTurn`, set around
+    `userTurn()` in `gameLoop`) **and** at least two moves are played — on
+    our turn the last move is the opponent's, and with a single one (A's
+    first move seen by B) taking back would undo *their* move. The rule is
+    the pure `remoteTakebackBlock()` in `remote-relay-protocol.js`, the same
+    as joclymatch and mogichex; the tooltip names the reason
+    (`play.remoteTakebackForbidden` / `NotYourTurn` / `NothingYet`), and the
+    handler keeps a defensive guard. Against a remote side, Take back
+    returns to *our* previous turn (our move and its answer).
+  - **Restart is never offered against a remote side**
+    (`play.remoteRestartForbidden`), as in joclymatch and mogichex: wiping
+    the whole game on the opponent's board goes well beyond a takeback. A
+    restart *received* from another client (`nbTurns` back to 0) is still
+    followed.
   - **Sending** (`PublishTakeback`): after the local rollback, push the new
     `nbTurns` **and** the full state; `push()` moves the channel baseline
     itself — no `resetBaseline()` beforehand, which would let a poll reread
@@ -236,22 +242,17 @@ the development history.
     poll answer read across a write or a baseline reset (`_generation`,
     `_pushing`). Peer-to-peer needs no such guard: TCP delivers lines in
     order and each one is a new message.
-  - **A link without `tb` is read by the page that issued it**
-    (`parseInvitationUrl`). `index.php` is joclymatch, which has always
-    received a takeback: the link says nothing (`null`) and the codec
-    default applies. Any other page — mogichex serves `index.html` or a
-    bare folder — is read as **forbidden**: mogichex up to 1.01 ignores
-    any decreasing `nbTurns`, so a takeback there left each side waiting
-    for the other on two different boards. The relay file still wins: a
-    mogichex that can follow a takeback writes the setting there and puts
-    `tb` in the links it issues.
   - **Known limits.** An opponent client that predates the setting ignores
     it (an old joclymatch can still take back in a match created with the
-    box unchecked; Tabulon follows its takeback anyway to stay in sync). A
-    new Tabulon joining an old Tabulon's link (no `tb`) assumes "allowed"
-    and the old one cannot receive it. Loading a file or a board state, and
-    `rollback-to` from the History window, still change the local position
-    without publishing it.
+    box unchecked; Tabulon follows its takeback anyway to stay in sync).
+  - **Other position changes are refused against a remote side**
+    (`remotePositionLocked()`, `play.remotePositionLocked`): `rollback-to`
+    from the History window, loading a file, loading a board state. They
+    only changed the local board, and the opponent's next move was then
+    replayed on a different position. The History window still gets its
+    acknowledgement (autoplay waits for it) and a `move-played` event so its
+    selection returns to the real position. The move list can be read, not
+    used to go back — as in mogichex.
 
 - Remote play is **set up** in the Invitation window (both roles: join or
   create) and, for a guest only, from the **Invitation** entry in the hub
@@ -936,8 +937,18 @@ npm test               # runs every tests/test-*.mjs and summarizes
 node tests/test-i18n.mjs   # or any single suite
 ```
 
-Prerequisites: `dist/` in place (see above) and `npm --prefix app install`
-(jsdom). The runner checks both and tells you what is missing.
+Prerequisites: `dist/` in place (see above), `dist-minimal/` generated
+(`npm run check:dist`) and `npm --prefix app install` (jsdom). The runner
+checks all three and tells you what is missing. The whole run takes about
+a minute.
+
+**Mocking Tauri.** jsdom suites load pages under a Tauri URL
+(`https://tauri.localhost/...`), so `tauri-bridge.js` waits for a *complete*
+injection before evaluating the page. Pass the mock through
+`completeTauriInjection()` (`tests/helpers/tauri-mock.mjs`): it fills the
+namespaces the suite does not simulate with methods that throw a named
+error when called. A partial mock without it makes every suite wait for
+the bridge's 8-second timeout — that used to be three quarters of the run.
 
 ### Useful commands
 

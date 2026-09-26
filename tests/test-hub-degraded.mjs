@@ -8,6 +8,7 @@
 // message d'erreur actionnable en console.
 // Usage : node test-hub-degraded.mjs   (depuis tabulon/)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
 import { readFileSync } from 'fs';
 import { createRequire } from 'module';
@@ -47,7 +48,7 @@ if (html.includes('id="game-detail"')) { console.error('amputation échouée'); 
 const dom = new JSDOM(html, { url: 'https://tauri.localhost/content/hub.html' });
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 const BASE = 'https://tauri.localhost/';
 dom.window.BrowserScriptLoader = {
   getBaseURL: () => BASE,

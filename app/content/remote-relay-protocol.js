@@ -165,16 +165,41 @@ export function hasOpponentTakenBack(localNbTurns, remoteEnvelope) {
  * lien ne sert que tant que le fichier ne dit rien -- en particulier avant
  * que l'hote n'y ait ecrit.
  *
- * Et quand PERSONNE ne dit rien, `fallback` : la valeur par defaut depend du
- * correspondant possible (voir play.js), pas de ce module.
+ * Quand PERSONNE ne dit rien : INTERDITE. C'est la regle commune a Tabulon,
+ * joclymatch et mogichex : l'autre bout d'une partie sans reglage peut etre un
+ * client anterieur, qui ne sait pas suivre une annulation (il ignore un
+ * nbTurns qui baisse, ou rejoue le dernier coup du fichier) -- les plateaux
+ * divergeraient. RECEVOIR une reprise ne depend jamais de ce reglage.
  * @param {boolean|null} fileValue
  * @param {boolean|null} linkValue
- * @param {boolean} fallback
  */
-export function resolveAllowTakeback(fileValue, linkValue, fallback) {
+export function resolveAllowTakeback(fileValue, linkValue) {
     if (typeof fileValue === 'boolean') return fileValue;
     if (typeof linkValue === 'boolean') return linkValue;
-    return !!fallback;
+    return false;
+}
+
+/**
+ * Pourquoi « Reculer » est refuse MAINTENANT face a un joueur distant (cle
+ * i18n), ou null s'il est permis. Meme regle que joclymatch et mogichex :
+ *
+ *  - la partie doit l'autoriser (resolveAllowTakeback) ;
+ *  - ce doit etre NOTRE tour : joclymatch ne sonde le relai que pendant qu'il
+ *    attend l'autre ; pendant son propre tour il ne verrait pas l'annulation
+ *    et son coup suivant, calcule sur l'ancienne position, l'ecraserait ;
+ *  - il faut DEUX coups joues au moins : a notre tour le dernier coup est
+ *    celui de l'adversaire, le notre est l'avant-dernier. Avec un seul coup
+ *    (le premier coup de A, vu par B), reculer defaisait le coup ADVERSE et
+ *    lui rendait la main.
+ * @param {{remote:boolean, allowed:boolean, localTurn:boolean, playedMoves:number}} s
+ * @returns {string|null}
+ */
+export function remoteTakebackBlock({ remote, allowed, localTurn, playedMoves }) {
+    if (!remote) return null;
+    if (!allowed) return 'play.remoteTakebackForbidden';
+    if (!localTurn) return 'play.remoteTakebackNotYourTurn';
+    if (!(playedMoves >= 2)) return 'play.remoteTakebackNothingYet';
+    return null;
 }
 
 /**
@@ -391,30 +416,8 @@ export function parseInvitationUrl(urlString) {
          * joclymatch a besoin de lire ce reglage. Absent ou illisible = null,
          * c'est-a-dire « le lien ne dit rien » -- un lien d'avant ce reglage.
          */
-        allowTakeback: takebackFromParam(url.searchParams.get('tb'))
-            ?? takebackFromHostPage(url.pathname),
+        allowTakeback: takebackFromParam(url.searchParams.get('tb')),
     };
-}
-
-/*
- * UN LIEN SANS `tb` NE DIT PAS LA MEME CHOSE SELON LA PAGE QUI L'A EMIS.
- *
- * Seule la page de joclymatch s'appelle index.php, et joclymatch a toujours
- * su recevoir une reprise : se taire, pour lui, c'est « permis », et c'est ce
- * que suppose la valeur par defaut du codec jocly-simple-match (null ici).
- *
- * Toute autre page -- mogichex sert index.html, ou son repertoire nu -- peut
- * etre un client qui ne sait PAS recevoir une reprise : mogichex jusqu'a sa
- * 1.01 comprise ignore tout nbTurns qui baisse. Tabulon reprenait alors un
- * coup, mogichex n'en voyait rien, puis ignorait aussi le coup suivant (plus
- * court que ce qu'il avait deja) : chaque camp attendait l'autre, plateaux
- * divergents. D'ou « interdit » quand le lien ne dit rien. Le fichier du
- * relai l'emporte toujours (resolveAllowTakeback) : un mogichex qui sait
- * reprendre l'y ecrit, et un lien qu'il emet porte `tb` explicitement.
- */
-function takebackFromHostPage(pathname) {
-    const page = String(pathname || '').split('/').pop().toLowerCase();
-    return page === 'index.php' ? null : false;
 }
 
 function takebackFromParam(value) {

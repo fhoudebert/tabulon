@@ -5,16 +5,20 @@
 // CE QUI SE VÉRIFIE ICI :
 //   - l'hôte publie le réglage de la partie dès l'état initial ;
 //   - Reculer n'est offert qu'à NOTRE tour (joclymatch ne sonde que pendant
-//     qu'il attend) ; l'infobulle dit pourquoi sinon ;
+//     qu'il attend) et quand un coup à nous est sur le plateau ; Recommencer
+//     jamais à distance ; l'infobulle dit pourquoi ;
 //   - notre reprise PUBLIE le nouveau compte et l'état complet, sans perdre
 //     le réglage ;
 //   - la reprise de l'adversaire est CHARGÉE telle quelle : aucun coup n'est
 //     rejoué (le piège du `!=` corrigé côté joclymatch), la boucle se réarme
 //     sur la bonne position, et le joueur en est prévenu ;
-//   - le fichier fait foi : s'il dit « interdite », les boutons se ferment.
+//   - le fichier fait foi : s'il dit « interdite », les boutons se ferment ;
+//   - l'Historique et le chargement d'un état ne changent pas la position
+//     à distance (ils ne changeaient que notre plateau).
 //
 // Usage : node tests/test-play-remote-takeback.mjs   (depuis tabulon/)
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
+import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);
 import { readFileSync } from 'fs';
 
@@ -101,7 +105,7 @@ const dom = new JSDOM(html, { url: `https://tauri.localhost/content/play.html?ga
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 globalThis.FileReader = dom.window.FileReader;
-dom.window.__TAURI__ = mockTauri;
+dom.window.__TAURI__ = completeTauriInjection(mockTauri);
 globalThis.Jocly = {
     PLAYER_A, PLAYER_B,
     getGameConfig: async () => ({ model: { 'title-en': 'Chess', levels: [] }, view: {} }),
@@ -132,21 +136,27 @@ await waitFor(() => file(), 'l’état initial est publié');
 assert(file().matchDetails.nbTurns === 0 && file().matchDetails.allowTakeback === true,
     'l’hôte publie l’état initial et le réglage de la partie');
 
-// 2. Notre tour : Reculer est offert (rien à reculer encore, mais permis).
-await waitFor(() => match.pendingUserTurn && !takebackBtn().disabled, 'notre tour ouvre les boutons');
-assert(!takebackBtn().disabled && !restartBtn().disabled, 'pendant notre tour, Reculer et Recommencer sont actifs');
+// 2. Notre tour, aucun coup joué : Reculer est fermé (rien à nous), et
+//    Recommencer l'est TOUJOURS à distance — chacun avec son motif.
+await waitFor(() => match.pendingUserTurn, 'notre tour est armé');
+await waitFor(() => /rien à reprendre|nothing of yours/i.test(takebackBtn().title), 'le motif « rien à reprendre » est posé');
+assert(takebackBtn().disabled, 'aucun coup à nous : Reculer fermé');
+assert(restartBtn().disabled && /recommence pas|cannot be restarted/.test(restartBtn().title),
+    'Recommencer fermé à distance, avec son propre motif');
 
-// 3. Nous jouons ; pendant le tour adverse, les boutons se ferment et disent pourquoi.
+// 3. Nous jouons ; pendant le tour adverse, Reculer se ferme et dit pourquoi.
 await humanPlays({ to: 'e4' });
 await waitFor(() => file().matchDetails.nbTurns === 1, 'notre coup est publié');
 assert(file().matchDetails.allowTakeback === true, 'le réglage survit à notre sauvegarde');
-await waitFor(() => takebackBtn().disabled, 'les boutons se ferment');
-assert(/à votre tour|on your turn/.test(takebackBtn().title), 'l’infobulle dit « à votre tour », pas « interdit »');
+await waitFor(() => /à votre tour|on your turn/.test(takebackBtn().title), 'l’infobulle dit « à votre tour »');
+assert(takebackBtn().disabled, 'pendant le tour adverse, Reculer est fermé');
 
 // 4. L'adversaire (joclymatch) répond — son fichier reconstruit matchDetails
-//    et PORTE le réglage, comme le fera le control.js corrigé.
+//    et PORTE le réglage.
 opponentWrites([{ to: 'e4' }, { to: 'e5' }], true);
-await waitFor(() => match.playedMoves.length === 2 && match.pendingUserTurn, 'le coup adverse est joué, notre tour revient');
+await waitFor(() => match.playedMoves.length === 2 && match.pendingUserTurn && !takebackBtn().disabled,
+    'le coup adverse est joué, notre tour revient et Reculer s’ouvre');
+assert(restartBtn().disabled, 'Recommencer reste fermé');
 
 // 5. Nous reprenons : retour à NOTRE tour précédent (notre coup et sa réponse).
 const playsBefore = match.playMoveCalls.length;
@@ -159,32 +169,58 @@ assert(file().matchDetails.allowTakeback === true, 'et le réglage n’est pas p
 await waitFor(() => match.pendingUserTurn, 'la boucle se réarme sur notre tour');
 assert(match.playMoveCalls.length === playsBefore, 'aucun coup n’est rejoué pendant notre reprise');
 
-// 6. Nous rejouons, puis l'ADVERSAIRE reprend pendant son tour : il annule
-//    notre coup. Le compte baisse de 1 à 0.
+// 6. L'ADVERSAIRE reprend, comme le fait joclymatch : à SON tour, il défait
+//    son dernier coup ET notre réponse. Le compte baisse de 3 à 1.
 await humanPlays({ to: 'd4' });
 await waitFor(() => file().matchDetails.nbTurns === 1, 'notre nouveau coup est publié');
+opponentWrites([{ to: 'd4' }, { to: 'd5' }], true);
+await waitFor(() => match.playedMoves.length === 2 && match.pendingUserTurn, 'le coup adverse arrive');
+await humanPlays({ to: 'c4' });
+await waitFor(() => file().matchDetails.nbTurns === 3, 'notre réponse est publiée');
 const playsBeforeRemote = match.playMoveCalls.length;
 const loadsBefore = match.loadCalls;
-opponentWrites([], true);
+opponentWrites([{ to: 'd4' }], true);
 await waitFor(() => match.loadCalls > loadsBefore, 'l’état de l’adversaire est chargé');
-assert(match.playedMoves.length === 0, 'la position est celle du fichier, telle quelle');
+assert(match.playedMoves.length === 1, 'la position est celle du fichier, telle quelle (deux coups de moins)');
 assert(match.playMoveCalls.length === playsBeforeRemote,
     'AUCUN coup rejoué : une baisse n’est pas un coup (le piège du « != »)');
-assert(!warning().classList.contains('hidden') && /recommencé|restarted/.test(warning().textContent),
+assert(!warning().classList.contains('hidden') && /repris|took back/.test(warning().textContent),
     'le joueur est prévenu que le plateau a changé tout seul');
-await waitFor(() => match.pendingUserTurn, 'la boucle attend de nouveau NOTRE saisie');
-assert(true, 'la boucle ne reste pas bloquée à attendre un coup distant qui ne viendra pas');
+// Après sa reprise c'est à l'adversaire de rejouer : la boucle doit
+// ATTENDRE son coup, pas armer notre saisie ni rester figée.
+opponentWrites([{ to: 'd4' }, { to: 'Nf6' }], true);
+await waitFor(() => match.playedMoves.length === 2 && match.pendingUserTurn,
+    'la boucle attendait bien l’adversaire : son nouveau coup est joué et notre tour revient');
 
 // 7. Le fichier fait foi : l'adversaire y écrit « interdite ».
-opponentWrites([], false);
-await waitFor(() => takebackBtn().disabled, 'le fichier ferme les boutons');
-assert(/n’autorise pas|does not allow/.test(takebackBtn().title),
-    'l’infobulle dit « la partie n’autorise pas », distinct de « à votre tour »');
+opponentWrites([{ to: 'd4' }, { to: 'Nf6' }], false);
+await waitFor(() => /n’autorise pas|does not allow/.test(takebackBtn().title), 'le fichier ferme Reculer');
+assert(takebackBtn().disabled, 'Reculer fermé par le fichier');
 const before = relay.get(MID);
-restartBtn().disabled = false;          // garde de fond : on force le clic
-restartBtn().click();
+for (const b of [takebackBtn(), restartBtn()]) {
+    b.disabled = false;          // garde de fond : on force le clic
+    b.click();
+}
 await sleep(100);
-assert(relay.get(MID) === before, 'la garde de fond refuse aussi : rien n’est publié');
+assert(relay.get(MID) === before && match.playedMoves.length === 2,
+    'les gardes de fond refusent : rien n’est publié, la position ne bouge pas');
+
+// 8. Changer la position AUTREMENT (historique, état saisi) : refusé à
+//    distance — ces chemins ne changeaient que NOTRE plateau.
+{
+    let acked = false, refreshed = false;
+    (bus['play-rep:9:rollback-to'] ??= []).push(() => { acked = true; });
+    (bus['play-event:9:move-played'] ??= []).push(() => { refreshed = true; });
+    const loads = match.loadCalls;
+    await mockTauri.event.emit('play-req:9:rollback-to', { index: 0 });
+    await waitFor(() => acked, 'la fenêtre Historique reçoit quand même son accusé');
+    assert(match.playedMoves.length === 2, 'rollback-to depuis l’Historique : la position ne bouge pas');
+    assert(refreshed, 'l’Historique est invité à se relire (sa sélection revient sur la vraie position)');
+    await mockTauri.event.emit('play-req:9:load-board-state', { state: 'fen' });
+    await sleep(50);
+    assert(match.loadCalls === loads && match.playedMoves.length === 2, 'load-board-state : refusé aussi');
+    assert(relay.get(MID) === before, 'et rien n’est publié');
+}
 
 console.log(`\n${passed} assertions OK — reprise de coup en partie à distance validée.`);
 process.exit(0);

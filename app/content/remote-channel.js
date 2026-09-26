@@ -52,20 +52,19 @@ export class RemoteChannel {
      * Le reglage `allowTakeback` est une propriete de la PARTIE : chaque
      * enveloppe recue qui le porte le met a jour (le fichier fait foi), chaque
      * enveloppe emise le recopie. `allowTakeback` a la construction est ce
-     * que l'invitation annoncait, `defaultAllowTakeback` ce qu'on suppose
-     * quand personne ne dit rien.
+     * que l'invitation annoncait ; quand personne ne dit rien, la reprise
+     * est interdite (voir resolveAllowTakeback).
      */
-    _initTakeback({ allowTakeback = null, defaultAllowTakeback = true } = {}) {
+    _initTakeback({ allowTakeback = null } = {}) {
         this._linkAllowTakeback = typeof allowTakeback === 'boolean' ? allowTakeback : null;
         this._fileAllowTakeback = null;
-        this._defaultAllowTakeback = !!defaultAllowTakeback;
         this._onRemoteTakeback = null;
         this._onSettingsChange = null;
     }
 
     /** Le reglage effectif, toujours un booleen. */
     get allowTakeback() {
-        return resolveAllowTakeback(this._fileAllowTakeback, this._linkAllowTakeback, this._defaultAllowTakeback);
+        return resolveAllowTakeback(this._fileAllowTakeback, this._linkAllowTakeback);
     }
 
     /** Ce qu'on ECRIT : la valeur connue, ou null (champ omis) si personne ne l'a dite. */
@@ -133,13 +132,11 @@ export class HttpRelayChannel extends RemoteChannel {
      *   (attendu dans matchDetails.gameName par control.js).
      * @param {boolean|null} [opts.allowTakeback=null] - reprise de coup telle
      *   que l'invitation l'annonce (null = elle ne dit rien) ; le fichier du
-     *   relai la remplace des qu'il la porte.
-     * @param {boolean} [opts.defaultAllowTakeback=true] - valeur supposee
-     *   quand ni le lien ni le fichier ne disent rien.
+     *   relai la remplace des qu'il la porte ; ni l'un ni l'autre = interdite.
      */
     constructor({
         relayUrl, matchId, localNbTurns = 0, pollIntervalMs = 1500, fetchImpl = httpFetch,
-        codec = 'tabulon', gameName = null, allowTakeback = null, defaultAllowTakeback = true,
+        codec = 'tabulon', gameName = null, allowTakeback = null,
     }) {
         super();
         if (!relayUrl) throw new Error('HttpRelayChannel: relayUrl requis');
@@ -172,7 +169,7 @@ export class HttpRelayChannel extends RemoteChannel {
          */
         this._generation = 0;
         this._pushing = 0;
-        this._initTakeback({ allowTakeback, defaultAllowTakeback });
+        this._initTakeback({ allowTakeback });
     }
 
     get matchId() { return this._matchId; }
