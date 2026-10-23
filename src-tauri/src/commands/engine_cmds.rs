@@ -164,8 +164,8 @@ pub(crate) fn searched_paths(name: &str) -> String {
     }
 }
 
-/// Le fichier porte-t-il le bit d'execution ? Toujours vrai sous Windows, ou
-/// la question ne se pose pas.
+/// Le fichier existe-t-il et porte-t-il le bit d'execution ? Sous Windows, ou
+/// le bit n'existe pas, il suffit qu'il existe.
 pub(crate) fn is_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
@@ -176,8 +176,7 @@ pub(crate) fn is_executable(path: &Path) -> bool {
     }
     #[cfg(not(unix))]
     {
-        let _ = path;
-        true
+        path.is_file()
     }
 }
 
@@ -232,12 +231,20 @@ pub(crate) fn eval_file_candidate(engine_dir: &Path, eval_file: &str) -> Option<
         return None;
     }
     let p = Path::new(rel);
-    if p.is_absolute() {
+    // has_root() et non is_absolute() : sous Windows "/etc/passwd" n'est PAS
+    // absolu (pas de lecteur) mais join() le rattache a la racine du lecteur
+    // courant, donc hors du repertoire du moteur
+    if p.is_absolute() || p.has_root() {
         return None;
     }
-    if p.components()
-        .any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::Prefix(_)))
-    {
+    if p.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::ParentDir
+                | std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+        )
+    }) {
         return None;
     }
     Some(engine_dir.join(p))
@@ -963,6 +970,12 @@ mod tests {
         assert_eq!(eval_file_candidate(dir, "nnue/../../secret"), None);
         assert_eq!(eval_file_candidate(dir, "/etc/passwd"), None);
         assert_eq!(eval_file_candidate(dir, "   "), None);
+        #[cfg(windows)]
+        {
+            assert_eq!(eval_file_candidate(dir, "\\etc\\passwd"), None);
+            assert_eq!(eval_file_candidate(dir, "C:secret"), None);
+            assert_eq!(eval_file_candidate(dir, "nnue\\..\\..\\secret"), None);
+        }
     }
 
     #[test]
