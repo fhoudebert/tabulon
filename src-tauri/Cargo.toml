@@ -2,7 +2,7 @@
 name        = "tabulon"
 version     = "1.0.0"
 edition     = "2024"
-rust-version = "1.88"   # minimum exige par les dependances du Cargo.lock (cargo metadata)
+rust-version = "1.90"   # minimum exige par tauri 2.12 (et donc par le Cargo.lock)
 
 [lib]
 name       = "tabulon_lib"
@@ -13,7 +13,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # ── Tauri core ────────────────────────────────────────────────────────────────
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2.12.5", features = ["devtools"] }
 
 # ── Tauri plugins ─────────────────────────────────────────────────────────────
 tauri-plugin-store   = "2"   # persistance clé-valeur (remplace electron-store)

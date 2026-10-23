@@ -6,7 +6,7 @@
 // jbwu.init(title, header?)  →  twu.init(title, header?)
 // jbwu.ready()               →  twu.ready()
 
-import { platform, getCurrentWindow, emit } from './tauri-bridge.js';
+import { platform, getCurrentWindow, emit, tauriReady } from './tauri-bridge.js';
 
 const twu = {
 
@@ -81,6 +81,8 @@ const twu = {
    * équivalente de createWindowPromise().
    */
   async ready() {
+    // getCurrentWindow() est synchrone : attendre l'injection d'abord.
+    await tauriReady;
     const win = getCurrentWindow();
     await emit('window-ready', { label: win.label });
   }

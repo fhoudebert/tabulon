@@ -1,7 +1,8 @@
 // test-tauri-bridge-injection.mjs — prédicat pur isTauriInjected() du bridge
 // (garde contre la course d'injection Windows, tauri-apps/tauri#12990).
-// L'import du bridge sous Node est sûr : le top-level await est gardé par
-// `typeof window !== 'undefined'` — ce test vérifie aussi cela, de fait.
+// Et l'attente elle-même, SANS top-level await (refusé par WKWebView sous
+// macOS : « Unexpected identifier 'waitForTauri' ») : le module s'évalue tout
+// de suite, ce sont les appels asynchrones qui attendent l'injection.
 //
 // Usage : node tests/test-tauri-bridge-injection.mjs
 
@@ -43,5 +44,37 @@ assert(isTauriPage({}) === false,
 assert(isTauriPage({ location: { protocol: 'https:', hostname: 'example.com' } }) === false,
     'page web quelconque → pas d\'attente');
 assert(isTauriPage(undefined) === false, 'absence de window → pas d\'attente');
+
+// ── Aucun top-level await : rien dans le module ne suspend son évaluation ───
+import { readFileSync } from 'fs';
+const src = readFileSync(new URL('../app/content/tauri-bridge.js', import.meta.url), 'utf8');
+// Un module qui n'a pas de top-level await se compile comme corps de
+// fonction NON async une fois import/export retirés ; avec un await hors
+// fonction, la compilation échoue. Pas besoin d'analyseur.
+const asScript = src
+    .replace(/^export\s+(const|function|async function|class|let)/gm, '$1')
+    .replace(/^import .*$/gm, '');
+let compiles = true;
+try { new Function(asScript); } catch (e) { compiles = false; console.error(e.message); }
+assert(compiles, 'tauri-bridge.js sans top-level await (compilable hors module async)');
+
+// ── Comportement : page Tauri pas encore injectée (course Windows) ──────────
+const full2 = { core: { invoke: async (c) => 'ok:' + c }, event: {}, window: {}, webviewWindow: {},
+                shell: {}, dialog: {}, os: {},
+                store: { Store: { load: async (f) => ({ file: f }) } } };
+globalThis.window = { location: { protocol: 'tauri:', hostname: 'localhost' } };
+const t0 = Date.now();
+const B = await import('../app/content/tauri-bridge.js?course=' + Date.now());
+assert(Date.now() - t0 < 1000, 'le module s\'évalue sans attendre l\'injection (aucune suspension)');
+const pending = B.invoke('get_x');
+const pendingStore = B.Store.load('tabulon.json');
+let settled = false; pending.then(() => { settled = true; });
+await new Promise(r => setTimeout(r, 60));
+assert(!settled, 'invoke() ATTEND l\'injection au lieu de lever');
+globalThis.window.__TAURI__ = full2;
+assert(await pending === 'ok:get_x', 'invoke() part dès que l\'injection arrive');
+assert((await pendingStore).file === 'tabulon.json', 'Store.load() (proxy de classe) attend lui aussi');
+assert((await B.Store.load('x.json')).file === 'x.json', 'Store.load() après injection : appel direct');
+delete globalThis.window;
 
 console.log(`\ntest-tauri-bridge-injection: ${passed} assertions OK`);

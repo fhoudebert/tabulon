@@ -22,7 +22,7 @@
   "scripts": {
     "dev": "node scripts/check-dist.mjs && tauri dev",
     "build": "node scripts/check-dist.mjs && npm run build:frontend && tauri build",
-    "build:frontend": "npm --prefix app install --omit=dev",
+    "build:frontend": "cd app && npm install --omit=dev --no-audit --no-fund",
     "lint": "node scripts/check-syntax.mjs",
     "tauri": "tauri",
     "test": "node tests/run-tests.mjs",
@@ -33,6 +33,6 @@
     "version": "node scripts/set-version.mjs && git add package-lock.json app/package.json src-tauri/Cargo.toml src-tauri/Cargo.lock"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.5"
+    "@tauri-apps/cli": "^2.12.4"
   }
 }
