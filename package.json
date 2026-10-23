@@ -22,7 +22,7 @@
   "scripts": {
     "dev": "node scripts/check-dist.mjs && tauri dev",
     "build": "node scripts/check-dist.mjs && npm run build:frontend && tauri build",
-    "build:frontend": "npm --prefix app install --omit=dev",
+    "build:frontend": "cd app && npm install --omit=dev --no-audit --no-fund",
     "lint": "node scripts/check-syntax.mjs",
     "tauri": "tauri",
     "test": "node tests/run-tests.mjs",
