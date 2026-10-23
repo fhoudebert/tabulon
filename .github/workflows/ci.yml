@@ -1,0 +1,210 @@
+# Tabulon : binaires Tauri pour Linux, Windows et macOS.
+# - jocly : dist de jocly2 (branche JOCLY2_REF) construit une fois, puis le
+#   dist-minimal embarque qui en est tire ; les deux deviennent des artefacts
+# - desktop : tests Rust puis build de release sur chaque systeme
+#     Linux   : AppImage (purgee des libwayland-*, via compil.sh), .deb, .rpm
+#     Windows : installeurs NSIS (.exe) et MSI, plus l'exe seul
+#     macOS   : une seule application pour Apple silicon et Intel (universelle),
+#               en .dmg et en .app zippee, signee ad hoc (pas notarisee)
+# - msrv : l'application testee avec sa Rust minimale (1.90, rust-version)
+# Lance a chaque push et pull request, et a la main (Actions > CI > Run workflow).
+# Les suites JS + Rust de non-regression restent dans tests.yml.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # la branche de jocly2 avec laquelle cette branche de Tabulon est livree
+  # (la meme que dans tests.yml : les changer ensemble)
+  JOCLY2_REF: 2.9.x
+  # modules embarques dans dist-minimal, separes par des virgules (lu par
+  # make-minimal-dist.mjs ; vide = son defaut, fourinarow)
+  TABULON_MODULES: ""
+
+jobs:
+  jocly:
+    name: Jocly dist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout jocly2 (${{ env.JOCLY2_REF }})
+        uses: actions/checkout@v7
+        with:
+          repository: fhoudebert/jocly2
+          ref: ${{ env.JOCLY2_REF }}
+          path: jocly2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Build the jocly2 dist
+        working-directory: jocly2
+        run: npm install --no-audit --no-fund && npx gulp build
+
+      # check-dist genere dist-minimal (TABULON_MODULES) et echoue s'il est
+      # vide ou sans moteur (une app sans aucun jeu a deja ete livree ainsi)
+      - name: Embedded dist (dist-minimal)
+        run: |
+          ln -s "$PWD/jocly2/dist" dist
+          npm run check:dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-minimal
+          path: dist-minimal
+          if-no-files-found: error
+          retention-days: 7
+
+      # la ludotheque complete, a poser en dist/ a cote de l'executable
+      - uses: actions/upload-artifact@v7
+        with:
+          name: jocly-dist
+          path: jocly2/dist
+          if-no-files-found: error
+          retention-days: 30
+
+  desktop:
+    name: Desktop application (${{ matrix.name }})
+    needs: jocly
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 : glibc la plus ancienne disponible, donc AppImage et .deb
+          # utilisables sur le plus grand nombre de distributions
+          - os: ubuntu-22.04
+            name: linux
+            build: ./compil.sh
+            bundle: src-tauri/target/release/bundle
+          - os: windows-latest
+            name: windows
+            build: npm run build
+            bundle: src-tauri/target/release/bundle
+          # une seule application pour Apple silicon et Intel ; signature ad hoc
+          # ("-") : sans elle le binaire arm64 est refuse par macOS, et sans
+          # certificat Apple on ne peut pas faire mieux
+          - os: macos-latest
+            name: macos
+            build: >-
+              npm run build -- --target universal-apple-darwin --bundles app,dmg
+              --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+            bundle: src-tauri/target/universal-apple-darwin/release/bundle
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-minimal
+          path: dist-minimal
+
+      - name: Linux libraries for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libxdo-dev libssl-dev file
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Tauri command line
+        run: npm ci --no-audit --no-fund
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: Build
+        shell: bash
+        run: ${{ matrix.build }}
+
+      # upload-artifact perd les droits d'execution : l'AppImage est remise
+      # telle quelle (chmod +x apres telechargement), la .app est zippee avec
+      # ditto pour garder sa structure et sa signature
+      - name: Collect (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p out
+          for f in ${{ matrix.bundle }}/appimage/*.AppImage ${{ matrix.bundle }}/deb/*.deb ${{ matrix.bundle }}/rpm/*.rpm; do
+            if [ -e "$f" ]; then cp "$f" out/; fi
+          done
+          ls -l out
+
+      - name: Collect (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p out
+          cp ${{ matrix.bundle }}/nsis/*.exe ${{ matrix.bundle }}/msi/*.msi out/
+          cp src-tauri/target/release/tabulon.exe out/tabulon-portable.exe
+          ls -l out
+
+      - name: Collect (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p out
+          cp ${{ matrix.bundle }}/dmg/*.dmg out/
+          app="$(ls -d ${{ matrix.bundle }}/macos/*.app | head -1)"
+          codesign --verify --deep --verbose=2 "$app"
+          lipo -archs "$app/Contents/MacOS/tabulon"
+          ditto -c -k --keepParent "$app" "out/$(basename "$app" .app)-universal.app.zip"
+          ls -l out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tabulon-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+
+  # la plus ancienne Rust avec laquelle l'application compile (rust-version
+  # dans Cargo.toml), avec les dependances verrouillees
+  msrv:
+    name: Rust 1.90 (minimum)
+    needs: jocly
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-minimal
+          path: dist-minimal
+
+      - name: Linux libraries for Tauri
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
+
+      - uses: dtolnay/rust-toolchain@1.90
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Tests with the locked dependencies
+        working-directory: src-tauri
+        run: cargo test --locked

@@ -10,8 +10,8 @@ For the internal architecture (window inventory, JS ⇄ Rust protocol, satellite
 
 ## Prerequisites
 
-- **Rust ≥ 1.88** + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
-  (edition 2024; 1.88 is the minimum the locked dependencies require)
+- **Rust ≥ 1.90** + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
+  (edition 2024; 1.90 is the minimum Tauri 2.12, and so the lock, requires)
 - **Node.js 22.22+ or 24.15+** (npm) — the floor set by jocly2's build
   (`engines` in its `package.json`); the CI uses Node 22
 - **Tauri CLI**: nothing to install globally — it is the `@tauri-apps/cli`
@@ -990,6 +990,21 @@ push and pull request: it builds the jocly2 dist from the branch named by
 with the target branch), then `check:dist`, `npm test` and `npm run
 test:rust`. Before the workflow existed, a Rust test had gone stale for
 weeks without anyone noticing.
+
+`.github/workflows/ci.yml` builds the release binaries on the same triggers
+(and by hand: Actions > CI > Run workflow). One job builds the jocly2 dist
+once and derives `dist-minimal/` from it (`TABULON_MODULES` in the workflow
+chooses the embedded modules); then Linux (Ubuntu 22.04, the oldest glibc:
+AppImage purged by `compil.sh`, `.deb`, `.rpm`), Windows (NSIS and MSI
+installers, plus the bare `.exe`) and macOS (one universal app for Apple
+silicon and Intel, `.dmg` and zipped `.app`) each run `cargo test` then the
+release build, and a last job runs `cargo test --locked` with Rust 1.90, the
+`rust-version`. Artifacts: `tabulon-linux`, `tabulon-windows`,
+`tabulon-macos`, plus `jocly-dist` (the full game library, to place as
+`dist/` next to the program). Two limits: artifacts lose the executable bit
+(`chmod +x` the AppImage after download), and the macOS app is only signed
+ad hoc, not notarized — Gatekeeper blocks it on first launch (right-click >
+Open, or `xattr -dr com.apple.quarantine tabulon.app`).
 
 Prerequisites: `dist/` in place (see above), `dist-minimal/` generated
 (`npm run check:dist`) and `npm --prefix app install` (jsdom). The runner

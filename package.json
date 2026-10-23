@@ -33,6 +33,6 @@
     "version": "node scripts/set-version.mjs && git add package-lock.json app/package.json src-tauri/Cargo.toml src-tauri/Cargo.lock"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.5"
+    "@tauri-apps/cli": "^2.12.4"
   }
 }
