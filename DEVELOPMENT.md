@@ -12,8 +12,8 @@ For the internal architecture (window inventory, JS ⇄ Rust protocol, satellite
 
 - **Rust ≥ 1.90** + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
   (edition 2024; 1.90 is the minimum Tauri 2.12, and so the lock, requires)
-- **Node.js 22.22+ or 24.15+** (npm) — the floor set by jocly2's build
-  (`engines` in its `package.json`); the CI uses Node 22
+- **Node.js 26+** (npm) — the floor set by jocly2's build (`engines` in its
+  `package.json`, 2.9.x onwards); the CI uses Node 26
 - **Tauri CLI**: nothing to install globally — it is the `@tauri-apps/cli`
   dev dependency, installed by `npm install` and used by the npm scripts
 - **ffmpeg** (only needed for the in-app video recording feature)
