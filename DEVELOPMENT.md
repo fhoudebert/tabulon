@@ -921,7 +921,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
 | `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
-| `fix-appimage.mjs` | Post-build: strips the bundled `libwayland-*` from the AppImage and repacks it (Arch/Manjaro `EGL_BAD_PARAMETER` fix — see Troubleshooting). Run after every `cargo tauri build` that produces an AppImage. |
+| `fix-appimage.mjs` | Post-build: strips the bundled `libwayland-*` from the AppImage and repacks it (Arch/Manjaro `EGL_BAD_PARAMETER` fix — see Troubleshooting). Run after every `cargo tauri build` that produces an AppImage. x86_64 and aarch64 (picks the matching `appimagetool`). |
 | `check-webrtc-webview.py` | Empirical probe: does the embedded webview (WebKitGTK on Linux) expose `RTCPeerConnection`? Loads an offscreen WebView and, if the API exists, runs a full local WebRTC loopback (offer/answer, ICE without STUN, DataChannel ping/pong) and prints a JSON verdict. Current verdict (Ubuntu 24.04 / WebKitGTK 2.52): **no** — distribution builds are compiled without WebRTC, the finding that steered peer-to-peer play to the Rust TCP transport. **Keep it around to re-evaluate WebRTC in the future**: rerun on new distros/WebKitGTK releases; if it ever reports a working DataChannel, WebRTC (with STUN/TURN) becomes a candidate transport adding the NAT traversal TCP lacks. Needs `python3-gi gir1.2-webkit2-4.1 xvfb`; run: `xvfb-run -a python3 scripts/check-webrtc-webview.py`. Linux-only by nature (WebView2/Chromium on Windows ships WebRTC). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
@@ -995,11 +995,13 @@ weeks without anyone noticing.
 (and by hand: Actions > CI > Run workflow). One job builds the jocly2 dist
 once and derives `dist-minimal/` from it (`TABULON_MODULES` in the workflow
 chooses the embedded modules); then Linux (Ubuntu 22.04, the oldest glibc:
-AppImage purged by `compil.sh`, `.deb`, `.rpm`), Windows (NSIS and MSI
+AppImage purged by `compil.sh`, `.deb`, `.rpm`; once on x86_64 and once on
+GitHub's native ARM64 runner `ubuntu-22.04-arm`, since Tauri does not
+cross-compile AppImages), Windows (NSIS and MSI
 installers, plus the bare `.exe`) and macOS (one universal app for Apple
 silicon and Intel, `.dmg` and zipped `.app`) each run `cargo test` then the
 release build, and a last job runs `cargo test --locked` with Rust 1.90, the
-`rust-version`. Artifacts: `tabulon-linux`, `tabulon-windows`,
+`rust-version`. Artifacts: `tabulon-linux`, `tabulon-linux-arm64`, `tabulon-windows`,
 `tabulon-macos`, plus `jocly-dist` (the full game library, to place as
 `dist/` next to the program). Two limits: artifacts lose the executable bit
 (`chmod +x` the AppImage after download), and the macOS app is only signed
@@ -1475,8 +1477,13 @@ The script extracts the AppImage (no FUSE needed), removes exactly the
 affected machine), repacks it with `appimagetool` **reusing the original
 AppImage's runtime** (no network needed for the runtime; `appimagetool`
 itself is taken from `$APPIMAGETOOL`, the PATH, or downloaded once into
-`~/.cache/tabulon/`), and keeps the untouched original as
-`<name>.AppImage.orig`. Pure logic covered by
+`~/.cache/tabulon/` — version **1.9.1, pinned**, x86_64 or aarch64 to match
+the machine), and keeps the untouched original as `<name>.AppImage.orig`.
+Before repacking it gives the extracted AppDir back its read/execute
+permissions (`chmod -R a+rX`): `--appimage-extract` recreates directories as
+`0700`, which `appimagetool` builds from 29 October 2026 onwards (#135/#139)
+refuse to package — the reason the tool is no longer taken from the moving
+`continuous` release. Pure logic covered by
 `tests/test-fix-appimage.mjs`; the end-to-end mechanics (extract → strip
 → repack → still runs) were validated against a synthetic AppImage.
 

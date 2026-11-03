@@ -2,7 +2,8 @@
 # - jocly : dist de jocly2 (branche JOCLY2_REF) construit une fois, puis le
 #   dist-minimal embarque qui en est tire ; les deux deviennent des artefacts
 # - desktop : tests Rust puis build de release sur chaque systeme
-#     Linux   : AppImage (purgee des libwayland-*, via compil.sh), .deb, .rpm
+#     Linux   : AppImage (purgee des libwayland-*, via compil.sh), .deb, .rpm,
+#               en x86_64 et en ARM64 (runner ARM natif : Tauri ne croise pas)
 #     Windows : installeurs NSIS (.exe) et MSI, plus l'exe seul
 #     macOS   : une seule application pour Apple silicon et Intel (universelle),
 #               en .dmg et en .app zippee, signee ad hoc (pas notarisee)
@@ -87,6 +88,13 @@ jobs:
           # utilisables sur le plus grand nombre de distributions
           - os: ubuntu-22.04
             name: linux
+            build: ./compil.sh
+            bundle: src-tauri/target/release/bundle
+          # ARM64 (Raspberry Pi 4/5 en 64 bits, portables Snapdragon, serveurs
+          # ARM) : runner ARM natif, gratuit pour les depots publics ; meme
+          # 22.04 que ci-dessus pour la meme raison de glibc
+          - os: ubuntu-22.04-arm
+            name: linux-arm64
             build: ./compil.sh
             bundle: src-tauri/target/release/bundle
           - os: windows-latest

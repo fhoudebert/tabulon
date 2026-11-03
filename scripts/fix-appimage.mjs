@@ -25,19 +25,35 @@
 // `cargo tauri build` produisant une AppImage.
 //
 // PRÉREQUIS : `appimagetool` pour réempaqueter — pris dans $APPIMAGETOOL,
-// sinon dans le PATH, sinon téléchargé (release continue officielle) dans
+// sinon dans le PATH, sinon téléchargé (version figée, voir plus bas) dans
 // ~/.cache/tabulon/. Il est lancé avec --appimage-extract-and-run pour ne
-// pas dépendre de FUSE.
+// pas dépendre de FUSE. x86_64 et aarch64 : l'AppImage se construit sur la
+// machine qui la fait tourner (Tauri ne croise pas), donc l'architecture de
+// la machine est aussi celle de l'AppImage.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, chmodSync, rmSync, readdirSync, renameSync, copyFileSync, openSync, readSync, closeSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, chmodSync, rmSync, readdirSync, renameSync, copyFileSync, openSync, readSync, closeSync, writeFileSync, lstatSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const APPIMAGETOOL_URL =
-    'https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage';
+// Version FIGEE, pas « continuous » : continuous change sous nos pieds. Le
+// 29/10/2026 (appimagetool #135/#139) il s'est mis a refuser un AppDir dont
+// la racine n'est pas lisible par tous -- ce qui cassait ce script, la CI
+// telechargeant l'outil a chaque passage. Changer de version = la tester.
+const APPIMAGETOOL_VERSION = '1.9.1';
+const APPIMAGETOOL_BASE =
+    `https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/`;
+
+/**
+ * Nom AppImage de l'architecture Node (os.arch()), ou null si appimagetool
+ * n'en publie pas. Pur (testé) : il choisit l'appimagetool téléchargé ET la
+ * variable ARCH, qu'appimagetool exige et qui finit dans le nom du fichier.
+ */
+export function appimageArch(nodeArch) {
+    return { x64: 'x86_64', arm64: 'aarch64' }[nodeArch] || null;
+}
 
 /**
  * Le fichier doit-il être purgé du bundle ? Prédicat PUR (testé par
@@ -66,6 +82,29 @@ export function stripAppDir(appDir) {
     return removed;
 }
 
+/**
+ * Rend a l'AppDir extrait les droits de l'AppImage d'origine, l'equivalent de
+ * `chmod -R a+rX` : --appimage-extract recree les REPERTOIRES en 0700 alors
+ * qu'ils sont en 0755 dans le squashfs. Sans cela l'AppImage refaite les
+ * garde en 0700 (illisible pour un autre utilisateur), et appimagetool
+ * recent refuse carrement de l'empaqueter. Liens symboliques non suivis.
+ * Renvoie le nombre d'entrees modifiees (testable).
+ */
+export function restoreModes(dir) {
+    let changed = 0;
+    const visit = (p) => {
+        const st = lstatSync(p);
+        if (st.isSymbolicLink()) return;
+        const mode = st.mode & 0o7777;
+        let want = mode | 0o444;
+        if (st.isDirectory() || (mode & 0o111)) want |= 0o111;
+        if (want !== mode) { chmodSync(p, want); changed++; }
+        if (st.isDirectory()) for (const name of readdirSync(p)) visit(join(p, name));
+    };
+    visit(dir);
+    return changed;
+}
+
 function findDefaultAppImage() {
     const dir = join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'appimage');
     if (!existsSync(dir)) return null;
@@ -73,17 +112,18 @@ function findDefaultAppImage() {
     return candidates.length === 1 ? join(dir, candidates[0]) : null;
 }
 
-function findAppimagetool() {
+function findAppimagetool(arch) {
     if (process.env.APPIMAGETOOL && existsSync(process.env.APPIMAGETOOL)) {
         return process.env.APPIMAGETOOL;
     }
     const inPath = spawnSync('which', ['appimagetool'], { encoding: 'utf8' });
     if (inPath.status === 0 && inPath.stdout.trim()) return inPath.stdout.trim();
-    const cached = join(os.homedir(), '.cache', 'tabulon', 'appimagetool-x86_64.AppImage');
+    const file = `appimagetool-${arch}.AppImage`;
+    const cached = join(os.homedir(), '.cache', 'tabulon', `appimagetool-${APPIMAGETOOL_VERSION}-${arch}.AppImage`);
     if (!existsSync(cached)) {
         console.log(`[fix-appimage] téléchargement d'appimagetool → ${cached}`);
         mkdirSync(dirname(cached), { recursive: true });
-        execFileSync('curl', ['-fsSL', '-o', cached, APPIMAGETOOL_URL], { stdio: 'inherit' });
+        execFileSync('curl', ['-fsSL', '-o', cached, APPIMAGETOOL_BASE + file], { stdio: 'inherit' });
         chmodSync(cached, 0o755);
     }
     return cached;
@@ -96,7 +136,12 @@ function main() {
         console.error('[fix-appimage] AppImage introuvable. Usage : node scripts/fix-appimage.mjs <chemin.AppImage>');
         process.exit(1);
     }
-    console.log(`[fix-appimage] cible : ${appImage}`);
+    const arch = appimageArch(os.arch());
+    if (!arch) {
+        console.error(`[fix-appimage] architecture non prise en charge : ${os.arch()} (x64 ou arm64 seulement).`);
+        process.exit(1);
+    }
+    console.log(`[fix-appimage] cible : ${appImage} (${arch})`);
 
     // 1. Extraire (l'AppImage sait s'auto-extraire, aucune dépendance FUSE).
     const workDir = join(os.tmpdir(), `tabulon-fix-appimage-${process.pid}`);
@@ -113,12 +158,13 @@ function main() {
         return;
     }
     console.log(`[fix-appimage] retirées : ${removed.join(', ')}`);
+    restoreModes(appDir);
 
     // 3. Réempaqueter puis remplacer (original conservé en .orig). Le runtime
     // (préfixe ELF avant le squashfs) est REPRIS DE L'ORIGINALE : fidélité
     // exacte et aucun téléchargement — sans lui, appimagetool irait chercher
     // le runtime sur GitHub à chaque réempaquetage.
-    const tool = findAppimagetool();
+    const tool = findAppimagetool(arch);
     const rebuilt = join(workDir, basename(appImage));
     const runtimeArgs = [];
     const off = spawnSync(appImage, ['--appimage-offset'], { encoding: 'utf8' });
@@ -136,7 +182,7 @@ function main() {
     }
     const res = spawnSync(tool, ['--appimage-extract-and-run', ...runtimeArgs, appDir, rebuilt], {
         stdio: 'inherit',
-        env: { ...process.env, ARCH: 'x86_64' },
+        env: { ...process.env, ARCH: arch },
     });
     if (res.status !== 0 || !existsSync(rebuilt)) {
         console.error('[fix-appimage] échec du réempaquetage (appimagetool) — AppImage originale laissée intacte.');
