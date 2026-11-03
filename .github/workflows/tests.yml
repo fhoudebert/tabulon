@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  JOCLY2_REF: 2.9.x
+  JOCLY2_REF: main
 
 jobs:
   tests:

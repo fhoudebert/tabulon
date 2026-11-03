@@ -27,7 +27,7 @@ concurrency:
 env:
   # la branche de jocly2 avec laquelle cette branche de Tabulon est livree
   # (la meme que dans tests.yml : les changer ensemble)
-  JOCLY2_REF: 2.9.x
+  JOCLY2_REF: main
   # modules embarques dans dist-minimal, separes par des virgules (lu par
   # make-minimal-dist.mjs ; vide = son defaut, fourinarow)
   TABULON_MODULES: ""

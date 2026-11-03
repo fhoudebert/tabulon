@@ -13,7 +13,7 @@ For the internal architecture (window inventory, JS ⇄ Rust protocol, satellite
 - **Rust ≥ 1.90** + Cargo — via [rustup](https://www.rust-lang.org/tools/install)
   (edition 2024; 1.90 is the minimum Tauri 2.12, and so the lock, requires)
 - **Node.js 26+** (npm) — the floor set by jocly2's build (`engines` in its
-  `package.json`, 2.9.x onwards); the CI uses Node 26
+  `package.json`); the CI uses Node 26
 - **Tauri CLI**: nothing to install globally — it is the `@tauri-apps/cli`
   dev dependency, installed by `npm install` and used by the npm scripts
 - **ffmpeg** (only needed for the in-app video recording feature)
@@ -38,8 +38,8 @@ copied as-is to the root of this repo (`tabulon/dist/`, **not**
 
 ```bash
 # the jocly2 branch this Tabulon branch is developed against -- the same
-# as JOCLY2_REF in .github/workflows/tests.yml (2.9.x for Tabulon 1.0.x)
-git clone -b 2.9.x https://github.com/fhoudebert/jocly2.git
+# as JOCLY2_REF in .github/workflows/ci.yml and tests.yml (main)
+git clone -b main https://github.com/fhoudebert/jocly2.git
 cd jocly2
 npm install
 npm run build          # runs `gulp build --prod`, produces jocly2/dist/
