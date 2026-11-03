@@ -4,10 +4,10 @@
 //
 // Usage : node tests/test-fix-appimage.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, chmodSync, statSync, symlinkSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import os from 'node:os';
-import { shouldStrip, stripAppDir } from '../scripts/fix-appimage.mjs';
+import { shouldStrip, stripAppDir, appimageArch, restoreModes } from '../scripts/fix-appimage.mjs';
 
 let passed = 0;
 function assert(cond, msg) {
@@ -50,7 +50,38 @@ for (const f of ['libwebkit2gtk-4.1.so.0',      // retirer WebKit CASSE (test D 
     rmSync(dir, { recursive: true, force: true });
 }
 
-// ── 3. AppDir sans usr/lib : ne pas exploser ─────────────────────────────────
+// ── 3. Architecture : nom AppImage (appimagetool téléchargé, ARCH) ───────────
+assert(appimageArch('x64') === 'x86_64', 'x64 → x86_64');
+assert(appimageArch('arm64') === 'aarch64', 'arm64 → aarch64 (runner ubuntu-22.04-arm)');
+for (const a of ['arm', 'ia32', 'riscv64', 'ppc64', undefined]) {
+    assert(appimageArch(a) === null, `non pris en charge : ${a}`);
+}
+
+// ── 4. Droits rendus après extraction (équivalent chmod -R a+rX) ─────────────
+// --appimage-extract recrée les répertoires en 0700 (constaté) ; appimagetool
+// récent refuse alors d'empaqueter. Les fichiers non exécutables le restent.
+{
+    const dir = mkdtempSync(join(os.tmpdir(), 'fix-appimage-modes-'));
+    const lib = join(dir, 'usr', 'lib');
+    mkdirSync(lib, { recursive: true });
+    writeFileSync(join(dir, 'AppRun'), '#!/bin/sh\n');
+    writeFileSync(join(lib, 'libgtk-3.so.0'), 'stub');
+    symlinkSync('usr/lib/libgtk-3.so.0', join(dir, 'lien'));
+    chmodSync(join(dir, 'AppRun'), 0o700);
+    chmodSync(join(lib, 'libgtk-3.so.0'), 0o600);
+    for (const d of [lib, join(dir, 'usr'), dir]) chmodSync(d, 0o700);
+    const mode = (p) => (statSync(p).mode & 0o777).toString(8);
+    const n = restoreModes(dir);
+    assert(mode(dir) === '755' && mode(join(dir, 'usr')) === '755' && mode(lib) === '755',
+        'répertoires 0700 → 0755 (racine comprise)');
+    assert(mode(join(dir, 'AppRun')) === '755', 'exécutable 0700 → 0755');
+    assert(mode(join(lib, 'libgtk-3.so.0')) === '644', 'fichier 0600 → 0644, sans bit x ajouté');
+    assert(lstatSync(join(dir, 'lien')).isSymbolicLink(), 'lien symbolique laissé tel quel');
+    assert(n === 5 && restoreModes(dir) === 0, 'idempotent : un second passage ne change rien');
+    rmSync(dir, { recursive: true, force: true });
+}
+
+// ── 5. AppDir sans usr/lib : ne pas exploser ─────────────────────────────────
 {
     const dir = mkdtempSync(join(os.tmpdir(), 'fix-appimage-empty-'));
     assert(JSON.stringify(stripAppDir(dir)) === JSON.stringify([]),

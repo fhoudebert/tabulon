@@ -2,7 +2,8 @@
 # - jocly : dist de jocly2 (branche JOCLY2_REF) construit une fois, puis le
 #   dist-minimal embarque qui en est tire ; les deux deviennent des artefacts
 # - desktop : tests Rust puis build de release sur chaque systeme
-#     Linux   : AppImage (purgee des libwayland-*, via compil.sh), .deb, .rpm
+#     Linux   : AppImage (purgee des libwayland-*, via compil.sh), .deb, .rpm,
+#               en x86_64 et en ARM64 (runner ARM natif : Tauri ne croise pas)
 #     Windows : installeurs NSIS (.exe) et MSI, plus l'exe seul
 #     macOS   : une seule application pour Apple silicon et Intel (universelle),
 #               en .dmg et en .app zippee, signee ad hoc (pas notarisee)
@@ -26,7 +27,7 @@ concurrency:
 env:
   # la branche de jocly2 avec laquelle cette branche de Tabulon est livree
   # (la meme que dans tests.yml : les changer ensemble)
-  JOCLY2_REF: 2.9.x
+  JOCLY2_REF: main
   # modules embarques dans dist-minimal, separes par des virgules (lu par
   # make-minimal-dist.mjs ; vide = son defaut, fourinarow)
   TABULON_MODULES: ""
@@ -47,7 +48,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
 
       - name: Build the jocly2 dist
         working-directory: jocly2
@@ -86,7 +87,14 @@ jobs:
           # 22.04 : glibc la plus ancienne disponible, donc AppImage et .deb
           # utilisables sur le plus grand nombre de distributions
           - os: ubuntu-22.04
-            name: linux
+            name: linux-x64
+            build: ./compil.sh
+            bundle: src-tauri/target/release/bundle
+          # ARM64 (Raspberry Pi 4/5 en 64 bits, portables Snapdragon, serveurs
+          # ARM) : runner ARM natif, gratuit pour les depots publics ; meme
+          # 22.04 que ci-dessus pour la meme raison de glibc
+          - os: ubuntu-22.04-arm
+            name: linux-arm64
             build: ./compil.sh
             bundle: src-tauri/target/release/bundle
           - os: windows-latest
@@ -128,7 +136,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
 
       - name: Tauri command line
         run: npm ci --no-audit --no-fund
@@ -151,6 +159,11 @@ jobs:
           for f in ${{ matrix.bundle }}/appimage/*.AppImage ${{ matrix.bundle }}/deb/*.deb ${{ matrix.bundle }}/rpm/*.rpm; do
             if [ -e "$f" ]; then cp "$f" out/; fi
           done
+          # l'executable seul, comme tabulon-portable.exe sous Windows : il
+          # n'embarque PAS WebKitGTK (a installer : libwebkit2gtk-4.1), au
+          # contraire de l'AppImage ; nomme comme l'artefact (linux-x64,
+          # linux-arm64) pour ne pas confondre les deux architectures
+          cp src-tauri/target/release/tabulon "out/tabulon-${{ matrix.name }}"
           ls -l out
 
       - name: Collect (Windows)
