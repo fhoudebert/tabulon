@@ -1001,10 +1001,14 @@ cross-compile AppImages), Windows (NSIS and MSI
 installers, plus the bare `.exe`) and macOS (one universal app for Apple
 silicon and Intel, `.dmg` and zipped `.app`) each run `cargo test` then the
 release build, and a last job runs `cargo test --locked` with Rust 1.90, the
-`rust-version`. Artifacts: `tabulon-linux`, `tabulon-linux-arm64`, `tabulon-windows`,
+`rust-version`. Artifacts: `tabulon-linux-x64`, `tabulon-linux-arm64`, `tabulon-windows`,
 `tabulon-macos`, plus `jocly-dist` (the full game library, to place as
-`dist/` next to the program). Two limits: artifacts lose the executable bit
-(`chmod +x` the AppImage after download), and the macOS app is only signed
+`dist/` next to the program). Each Linux artifact also holds the bare
+executable, named like the artifact (`tabulon-linux-x64`,
+`tabulon-linux-arm64`): unlike the AppImage it does not bundle WebKitGTK, so
+it needs `libwebkit2gtk-4.1` installed (as the `.deb`/`.rpm` do). Two limits:
+artifacts lose the executable bit (`chmod +x` the AppImage or the bare
+executable after download), and the macOS app is only signed
 ad hoc, not notarized — Gatekeeper blocks it on first launch (right-click >
 Open, or `xattr -dr com.apple.quarantine tabulon.app`).
 

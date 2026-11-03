@@ -87,7 +87,7 @@ jobs:
           # 22.04 : glibc la plus ancienne disponible, donc AppImage et .deb
           # utilisables sur le plus grand nombre de distributions
           - os: ubuntu-22.04
-            name: linux
+            name: linux-x64
             build: ./compil.sh
             bundle: src-tauri/target/release/bundle
           # ARM64 (Raspberry Pi 4/5 en 64 bits, portables Snapdragon, serveurs
@@ -159,6 +159,11 @@ jobs:
           for f in ${{ matrix.bundle }}/appimage/*.AppImage ${{ matrix.bundle }}/deb/*.deb ${{ matrix.bundle }}/rpm/*.rpm; do
             if [ -e "$f" ]; then cp "$f" out/; fi
           done
+          # l'executable seul, comme tabulon-portable.exe sous Windows : il
+          # n'embarque PAS WebKitGTK (a installer : libwebkit2gtk-4.1), au
+          # contraire de l'AppImage ; nomme comme l'artefact (linux-x64,
+          # linux-arm64) pour ne pas confondre les deux architectures
+          cp src-tauri/target/release/tabulon "out/tabulon-${{ matrix.name }}"
           ls -l out
 
       - name: Collect (Windows)
