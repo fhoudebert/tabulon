@@ -8,20 +8,23 @@
 #     macOS   : une seule application pour Apple silicon et Intel (universelle),
 #               en .dmg et en .app zippee, signee ad hoc (pas notarisee)
 # - msrv : l'application testee avec sa Rust minimale (1.90, rust-version)
-# Lance a chaque push et pull request, et a la main (Actions > CI > Run workflow).
-# Les suites JS + Rust de non-regression restent dans tests.yml.
-name: CI
+# - release : pour une etiquette, les paquets publies dans sa release
+# Lance a la main (Actions > Release > Run workflow), ou en poussant une
+# etiquette v* (git tag v1.1.0 && git push origin v1.1.0) : les paquets sont
+# alors aussi publies dans la release de cette etiquette (creee au besoin).
+# Les suites JS + Rust de non-regression restent dans tests.yml, a chaque push.
+name: Release (Linux, Windows, macOS)
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -221,3 +224,31 @@ jobs:
       - name: Tests with the locked dependencies
         working-directory: src-tauri
         run: cargo test --locked
+
+  # pour une etiquette : les paquets de chaque systeme dans la release (le
+  # dist jocly complet n'y va pas : il est publie dans les releases de jocly2)
+  release:
+    name: Release
+    needs: [desktop, msrv]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: tabulon-*
+          path: out
+          merge-multiple: true
+
+      - name: Publication dans la release ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -l out
+          gh release view "$TAG" > /dev/null 2>&1 \
+            || gh release create "$TAG" --title "Tabulon $TAG" \
+                 --notes "Tabulon pour Linux (x86-64, ARM64 : AppImage, .deb, .rpm, executable seul), Windows (installeurs NSIS et MSI, exe portable) et macOS (application universelle, signee ad hoc)."
+          gh release upload "$TAG" out/* --clobber
