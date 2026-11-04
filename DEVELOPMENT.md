@@ -38,7 +38,7 @@ copied as-is to the root of this repo (`tabulon/dist/`, **not**
 
 ```bash
 # the jocly2 branch this Tabulon branch is developed against -- the same
-# as JOCLY2_REF in .github/workflows/ci.yml and tests.yml (main)
+# as JOCLY2_REF in .github/workflows/release.yml and tests.yml (main)
 git clone -b main https://github.com/fhoudebert/jocly2.git
 cd jocly2
 npm install
@@ -991,8 +991,11 @@ with the target branch), then `check:dist`, `npm test` and `npm run
 test:rust`. Before the workflow existed, a Rust test had gone stale for
 weeks without anyone noticing.
 
-`.github/workflows/ci.yml` builds the release binaries on the same triggers
-(and by hand: Actions > CI > Run workflow). One job builds the jocly2 dist
+`.github/workflows/release.yml` builds the release binaries by hand
+(Actions > Release > Run workflow) or when a tag `v*` is pushed (`git tag
+v1.1.0 && git push origin v1.1.0`); for a tag, a last job publishes the
+packages in the GitHub release of that tag (created if needed; the full
+jocly dist is not included, it is published with jocly2). One job builds the jocly2 dist
 once and derives `dist-minimal/` from it (`TABULON_MODULES` in the workflow
 chooses the embedded modules); then Linux (Ubuntu 22.04, the oldest glibc:
 AppImage purged by `compil.sh`, `.deb`, `.rpm`; once on x86_64 and once on
