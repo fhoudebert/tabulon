@@ -186,6 +186,10 @@ external dist cannot break the UI itself.
 
 ## Remote play 
 
+A French, user-oriented account of conversations — what the relay can
+read, what "unprotected" means exactly, how long threads stay on a relay,
+where keys are stored on disk — is in [CONVERSATIONS.md](CONVERSATIONS.md).
+
 Two ways to play a Jocly game against a remote human, both entered through
 the **Invitation** window (hub game panel, next to Quick play / Clocked
 play): a shared **HTTP relay**, or **peer-to-peer with no server at all**.
