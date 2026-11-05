@@ -67,6 +67,11 @@
 				     un autre nom. Cachee tant qu'aucune n'est enregistree. -->
 				<div id="chat-keyring-row" class="chat-key" style="display:none">
 					<select id="chat-keyring" class="form-control"></select>
+					<!-- Écrire sans protection d'emblée, avec un joueur avec qui
+					     on n'a échangé aucune clé. Discret : ce n'est pas le
+					     chemin normal, et il est sans retour pour la partie. -->
+					<button id="chat-clear-start" class="btn btn-default chat-clear-start" style="display:none"
+					        data-i18n-title="chat.clearStartHint" title="Write without protection — with an opponent you have exchanged no key with"><span class="icon icon-key-off"></span></button>
 				</div>
 				<p id="chat-key-hint" class="chat-status"></p>
 				<div id="chat-key-row" class="chat-key">

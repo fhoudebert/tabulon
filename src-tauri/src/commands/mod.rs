@@ -8,6 +8,7 @@ pub mod katago_cmds;
 pub mod match_cmds;
 pub mod peer_cmds;
 pub mod problem_cmds;
+pub mod relay_cmds;
 pub mod scan_cmds;
 pub mod seal_cmds;
 pub mod template_cmds;

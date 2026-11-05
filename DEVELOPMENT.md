@@ -503,6 +503,36 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   a relay is there for good, and offering to "restore protection" would
   suggest otherwise. `allowClearFrom()` in the channel,
   `AcceptChatClear()` in `play.js`.
+- **Writing unprotected from the start** — the discreet crossed-key button
+  next to the key list in the chat window: for an opponent you have
+  exchanged no key with, even though the game carries one (a community
+  key, or the invitation's). Without it, one had to wait for *them* to
+  write in the clear first; if both waited, the conversation never
+  started. Same switch as above (`AcceptChatClear`, same confirmation
+  logic, same "no way back"), offered only when the game *is* protected,
+  over a relay (peer-to-peer refuses unsealed bodies) and while the
+  thread still accepts messages; once switched, the window says the
+  conversation is unprotected. `canClearStart` / `clearOn` in the payload
+  pushed by `PushChat()`; covered by `tests/test-chat-clear-start.mjs`
+  (window) and `tests/test-play-clear-start.mjs` (play side).
+- **Deleting a finished game from the relay.** A finished game's state
+  and conversation have nothing left to do on the relay. When the game
+  ends on a move *received* from the relay, `play.js` arms the deletion
+  (`arm_relay_drop`); when its window is destroyed, Rust sends
+  `gameioaction=drop` (`relay_cmds.rs`, from the `WindowEvent::Destroyed`
+  hook — the page itself is gone by then). Only the player who received
+  the last move arms it: they know both sides have seen the end, whereas
+  the one who played it does not, and deleting from that side could
+  remove the move before the other reads it. On close rather than at the
+  end, so that what is said after the last move stays readable while the
+  window is open. A takeback after the end disarms it. Both relays
+  delete the conversation with the game on `drop` (joclymatch's
+  `fileio.php`, and mogichex's `fileio.php` which also forwards it to
+  `match.php`). Limits: if the whole application quits at the same time
+  the request may be cut off, and a game whose receiver never comes back
+  stays until the relay's own expiry (30 days by default, `$saveTTL` /
+  `$matchTTL`). Covered by `tests/test-play-relay-drop.mjs` and the Rust
+  tests of `relay_cmds.rs` (including a real POST to a local server).
 - Quick messages and presence flags travel as *identifiers* translated by
   the reader, carry nothing personal, and therefore need no key — they
   work in a keyless match, which is the point of "I'm taking a break".
@@ -1217,6 +1247,7 @@ Current inventory (from `lib.rs`'s `generate_handler`):
 - `extension_cmds`: `list_extension_games`, `export_extension`,
   `import_extension`, `remove_extension`, `export_module`,
   `remove_module`
+- `relay_cmds`: `arm_relay_drop`, `disarm_relay_drop`
 - `peer_cmds`: `peer_host_start`, `peer_connect`, `peer_send`,
   `peer_last_message`, `peer_status`, `peer_stop`
 

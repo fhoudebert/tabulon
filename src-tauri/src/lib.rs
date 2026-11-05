@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, seal_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, relay_cmds, seal_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -37,6 +37,7 @@ pub fn run() {
         .manage(VideoState::default())
         .manage(peer_cmds::PeerState::default())
         .manage(engine_cmds::EngineState::default())
+        .manage(relay_cmds::RelayDropState::default())
         // ── Setup ─────────────────────────────────────────────────────────────
         // Filet de sécurité vidéo : si une fenêtre de jeu est détruite pendant
         // un enregistrement (fermeture, fin d'app), finaliser le MP4 — sinon
@@ -53,6 +54,14 @@ pub fn run() {
                         // Les fenêtres liées à CETTE partie (horloge,
                         // historique, joueurs...) n'ont plus rien à montrer.
                         window_manager::close_match_satellites(window.app_handle(), match_id);
+                        // Partie à distance terminée, dernier coup reçu :
+                        // l'effacer du relai (armé par play.js, voir
+                        // relay_cmds.rs). Ici et pas dans la page, détruite
+                        // avant d'avoir pu envoyer quoi que ce soit.
+                        let drops = window.app_handle().state::<relay_cmds::RelayDropState>();
+                        if let Some(d) = relay_cmds::take(&drops, match_id) {
+                            relay_cmds::send_drop(d);
+                        }
                     }
                 }
             }
@@ -150,6 +159,8 @@ pub fn run() {
             seal_cmds::open_text,
             seal_cmds::derive_chat_key,
             seal_cmds::chat_key_id,
+            relay_cmds::arm_relay_drop,
+            relay_cmds::disarm_relay_drop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tabulon");

@@ -296,6 +296,9 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
     if (remoteChannel && remoteChannel.matchId === remoteMatchId && remoteChannelKey === playerKey)
         return remoteChannel;
     disposeRemoteChannel();
+    // Une autre partie : ce qui etait arme pour la precedente ne vaut plus.
+    disarmRelayDrop();
+    remoteRelay = peer ? null : { relayUrl, matchId: remoteMatchId };
     if (peer) {
         // Pair-a-pair : la session TCP existe deja cote Rust (etablie par la
         // fenetre Invitation avant new_match) -- le canal ne fait que s'y
@@ -329,6 +332,39 @@ function ensureRemoteChannel(playerKey, { matchId: remoteMatchId, relayUrl, code
     // appartient (voir chatMidFor).
     ensureChatChannel({ matchId: remoteMatchId, relayUrl, peer, chatKey, chatKeyId: chatKid }, -playerKey);
     return remoteChannel;
+}
+
+/* -- Effacer la partie du relai, une fois finie ---------------------------------
+ *
+ * Une partie terminee n'a plus rien a faire sur le relai, ni son etat ni sa
+ * conversation. C'est Rust qui envoie l'effacement, a la FERMETURE de cette
+ * fenetre (relay_cmds.rs) : les mots echanges apres le dernier coup restent
+ * lisibles tant qu'elle est ouverte, et la requete part meme si la page est
+ * deja detruite.
+ *
+ * SEUL CELUI QUI A RECU LE DERNIER COUP ARME. Il sait que les deux cotes ont
+ * vu la fin ; celui qui l'a joue ne le sait pas, et effacer de son cote
+ * pourrait retirer le coup avant que l'autre l'ait lu. Si celui-la ne revient
+ * jamais, la duree de vie du relai (30 jours) fait le menage.
+ *
+ * Pair-a-pair : rien n'est stocke nulle part, rien a effacer.
+ */
+let remoteRelay = null;      // { relayUrl, matchId } du relai de la partie, null en pair-a-pair
+let relayDropArmed = false;
+
+function armRelayDrop() {
+    if (relayDropArmed || !remoteRelay?.relayUrl || !remoteRelay?.matchId) return;
+    relayDropArmed = true;
+    tRpc.call('arm_relay_drop', matchId, remoteRelay.relayUrl, remoteRelay.matchId).catch(e => {
+        relayDropArmed = false;
+        console.warn('[play] effacement du relai non arme :', e.message || e);
+    });
+}
+
+function disarmRelayDrop() {
+    if (!relayDropArmed) return;
+    relayDropArmed = false;
+    tRpc.call('disarm_relay_drop', matchId).catch(() => {});
 }
 
 /* -- Ce qui n'est pas un coup ---------------------------------------------------
@@ -481,9 +517,20 @@ function PushChat(notice) {
         // celui des messages de service de joclymatch, et il ne dit rien de la
         // capacite du correspondant a chiffrer.
         && conv.some(m => m.locked && m.reason === 'unsealed' && m.side === remoteChannelKey);
+    /*
+     * ET D'EMBLEE, SANS QUE L'AUTRE AIT RIEN ECRIT ? Le bouton « cle barree »
+     * de la fenetre : pour un correspondant avec qui on n'a echange aucune cle.
+     * Seulement si la partie EST protegee (sinon elle est deja en clair), sur
+     * un relai (le pair-a-pair refuse le clair), et tant que le fil s'allonge.
+     */
+    const canClearStart = !!chatChannel?.allowClearFrom && !chatClearAccepted
+        && !!chatConfig?.chatKey && !chatConfig?.peer && !chatChannel?.full;
     emit(`play-event:${matchId}:chat`, {
         conversation: conv,
         canClear,
+        canClearStart,
+        // La bascule est faite : la fenetre le dit, rien d'autre ne le montre.
+        clearOn: chatClearAccepted,
         sealing: chatChannel?.sealing !== false,
         // Le relai plafonne le fil : quand il refuse, on peut encore LIRE mais
         // plus ecrire. C'est un etat prevu, pas une panne -- la fenetre ferme
@@ -550,7 +597,10 @@ async function RestoreChatClear(remoteMatchId) {
  * scelleur n'est pas jete.
  */
 async function AcceptChatClear() {
-    if (!chatChannel || chatClearAccepted) return;
+    // Seul le canal du relai sait passer en clair : en pair-a-pair le format
+    // refuse un corps non scelle, et ouvrir la saisie y ferait taper des
+    // messages que l'autre ne lirait jamais.
+    if (!chatChannel?.allowClearFrom || chatClearAccepted) return;
     chatClearAccepted = true;
     chatChannel.allowClearFrom?.();
     chatSealed = true;
@@ -828,6 +878,9 @@ async function withLoopHeld(reason, fn) {
 
 async function rearmAfterPositionChange() {
     gameResult = null;
+    // La partie reprend (reprise de coup apres la fin) : elle n'est plus
+    // finie, son fichier sert de nouveau.
+    disarmRelayDrop();
     await joclyMatch?.abortUserTurn().catch(() => {});
     if (!loopActive) gameLoop();
 }
@@ -1009,6 +1062,9 @@ async function gameLoop() {
             }
 
             if (finished) {
+                // Fin arrivee par le relai : les deux cotes ont vu le dernier
+                // coup, la partie pourra etre effacee a la fermeture.
+                if (level?.remote && !playedLocally) armRelayDrop();
                 ClockStop();
                 gameResult = winner === 0 ? '1/2-1/2' : winner > 0 ? '1-0' : '0-1';
                 const verdict = winner === 0 ? t('play.draw')
