@@ -4,7 +4,8 @@
 # - desktop : tests Rust puis build de release sur chaque systeme
 #     Linux   : AppImage (purgee des libwayland-*, via compil.sh), .deb, .rpm,
 #               en x86_64 et en ARM64 (runner ARM natif : Tauri ne croise pas)
-#     Windows : installeurs NSIS (.exe) et MSI, plus l'exe seul
+#     Windows : installeurs NSIS (.exe) et MSI, plus l'exe seul, en x64 ;
+#               en ARM64 (runner ARM natif windows-11-arm) : NSIS et exe seul
 #     macOS   : une seule application pour Apple silicon et Intel (universelle),
 #               en .dmg et en .app zippee, signee ad hoc (pas notarisee)
 # - msrv : l'application testee avec sa Rust minimale (1.90, rust-version)
@@ -104,6 +105,14 @@ jobs:
             name: windows
             build: npm run build
             bundle: src-tauri/target/release/bundle
+          # ARM64 (Snapdragon X, Surface Pro...) : runner ARM natif, gratuit pour
+          # les depots publics, comme pour Linux ; Tauri ne fait pas de MSI
+          # ARM64 (WiX), seulement l'installeur NSIS
+          - os: windows-11-arm
+            name: windows-arm64
+            build: npm run build -- --bundles nsis
+            bundle: src-tauri/target/release/bundle
+            portable: tabulon-portable-arm64.exe
           # une seule application pour Apple silicon et Intel ; signature ad hoc
           # ("-") : sans elle le binaire arm64 est refuse par macOS, et sans
           # certificat Apple on ne peut pas faire mieux
@@ -174,8 +183,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p out
-          cp ${{ matrix.bundle }}/nsis/*.exe ${{ matrix.bundle }}/msi/*.msi out/
-          cp src-tauri/target/release/tabulon.exe out/tabulon-portable.exe
+          cp ${{ matrix.bundle }}/nsis/*.exe out/
+          # pas de MSI en ARM64
+          if compgen -G "${{ matrix.bundle }}/msi/*.msi" > /dev/null; then
+            cp ${{ matrix.bundle }}/msi/*.msi out/
+          fi
+          # l'exe seul, nomme selon l'architecture (tabulon-portable.exe en x64)
+          cp src-tauri/target/release/tabulon.exe "out/${{ matrix.portable || 'tabulon-portable.exe' }}"
+          file out/* 2>/dev/null || true
           ls -l out
 
       - name: Collect (macOS)
@@ -250,5 +265,5 @@ jobs:
           ls -l out
           gh release view "$TAG" > /dev/null 2>&1 \
             || gh release create "$TAG" --title "Tabulon $TAG" \
-                 --notes "Tabulon pour Linux (x86-64, ARM64 : AppImage, .deb, .rpm, executable seul), Windows (installeurs NSIS et MSI, exe portable) et macOS (application universelle, signee ad hoc)."
+                 --notes "Tabulon pour Linux (x86-64, ARM64 : AppImage, .deb, .rpm, executable seul), Windows x64 (installeurs NSIS et MSI, exe portable) et ARM64 (installeur NSIS, exe portable) et macOS (application universelle, signee ad hoc)."
           gh release upload "$TAG" out/* --clobber
