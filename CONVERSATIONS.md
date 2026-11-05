@@ -99,12 +99,14 @@ empreintes, ou on chiffre un mot que l'autre déchiffre.
 
 ### Quand une conversation est-elle sans protection ?
 
-- **La partie n'a aucune clé** : typiquement une partie rejointe par un lien
-  joclymatch, dont l'application ne chiffre pas.
+- **La partie n'a aucune clé** : typiquement un lien venu d'un serveur
+  joclymatch d'une version antérieure au chiffrement, ou un lien dont le
+  fragment (`#k=…`) s'est perdu au copier-coller.
 - **On a renoncé à la protection** pour cette partie, de deux façons :
   - « **Continuer sans protection** », proposé quand l'adversaire écrit en
-    clair alors que la partie a une clé (un lien Tabulon ouvert dans
-    joclymatch, qui ignore le fragment) ;
+    clair alors que la partie a une clé (par exemple un lien Tabulon ouvert
+    dans un joclymatch d'avant le chiffrement, ou une partie protégée par une
+    clé de communauté, que ni joclymatch ni mogichex ne connaissent) ;
   - le bouton discret **clé barrée**, à côté de la liste des clés, pour écrire
     sans protection d'emblée avec un joueur avec qui on n'a échangé aucune
     clé.
@@ -153,14 +155,27 @@ contraire reviendrait à l'envoyer lisible sur le réseau.
 
 ## Combien de temps une conversation reste sur un relai
 
-| Relai | Fichiers | Durée de vie sans activité | Plafond du fil |
+| Relai | Fichiers | Durée de vie sans activité (défaut) | Plafond du fil (défaut) |
 |---|---|---|---|
 | joclymatch `fileio.php` | partie + fil | 30 jours (`$saveTTL`) | 256 Ko, les plus anciens messages retirés (`$chatMaxBytes`) |
 | mogichex `match.php` + `fileio.php` | partie + fil | 30 jours (`$matchTTL`) | 256 Ko, idem |
-| mogichex `signal.php` | salons de signalisation | 1 heure | — |
+| mogichex `signal.php` | salons de signalisation | 1 heure (`$signalTTL`) | — |
 
-Les valeurs se règlent dans `localconf.php` (joclymatch) ou `matchconf.php`
-(mogichex, à défaut `signalconf.php`).
+**Ces durées ne sont pas fixées par Tabulon : ce sont des réglages des
+serveurs relais.** 30 jours est la valeur par défaut écrite dans le code des
+relais joclymatch et mogichex, celle qu'on obtient quand l'hébergeur n'a rien
+réglé. Chaque hébergeur peut la changer, comme le plafond du fil :
+
+- **joclymatch** : dans `localconf.php`, à la racine du site (modèle commenté :
+  `localconf.php.example`) ;
+- **mogichex** : dans `matchconf.php`, ou à défaut `signalconf.php`, à côté de
+  `match.php` (modèle commenté : `deploy/signalconf.php.example`).
+
+Tabulon ne peut donc pas connaître la durée réellement appliquée par le relai
+d'une partie : celle d'un relai que vous n'hébergez pas est celle que son
+hébergeur a choisie, et un relai d'une version antérieure à novembre 2026 peut
+ne faire aucun ménage efficace (voir plus bas). Pour être sûr, demandez-le à
+qui gère le relai, ou hébergez le vôtre.
 
 **Effacement à la fin de la partie.** Quand une partie à distance se termine
 sur un coup **reçu** du relai, Tabulon efface la partie et sa conversation
@@ -179,6 +194,12 @@ Limites : si l'application entière se ferme au même moment, la requête peut
 être coupée ; un message envoyé après l'effacement recrée un fil ; une partie
 dont ce joueur ne revient jamais reste jusqu'à la durée de vie du relai. En
 pair-à-pair, il n'y a rien à effacer.
+
+joclymatch et mogichex appliquent la même règle depuis novembre 2026 : celui
+qui a reçu le dernier coup efface la partie en fermant sa page (joclymatch,
+mogichex) ou en revenant au catalogue (mogichex), par `navigator.sendBeacon`.
+mogichex n'arme l'effacement que si la page a vu la partie en cours : une
+partie rouverte déjà finie n'est jamais effacée par ce chemin.
 
 **Le ménage par ancienneté.** Faute de tâche planifiée sur un hébergement
 mutualisé, chaque relai fait son ménage pendant les requêtes ordinaires, en
@@ -226,10 +247,26 @@ par Tauri (`tauri-plugin-store`) dans le dossier de données de l'application
 
 ## Avec joclymatch et mogichex
 
-- **joclymatch** ne chiffre pas : ses messages sont en clair. Il affiche
-  « Message chiffré — ce client n'a pas la clé pour le lire » pour un message
-  scellé par Tabulon. D'où l'offre « Continuer sans protection » côté Tabulon
-  quand un joueur joclymatch écrit.
-- **mogichex** scelle avec le même format (un test Rust,
-  `opens_a_message_sealed_by_mogichex`, vérifie que Tabulon ouvre un message
-  scellé par mogichex) : la conversation peut y être protégée.
+Les trois applications partagent le même fil sur le relai et **le même sceau**,
+à l'octet près (XChaCha20-Poly1305, clé de 32 octets dans `#k=`). Un test Rust
+de Tabulon (`opens_a_message_sealed_by_mogichex`) et le test de joclymatch
+(`tests/test-chat-seal.mjs`) ouvrent le même message scellé par mogichex.
+
+- **joclymatch** chiffre depuis novembre 2026 (sa version `next`). Une partie
+  créée depuis son panneau des jeux reçoit une clé, dans le fragment des deux
+  liens, et la conversation y est protégée comme dans Tabulon. Le pseudo y
+  est scellé lui aussi (champ `pseudoEnc`, que Tabulon ignore : il affiche le
+  camp). Un serveur joclymatch d'une version antérieure ne chiffre pas : il
+  écrit en clair et affiche « Message chiffré — ce client n'a pas la clé pour
+  le lire » pour un message de Tabulon. D'où l'offre « Continuer sans
+  protection » côté Tabulon.
+- **mogichex** scelle avec le même format : la conversation peut y être
+  protégée.
+- **Ni l'un ni l'autre n'a de trousseau** : une partie que Tabulon protège par
+  une clé de communauté (`#kid=`) n'est pas lisible chez eux. joclymatch y
+  écrit alors en clair (et le dit), mogichex n'y propose que les messages
+  rapides.
+- Tous deux **retirent la clé de la barre d'adresse** une fois lue (elle reste
+  dans l'onglet, pour un rechargement). L'historique du navigateur garde
+  toutefois l'adresse visitée, clé comprise, comme le message qui contenait le
+  lien.
