@@ -23,7 +23,7 @@ Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-def
 
 ## Getting started
 
-**You can get ready-to-use, pre-compiled versions of Tabulon available for Windows and Linux** on the [Releases page](https://github.com/fhoudebert/tabulon/releases). Download the package for your platform, install (or unpack) it, and launch — Tabulon works out of the box with a starter selection of built-in games. (Prefer building from source? See [DEVELOPMENT.md](DEVELOPMENT.md).)
+**You can get ready-to-use, pre-compiled versions of Tabulon available for Windows and Linux (x64 and ARM64) and macOS** on the [Releases page](https://github.com/fhoudebert/tabulon/releases). Download the package for your platform, install (or unpack) it, and launch — Tabulon works out of the box with a starter selection of built-in games. (Prefer building from source? See [DEVELOPMENT.md](DEVELOPMENT.md).)
 
 These pre-built versions are not fixed: the game library of any installed Tabulon can be **customized** — up to the **full 125-game library** — in two ways:
 

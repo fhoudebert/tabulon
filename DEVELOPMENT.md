@@ -1001,10 +1001,13 @@ chooses the embedded modules); then Linux (Ubuntu 22.04, the oldest glibc:
 AppImage purged by `compil.sh`, `.deb`, `.rpm`; once on x86_64 and once on
 GitHub's native ARM64 runner `ubuntu-22.04-arm`, since Tauri does not
 cross-compile AppImages), Windows (NSIS and MSI
-installers, plus the bare `.exe`) and macOS (one universal app for Apple
+installers, plus the bare `.exe`; once on x64 and once on GitHub's native
+ARM64 runner `windows-11-arm`, where Tauri makes no MSI: NSIS installer and
+`tabulon-portable-arm64.exe` only) and macOS (one universal app for Apple
 silicon and Intel, `.dmg` and zipped `.app`) each run `cargo test` then the
 release build, and a last job runs `cargo test --locked` with Rust 1.90, the
 `rust-version`. Artifacts: `tabulon-linux-x64`, `tabulon-linux-arm64`, `tabulon-windows`,
+`tabulon-windows-arm64`,
 `tabulon-macos`, plus `jocly-dist` (the full game library, to place as
 `dist/` next to the program). Each Linux artifact also holds the bare
 executable, named like the artifact (`tabulon-linux-x64`,
