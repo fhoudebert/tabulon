@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<link rel="icon" href="data:,">
+	<title>Key test</title>
+	<link rel="stylesheet" href="tabulon.css">
+	<script type="module" src="key-test.js"></script>
+</head>
+<body>
+<div class="window">
+	<div class="window-content">
+		<div class="padded-more key-test">
+			<p class="display-hint" data-i18n="keyTest.intro">Encrypt a message, then send the encrypted text to someone who holds the same key: if they can decrypt it here, you really share the same key. Nothing is sent anywhere — everything happens on this computer.</p>
+
+			<div class="chat-key">
+				<select id="kt-key" class="form-control"></select>
+			</div>
+			<p class="display-hint"><span data-i18n="keyTest.fingerprint">Fingerprint:</span> <code id="kt-fingerprint"></code></p>
+			<p id="kt-nokey" class="display-hint key-test-bad" data-i18n="keyTest.noKey" style="display:none">No saved key to test. Create one and save it in the Preferences first.</p>
+
+			<h4 class="prefs-section" data-i18n="keyTest.encrypt">Encrypt</h4>
+			<textarea id="kt-plain" class="form-control" rows="3" data-i18n-placeholder="keyTest.plainPlaceholder" placeholder="Message to encrypt…"></textarea>
+			<div class="chat-key">
+				<button id="kt-seal" class="btn btn-default" data-i18n="keyTest.encrypt">Encrypt</button>
+			</div>
+			<textarea id="kt-sealed-out" class="form-control key-test-code" rows="3" readonly spellcheck="false"></textarea>
+			<p id="kt-seal-status" class="display-hint"></p>
+
+			<h4 class="prefs-section" data-i18n="keyTest.decrypt">Decrypt</h4>
+			<textarea id="kt-sealed-in" class="form-control key-test-code" rows="3" spellcheck="false" data-i18n-placeholder="keyTest.sealedPlaceholder" placeholder="Paste an encrypted text…"></textarea>
+			<div class="chat-key">
+				<button id="kt-open" class="btn btn-default" data-i18n="keyTest.decrypt">Decrypt</button>
+			</div>
+			<textarea id="kt-plain-out" class="form-control" rows="3" readonly></textarea>
+			<p id="kt-open-status" class="display-hint"></p>
+		</div>
+	</div>
+</div>
+</body>
+</html>

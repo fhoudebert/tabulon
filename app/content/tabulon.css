@@ -1093,6 +1093,12 @@ strong { font-weight: 600; }
 
 .chat-key { display: flex; gap: 6px; margin-top: 6px; }
 .chat-key input { flex: 1 1 auto; font-family: monospace; font-size: 11px; }
+/* Fenetre « Test » d'une cle (key-test.html) */
+.key-test textarea { width: 100%; margin-top: 6px; resize: vertical; }
+.key-test .key-test-code { font-family: monospace; font-size: 11px; word-break: break-all; }
+.key-test .chat-key select { flex: 1 1 auto; }
+.key-test-ok  { color: #2a7a2a; }
+.key-test-bad { color: #c00; }
 
 .chat-status { margin: 6px 0 0; color: #6c6c6c; font-size: 11px; line-height: 1.4; }
 

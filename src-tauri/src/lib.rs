@@ -124,6 +124,7 @@ pub fn run() {
             extension_cmds::export_module,
             extension_cmds::remove_module,
             window_cmds::open_extensions,
+            window_cmds::open_key_test,
             // ── Jeu a distance pair-a-pair (aucun serveur) ───────────────────
             engine_cmds::engine_probe,
             install_cmds::install_status,

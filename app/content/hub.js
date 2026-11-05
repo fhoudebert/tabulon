@@ -296,6 +296,24 @@ async function ListGames() {
             Refresh();
             say(key ? 'prefs.keySaved' : 'prefs.keyCleared');
         });
+
+        // « Test » : chiffrer/dechiffrer avec la cle dans une fenetre a part
+        // (key-test.js). Seule une cle ENREGISTREE se teste : la fenetre la
+        // relit dans le store, et tester autre chose que ce qui servira en
+        // partie donnerait une fausse assurance. Une cle modifiee ou generee
+        // mais pas encore enregistree est donc signalee, pas testee.
+        document.getElementById('prefs-key-test')?.addEventListener('click', async () => {
+            const k = selected();
+            const typed = (keyField?.value || '').trim().toLowerCase();
+            if (!k || !k.key) { say('prefs.keyTestNone'); return; }
+            if (typed !== k.key) { say('prefs.keyTestUnsaved'); return; }
+            say(null);
+            await tRpc.call('open_key_test', k.id);
+            // Deja ouverte, la fenetre est seulement ramenee devant : lui dire
+            // quelle cle prendre (sans effet si elle vient d'etre creee, l'URL
+            // le lui a deja dit).
+            tRpc.call('relay_to_window', 'key-test', 'keyTestSelect', { id: k.id }).catch(() => {});
+        });
     }
 
     /*

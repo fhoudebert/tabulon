@@ -515,6 +515,17 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   the hub's Invitation panel; the panel used to drop the key entirely, so
   the same invitation gave a conversation through one door and nothing
   through the other.
+- **Testing a key** (Preferences > Conversations > Test, `key-test.html/js`):
+  encrypts a message with the selected *saved* key and decrypts it back
+  at once, decrypts a pasted text, and shows the key's fingerprint — the
+  way to check, before playing, that two people really hold the same key
+  (one encrypts, sends the text by mail, the other decrypts it). Same
+  `seal_text`/`open_text` commands as in a match (`makeSealer`), nothing
+  sent anywhere. Only the key's *id* goes in the window URL; the window
+  reads the key from the store, so an unsaved key (typed or just
+  generated) is refused by the button rather than tested — it is not the
+  one games would use. Covered by `tests/test-key-test.mjs` (window) and
+  `tests/test-key-test-prefs.mjs` (button).
 
 ### Validation and open items
 
@@ -1122,6 +1133,7 @@ matters less than the *insertion paths* it actually covers.
 | `hub.html/js` | Main window: sidebar (All/Favorites/Invitation/Templates/Extensions/About), game list with Quick play and Rules shortcuts, detail panel (animated visuals, action buttons — including Invitation — and the game's templates). Tablet-responsive (icon sidebar < 900 px, list **or** detail view < 680 px). |
 | `play.html/js` | The board + the match's brain: game loop (`userTurn`/`machineSearch`/remote channel), clock state, JSON save/load, snapshot, fork, pause, A/B player and skin (2D/3D) selectors in the footer. The `…` button toggles button bar ⟷ selectors. |
 | `invitation.html/js` | Remote-play entry point: join a relay match from a link, create one (id + shareable link, relay Test button), or peer-to-peer host/connect with a `TBP1-…` code. See "Remote play" above. |
+| `key-test.html/js` | Test of a saved community key (Preferences > Conversations > Test): encrypt + round-trip check, decrypt a pasted text, fingerprint. Single window; when already open, the hub tells it which key to select through `relay_to_window('key-test','keyTestSelect')`. |
 | `extensions.html/js` | Import/export/uninstall of game and module extensions (Games/Modules tabs); the hub is notified through `relay_to_window('main','extensionsChanged')` and reloads its list. |
 | `clock-setup.html/js` | Clocked-game configuration → `new_match(game, clock)`. |
 | `clock.html/js` | Clock display (7-segment font); pure view over play.js state. |
@@ -1200,7 +1212,7 @@ Current inventory (from `lib.rs`'s `generate_handler`):
 - `window_cmds`: `open_history`, `open_clock`, `open_clock_setup`,
   `open_players`, `open_view_options`, `open_camera_view`,
   `open_save_template`, `open_info`, `open_invitation`,
-  `open_extensions`, `open_board_state`, `open_book`, `open_moves`,
+  `open_extensions`, `open_key_test`, `open_board_state`, `open_book`, `open_moves`,
   `open_position`, `relay_to_window`
 - `extension_cmds`: `list_extension_games`, `export_extension`,
   `import_extension`, `remove_extension`, `export_module`,

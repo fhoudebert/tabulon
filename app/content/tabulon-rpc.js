@@ -142,6 +142,7 @@ function buildPayload(method, args) {
     open_position:       ([gameName, matchId])         => ({ gameName, matchId }),
     // extensions
     open_extensions:     ()                        => ({}),
+    open_key_test:       ([keyId])                 => ({ keyId }),
     get_dist_info:       ()                        => ({}),
     list_extension_games:()                        => ({}),
     export_extension:    ([gameName, destPath])    => ({ gameName, destPath }),
