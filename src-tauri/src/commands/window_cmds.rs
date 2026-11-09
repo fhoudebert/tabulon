@@ -208,6 +208,24 @@ pub async fn open_extensions(app: AppHandle) -> Result<(), String> {
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// rpc.call("open_key_test", keyId) — test de chiffrement/dechiffrement d'une
+/// cle de communaute (Preferences > Conversations).
+///
+/// Seul l'IDENTIFIANT de la cle passe dans l'URL, jamais la cle : la fenetre
+/// la relit dans le store. Fenetre unique : deja ouverte, elle est seulement
+/// ramenee devant, et le hub lui dit quelle cle choisir (keyTestSelect).
+#[tauri::command]
+pub async fn open_key_test(app: AppHandle, key_id: String) -> Result<(), String> {
+    open_window(&app, WindowOptions {
+        label: "key-test",
+        url:   &format!("content/key-test.html?key={}", urlencoding::encode(&key_id)),
+        title: "Key test",
+        width: 560.0, height: 640.0,
+        min_width: 420.0, min_height: 480.0,
+        persist_key: Some("window:key-test".into()),
+    }).map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// rpc.call("openBoardState", gameName, matchId?)
 #[tauri::command]
 pub async fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>) -> Result<(), String> {

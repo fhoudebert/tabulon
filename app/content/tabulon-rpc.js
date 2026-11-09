@@ -142,6 +142,7 @@ function buildPayload(method, args) {
     open_position:       ([gameName, matchId])         => ({ gameName, matchId }),
     // extensions
     open_extensions:     ()                        => ({}),
+    open_key_test:       ([keyId])                 => ({ keyId }),
     get_dist_info:       ()                        => ({}),
     list_extension_games:()                        => ({}),
     export_extension:    ([gameName, destPath])    => ({ gameName, destPath }),
@@ -167,6 +168,8 @@ function buildPayload(method, args) {
     open_text:           ([key, sealed])           => ({ key, sealed }),
     derive_chat_key:     ([master, info])          => ({ master, info }),
     chat_key_id:         ([master])                => ({ master }),
+    arm_relay_drop:      ([matchId, relayUrl, gameId]) => ({ matchId, relayUrl, gameId }),
+    disarm_relay_drop:   ([matchId])               => ({ matchId }),
     // fs
     save_text_file:      ([path, contents])        => ({ path, contents }),
     save_data_uri_file:  ([path, dataUri])         => ({ path, dataUri }),

@@ -1093,6 +1093,27 @@ strong { font-weight: 600; }
 
 .chat-key { display: flex; gap: 6px; margin-top: 6px; }
 .chat-key input { flex: 1 1 auto; font-family: monospace; font-size: 11px; }
+.chat-key select { flex: 1 1 auto; }
+/* Clé barrée : la police n'a pas de glyphe « clé barrée », on raye la clé
+   (\e8d7, relevé dans la cmap de photon-entypo). */
+.icon-key-off::before { content: '\e8d7'; }
+.icon-key-off { position: relative; }
+.icon-key-off::after {
+  content: ''; position: absolute; left: -2px; right: -2px; top: 50%;
+  border-top: 2px solid currentColor;
+  /* +45° : le glyphe de la clé est lui-même incliné à -45°, une barre dans
+     ce sens-là se confondait avec lui et ne se voyait pas. */
+  transform: rotate(45deg);
+}
+/* Discret : ce n'est pas le chemin normal. */
+.chat-clear-start { flex: 0 0 auto; padding-left: 8px; padding-right: 8px; opacity: 0.6; }
+.chat-clear-start:hover, .chat-clear-start:focus { opacity: 1; }
+/* Fenetre « Test » d'une cle (key-test.html) */
+.key-test textarea { width: 100%; margin-top: 6px; resize: vertical; }
+.key-test .key-test-code { font-family: monospace; font-size: 11px; word-break: break-all; }
+.key-test .chat-key select { flex: 1 1 auto; }
+.key-test-ok  { color: #2a7a2a; }
+.key-test-bad { color: #c00; }
 
 .chat-status { margin: 6px 0 0; color: #6c6c6c; font-size: 11px; line-height: 1.4; }
 

@@ -34,6 +34,9 @@ const matchId = (function () {
 })();
 
 let sides = { 1: 'A', '-1': 'B' };
+// A-t-on des cles de communaute ? Distinct du nombre de lignes de la liste,
+// qui porte aussi « aucune de mes cles » quand aucune n'est reconnue.
+let hasKeyring = false;
 let lastRendered = '';
 
 const $ = (id) => document.getElementById(id);
@@ -128,7 +131,9 @@ function SetKeyring(keyring, current) {
     const row = $('chat-keyring-row');
     const select = $('chat-keyring');
     if (!row || !select) return;
-    row.style.display = keyring.length ? '' : 'none';
+    hasKeyring = keyring.length > 0;
+    row.style.display = hasKeyring ? '' : 'none';
+    select.style.display = hasKeyring ? '' : 'none';
     // Pas reconstruite pendant qu'on la deroule : la liste se refermerait
     // sous le curseur a chaque rafraichissement du fil.
     if (document.activeElement === select) return;
@@ -200,8 +205,12 @@ function SetCanWrite(canWrite, chatKey, full) {
         if (hint) hint.textContent = '';
         return;
     }
+    // `hasKeyring` et non le nombre de lignes de la liste : celle-ci porte
+    // aussi « aucune de mes cles » quand aucune n'est reconnue, et la saisie
+    // a la main restait alors cachee a celui qui n'a AUCUNE cle -- le seul a
+    // qui elle sert.
     const manual = $('chat-key-row');
-    if (manual) manual.style.display = ($('chat-keyring')?.options.length ? 'none' : '');
+    if (manual) manual.style.display = hasKeyring ? 'none' : '';
 
     const field = $('chat-key-input');
     // Pas pendant qu'on la modifie : ecraser une cle a moitie collee serait
@@ -209,8 +218,38 @@ function SetCanWrite(canWrite, chatKey, full) {
     if (field && chatKey && document.activeElement !== field && field.value !== chatKey)
         field.value = chatKey;
     const hint = $('chat-key-hint');
-    if (hint) hint.textContent = $('chat-keyring')?.options.length ? t('chat.keyringHint')
+    if (hint) hint.textContent = hasKeyring ? t('chat.keyringHint')
         : chatKey ? t('chat.keyMine') : t('chat.keyNone');
+}
+
+/**
+ * Le bouton « clé barrée » : ecrire SANS protection d'emblee.
+ *
+ * LE CAS : la partie porte une cle -- celle de la communaute choisie, ou celle
+ * de l'invitation -- mais le correspondant n'en a echange aucune avec nous.
+ * Sans ce bouton, il fallait attendre qu'il ecrive en clair pour se voir
+ * proposer « Continuer sans protection » ; s'il attendait de son cote, la
+ * conversation ne commencait jamais.
+ *
+ * Meme bascule que l'offre ci-dessous (play.js, AcceptChatClear), donc meme
+ * regle : sans retour pour cette partie, et ce qui a deja ete dit sous
+ * protection reste lisible. Pas en pair-a-pair : le format y refuse le clair
+ * (play.js ne le propose pas).
+ *
+ * Une fois la bascule faite, la ligne d'aide le dit : rien d'autre a l'ecran
+ * ne distinguerait une conversation protegee d'une conversation qui ne l'est
+ * plus.
+ */
+function SetClearStart(canStart, clearOn, full) {
+    const btn = $('chat-clear-start');
+    if (btn) btn.style.display = canStart ? '' : 'none';
+    const row = $('chat-keyring-row');
+    // Fil plein : SetCanWrite a deja tout ferme, ni cle ni bascule n'y peuvent rien.
+    if (row && !full) row.style.display = (hasKeyring || canStart) ? '' : 'none';
+    if (clearOn) {
+        const hint = $('chat-key-hint');
+        if (hint) hint.textContent = t('chat.clearOn');
+    }
 }
 
 let conversation = [];
@@ -233,6 +272,7 @@ function Apply(payload) {
     if (payload.sides) sides = payload.sides;
     SetKeyring(payload.keyring || [], payload.keyringId || null);
     SetCanWrite(!!payload.canWrite, payload.chatKey || null, !!payload.chatFull);
+    SetClearStart(!!payload.canClearStart, !!payload.clearOn, !!payload.chatFull);
     // Un fait ponctuel, pose APRES l'etat : la saisie reste ouverte et c'est
     // le dernier envoi qui n'est pas passe.
     if (payload.notice === 'tooLong') {
@@ -304,6 +344,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('chat-key-apply')?.addEventListener('click', () => {
         const key = ($('chat-key-input')?.value || '').trim().toLowerCase();
         emit(`play-req:${matchId}:set-chat-key`, { key }).catch(() => {});
+    });
+
+    $('chat-clear-start')?.addEventListener('click', () => {
+        // Meme confirmation unique que pour l'offre ci-dessous, avec le texte
+        // de CE cas : on renonce sans que l'autre ait rien demande.
+        if (!window.confirm(t('chat.clearStartConfirm'))) return;
+        emit(`play-req:${matchId}:chat-allow-clear`, {}).catch(() => {});
     });
 
     $('chat-clear-accept')?.addEventListener('click', () => {

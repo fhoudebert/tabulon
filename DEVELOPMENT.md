@@ -186,6 +186,10 @@ external dist cannot break the UI itself.
 
 ## Remote play 
 
+A French, user-oriented account of conversations — what the relay can
+read, what "unprotected" means exactly, how long threads stay on a relay,
+where keys are stored on disk — is in [CONVERSATIONS.md](CONVERSATIONS.md).
+
 Two ways to play a Jocly game against a remote human, both entered through
 the **Invitation** window (hub game panel, next to Quick play / Clocked
 play): a shared **HTTP relay**, or **peer-to-peer with no server at all**.
@@ -503,6 +507,36 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   a relay is there for good, and offering to "restore protection" would
   suggest otherwise. `allowClearFrom()` in the channel,
   `AcceptChatClear()` in `play.js`.
+- **Writing unprotected from the start** — the discreet crossed-key button
+  next to the key list in the chat window: for an opponent you have
+  exchanged no key with, even though the game carries one (a community
+  key, or the invitation's). Without it, one had to wait for *them* to
+  write in the clear first; if both waited, the conversation never
+  started. Same switch as above (`AcceptChatClear`, same confirmation
+  logic, same "no way back"), offered only when the game *is* protected,
+  over a relay (peer-to-peer refuses unsealed bodies) and while the
+  thread still accepts messages; once switched, the window says the
+  conversation is unprotected. `canClearStart` / `clearOn` in the payload
+  pushed by `PushChat()`; covered by `tests/test-chat-clear-start.mjs`
+  (window) and `tests/test-play-clear-start.mjs` (play side).
+- **Deleting a finished game from the relay.** A finished game's state
+  and conversation have nothing left to do on the relay. When the game
+  ends on a move *received* from the relay, `play.js` arms the deletion
+  (`arm_relay_drop`); when its window is destroyed, Rust sends
+  `gameioaction=drop` (`relay_cmds.rs`, from the `WindowEvent::Destroyed`
+  hook — the page itself is gone by then). Only the player who received
+  the last move arms it: they know both sides have seen the end, whereas
+  the one who played it does not, and deleting from that side could
+  remove the move before the other reads it. On close rather than at the
+  end, so that what is said after the last move stays readable while the
+  window is open. A takeback after the end disarms it. Both relays
+  delete the conversation with the game on `drop` (joclymatch's
+  `fileio.php`, and mogichex's `fileio.php` which also forwards it to
+  `match.php`). Limits: if the whole application quits at the same time
+  the request may be cut off, and a game whose receiver never comes back
+  stays until the relay's own expiry (30 days by default, `$saveTTL` /
+  `$matchTTL`). Covered by `tests/test-play-relay-drop.mjs` and the Rust
+  tests of `relay_cmds.rs` (including a real POST to a local server).
 - Quick messages and presence flags travel as *identifiers* translated by
   the reader, carry nothing personal, and therefore need no key — they
   work in a keyless match, which is the point of "I'm taking a break".
@@ -515,6 +549,17 @@ game is unaffected. Jocly ignores `viewAs` for games whose view is not
   the hub's Invitation panel; the panel used to drop the key entirely, so
   the same invitation gave a conversation through one door and nothing
   through the other.
+- **Testing a key** (Preferences > Conversations > Test, `key-test.html/js`):
+  encrypts a message with the selected *saved* key and decrypts it back
+  at once, decrypts a pasted text, and shows the key's fingerprint — the
+  way to check, before playing, that two people really hold the same key
+  (one encrypts, sends the text by mail, the other decrypts it). Same
+  `seal_text`/`open_text` commands as in a match (`makeSealer`), nothing
+  sent anywhere. Only the key's *id* goes in the window URL; the window
+  reads the key from the store, so an unsaved key (typed or just
+  generated) is refused by the button rather than tested — it is not the
+  one games would use. Covered by `tests/test-key-test.mjs` (window) and
+  `tests/test-key-test-prefs.mjs` (button).
 
 ### Validation and open items
 
@@ -1122,6 +1167,7 @@ matters less than the *insertion paths* it actually covers.
 | `hub.html/js` | Main window: sidebar (All/Favorites/Invitation/Templates/Extensions/About), game list with Quick play and Rules shortcuts, detail panel (animated visuals, action buttons — including Invitation — and the game's templates). Tablet-responsive (icon sidebar < 900 px, list **or** detail view < 680 px). |
 | `play.html/js` | The board + the match's brain: game loop (`userTurn`/`machineSearch`/remote channel), clock state, JSON save/load, snapshot, fork, pause, A/B player and skin (2D/3D) selectors in the footer. The `…` button toggles button bar ⟷ selectors. |
 | `invitation.html/js` | Remote-play entry point: join a relay match from a link, create one (id + shareable link, relay Test button), or peer-to-peer host/connect with a `TBP1-…` code. See "Remote play" above. |
+| `key-test.html/js` | Test of a saved community key (Preferences > Conversations > Test): encrypt + round-trip check, decrypt a pasted text, fingerprint. Single window; when already open, the hub tells it which key to select through `relay_to_window('key-test','keyTestSelect')`. |
 | `extensions.html/js` | Import/export/uninstall of game and module extensions (Games/Modules tabs); the hub is notified through `relay_to_window('main','extensionsChanged')` and reloads its list. |
 | `clock-setup.html/js` | Clocked-game configuration → `new_match(game, clock)`. |
 | `clock.html/js` | Clock display (7-segment font); pure view over play.js state. |
@@ -1200,11 +1246,12 @@ Current inventory (from `lib.rs`'s `generate_handler`):
 - `window_cmds`: `open_history`, `open_clock`, `open_clock_setup`,
   `open_players`, `open_view_options`, `open_camera_view`,
   `open_save_template`, `open_info`, `open_invitation`,
-  `open_extensions`, `open_board_state`, `open_book`, `open_moves`,
+  `open_extensions`, `open_key_test`, `open_board_state`, `open_book`, `open_moves`,
   `open_position`, `relay_to_window`
 - `extension_cmds`: `list_extension_games`, `export_extension`,
   `import_extension`, `remove_extension`, `export_module`,
   `remove_module`
+- `relay_cmds`: `arm_relay_drop`, `disarm_relay_drop`
 - `peer_cmds`: `peer_host_start`, `peer_connect`, `peer_send`,
   `peer_last_message`, `peer_status`, `peer_stop`
 
