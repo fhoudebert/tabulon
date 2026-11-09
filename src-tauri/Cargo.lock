@@ -3675,7 +3675,7 @@ dependencies = [
 
 [[package]]
 name = "tabulon"
-version = "1.0.5"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

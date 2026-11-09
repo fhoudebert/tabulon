@@ -1,6 +1,6 @@
 [package]
 name        = "tabulon"
-version     = "1.0.5"
+version     = "1.1.0"
 edition     = "2024"
 rust-version = "1.90"   # minimum exige par tauri 2.12 (et donc par le Cargo.lock)
 
