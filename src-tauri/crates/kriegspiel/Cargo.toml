@@ -1,0 +1,33 @@
+# Moteur du Jeu de la guerre (Guy Debord) pour Tabulon.
+#
+# Bibliotheque sans aucune dependance : les regles, l'evaluation et la
+# recherche. Tabulon l'appelle directement (pas de binaire a fournir a cote de
+# l'application, a la difference de Fairy-Stockfish, Scan et KataGo) ;
+# l'executable `kriegspiel-engine` sert aux tests et aux matchs de mesure.
+#
+# Les regles sont celles de jocly2 (src/games/kriegspiel/kriegspiel-rules.js),
+# qui reste la reference : tests/differential.rs rejoue des parties produites
+# par ce fichier et compare tout, position par position.
+[package]
+name         = "kriegspiel"
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.75"
+license      = "AGPL-3.0-only"
+description  = "Moteur du Jeu de la guerre (Guy Debord) : regles, evaluation, recherche"
+
+[lib]
+name = "kriegspiel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kriegspiel-engine"
+path = "src/main.rs"
+
+# Un moteur de jeu se compile pour la vitesse, quel que soit le profil de
+# l'application qui l'embarque (Tabulon compile en opt-level "s").
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+panic         = "abort"
