@@ -98,6 +98,13 @@ ceux en service (les mêmes pour l'instant). Le moteur les charge par
 `tests/fixtures/openings.txt` (200 débuts de partie) vient des gabarits de
 déploiement de jocly2 : `node tests/make-openings.cjs <chemin de jocly2>`.
 
+La force réelle se mesure contre l'IA de jocly2, plus lentement (une
+demi-minute à deux minutes par partie) :
+
+```
+node tools/duel-jocly.cjs <chemin de jocly2> 2 3000 20    # contre « Fort », 3 s par coup
+```
+
 ### Ce que les mesures ont donné (novembre 2026)
 
 Parties à profondeur 2, sauf mention ; 160 à 200 parties par ligne, soit une
@@ -152,5 +159,5 @@ commandes `kriegspiel_probe`, `kriegspiel_search` et `kriegspiel_stop`
 (`src/commands/kriegspiel_cmds.rs`) n'appellent que `service::search_text`.
 Côté interface, `app/content/engine-native.js` remplace le Worker
 `jocly.kriegspielworker.js` de jocly par `NativeKriegspielWorker` ; c'est le
-niveau « Expert » du jeu (`"ai": "kriegspiel"`) qui le demande. Sans Tabulon,
+niveau « Moyen (moteur) » du jeu (`"ai": "kriegspiel"`) qui le demande. Sans Tabulon,
 ce niveau se rabat sur l'IA de jocly et l'annonce.
