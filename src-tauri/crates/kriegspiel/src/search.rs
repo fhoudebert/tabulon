@@ -45,6 +45,10 @@ pub struct Limits {
     /// courante a une menace tient en un renfort ou deux, et un faisceau
     /// complet a chaque feuille coute l'essentiel du temps de recherche
     pub leaf_moves: u8,
+    /// ajouter aux tours du faisceau des tours construits selon un plan
+    /// (avance en ordre, mise a l'abri des transmissions, retour sur une
+    /// ligne directe) : voir `plans`
+    pub plans: bool,
 }
 
 impl Default for Limits {
@@ -58,6 +62,9 @@ impl Default for Limits {
             inner_keep: 6,
             leaf_beam: 3,
             leaf_moves: 2,
+            // mesures au banc : aucun effet (50,0 % sur 200 parties) ; les
+            // plans restent disponibles pour les essais, pas en service
+            plans: false,
         }
     }
 }
@@ -116,6 +123,16 @@ struct Node {
     score: i32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Plan {
+    Escort,
+    AdvanceFront,
+    AdvanceRear,
+    Anchor,
+}
+
+const PLANS: [Plan; 4] = [Plan::Escort, Plan::AdvanceFront, Plan::AdvanceRear, Plan::Anchor];
+
 /// Un tour candidat : le coup, la position qui en resulte, son evaluation.
 #[derive(Clone)]
 pub struct Candidate {
@@ -131,11 +148,13 @@ pub struct Searcher<'a> {
     deadline: Option<Instant>,
     stop: Option<&'a AtomicBool>,
     aborted: bool,
+    /// tours construits selon un plan, en plus du faisceau
+    pub plans: bool,
 }
 
 impl<'a> Searcher<'a> {
     pub fn new(ctx: &'a Ctx) -> Searcher<'a> {
-        Searcher { ctx, zobrist: Zobrist::new(), nodes: 0, deadline: None, stop: None, aborted: false }
+        Searcher { ctx, zobrist: Zobrist::new(), nodes: 0, deadline: None, stop: None, aborted: false, plans: false }
     }
 
     /// drapeau d'arret externe (commande `stop`)
@@ -351,6 +370,19 @@ impl<'a> Searcher<'a> {
                 break;
             }
         }
+        if self.plans && max_moves == MAX_MOVES && !self.aborted {
+            // les plans partent de la position du tour, ou de la meilleure
+            // retraite quand une retraite est due
+            let base = if need_retreat { pool.iter().filter(|n| n.n == 1).max_by_key(|n| n.score).cloned() } else { pool.first().cloned() };
+            if let Some(base) = base {
+                for plan in PLANS {
+                    if let Some(mut node) = self.plan(&base, who, plan) {
+                        self.score_node(&mut node, who);
+                        pool.push(node);
+                    }
+                }
+            }
+        }
         if pool.is_empty() {
             // retraite due mais impossible : ne devrait pas arriver, les regles
             // detruisent l'unite des l'attaque ; on rend le tour vide
@@ -371,6 +403,189 @@ impl<'a> Searcher<'a> {
             }
         }
         out
+    }
+
+    /// Applique un deplacement deja reconnu legal a un etat du faisceau.
+    fn step(&self, node: &mut Node, from: usize, to: usize, who: i8) {
+        let v = node.st.grid[from];
+        node.hash ^= self.zobrist.key(from, v) ^ self.zobrist.key(to, v);
+        node.st.grid[from] = 0;
+        node.st.grid[to] = v;
+        if v.abs() < SIGNAL {
+            if let Some(i) = self.ctx.enemy_arsenal_at(&node.st, to, who) {
+                node.st.ars[i] = false;
+                node.d = Some(to as u16);
+                node.hash ^= 0x5bd1_e995_u64.rotate_left(to as u32);
+            }
+        }
+        node.moved[to >> 6] |= 1 << (to & 63);
+        node.n += 1;
+        node.m[node.m_len as usize] = (from as u16, to as u16);
+        node.m_len += 1;
+    }
+
+    /// Un tour construit selon un plan, a partir de `base`. None si le plan
+    /// ne trouve rien a faire.
+    ///
+    /// Le faisceau choisit chaque deplacement pour ce qu'il rapporte tout de
+    /// suite a l'evaluation ; il ne tient pas une intention sur cinq
+    /// deplacements. Ces plans en proposent trois, que l'evaluation juge
+    /// ensuite comme n'importe quel autre tour.
+    fn plan(&mut self, base: &Node, who: i8, plan: Plan) -> Option<Node> {
+        let ctx = self.ctx;
+        let mut node = base.clone();
+        let mut dests: Vec<u16> = Vec::with_capacity(24);
+        let enemy_dist = |st: &State, pos: usize| -> usize {
+            let mut best = 99;
+            for q in 0..N {
+                let v = st.grid[q];
+                if v != 0 && (v > 0) != (who > 0) && v.abs() < SIGNAL {
+                    best = best.min(distance(pos, q));
+                }
+            }
+            best
+        };
+        let arsenal_dist = |st: &State, pos: usize| -> u16 {
+            let mut best = 999;
+            for i in 0..4 {
+                if ctx.ars_side[i] != who && st.ars[i] {
+                    best = best.min(ctx.ars_dist[i][pos]);
+                }
+            }
+            best
+        };
+        // resterait en communication : sur une ligne, ou au contact d'une
+        // autre unite combattante qui l'est
+        let connected = |st: &State, comm: &Comm, from: usize, dest: usize, combat: bool| -> bool {
+            if comm.lit[dest] {
+                return true;
+            }
+            if !combat {
+                return false;
+            }
+            (0..8).any(|d| {
+                let q = ctx.next[dest * 8 + d];
+                q >= 0 && q as usize != from && comm.on[q as usize] && st.grid[q as usize].abs() < SIGNAL
+            })
+        };
+        let moved = |node: &Node, pos: usize| node.moved[pos >> 6] & (1 << (pos & 63)) != 0;
+
+        match plan {
+            // les transmissions menacees se mettent a l'abri, sans quitter les lignes
+            Plan::Escort => {
+                for from in Units::scan(&base.st).iter() {
+                    let v = node.st.grid[from];
+                    if v == 0 || (v > 0) != (who > 0) || v.abs() < SIGNAL || moved(&node, from) || node.n >= MAX_MOVES {
+                        continue;
+                    }
+                    let here = enemy_dist(&node.st, from);
+                    if here > 4 {
+                        continue;
+                    }
+                    let comm = communications_of(ctx, &node.st, who, &Units::scan(&node.st));
+                    reach(ctx, &node.st, from, &mut dests);
+                    let mut best: Option<(usize, usize)> = None;
+                    for &to in &dests {
+                        let to = to as usize;
+                        if !comm.lit[to] {
+                            continue;
+                        }
+                        let far = enemy_dist(&node.st, to);
+                        if far > here && best.map_or(true, |b| far > b.1) {
+                            best = Some((to, far));
+                        }
+                    }
+                    if let Some((to, _)) = best {
+                        self.step(&mut node, from, to, who);
+                    }
+                }
+            }
+            // avance vers l'arsenal adverse, les unites de tete (ou de queue)
+            // d'abord, chacune restant en communication
+            Plan::AdvanceFront | Plan::AdvanceRear => {
+                let mut order: Vec<usize> = Units::scan(&base.st)
+                    .iter()
+                    .filter(|&p| (node.st.grid[p] > 0) == (who > 0) && node.st.grid[p].abs() < SIGNAL)
+                    .collect();
+                order.sort_by_key(|&p| arsenal_dist(&node.st, p));
+                if plan == Plan::AdvanceRear {
+                    order.reverse();
+                }
+                for from in order {
+                    if node.n >= MAX_MOVES {
+                        break;
+                    }
+                    if moved(&node, from) || node.st.grid[from] == 0 {
+                        continue;
+                    }
+                    let comm = communications_of(ctx, &node.st, who, &Units::scan(&node.st));
+                    if !comm.on[from] {
+                        continue;
+                    }
+                    reach(ctx, &node.st, from, &mut dests);
+                    let mut best: Option<(usize, u16)> = None;
+                    let current = arsenal_dist(&node.st, from);
+                    for &to in &dests {
+                        let to = to as usize;
+                        if node.d.is_some() && ctx.enemy_arsenal_at(&node.st, to, who).is_some() {
+                            continue;
+                        }
+                        let dist = arsenal_dist(&node.st, to);
+                        if dist < current && best.map_or(true, |b| dist < b.1) && connected(&node.st, &comm, from, to, true) {
+                            best = Some((to, dist));
+                        }
+                    }
+                    if let Some((to, _)) = best {
+                        self.step(&mut node, from, to, who);
+                    }
+                }
+            }
+            // les unites qui ne tiennent que par les transmissions reviennent
+            // vers une ligne directe d'arsenal, les plus proches d'abord
+            Plan::Anchor => {
+                let units = Units::scan(&node.st);
+                let direct = communications_relay(ctx, &node.st, who, &units, false);
+                let lines: Vec<usize> = (0..N).filter(|&p| direct.lit[p] && ctx.terr[p] != MOUNTAIN).collect();
+                if lines.is_empty() {
+                    return None;
+                }
+                let to_line = |pos: usize| lines.iter().map(|&l| distance(pos, l)).min().unwrap_or(99);
+                let mut order: Vec<(usize, usize)> = units
+                    .iter()
+                    .filter(|&p| (node.st.grid[p] > 0) == (who > 0) && node.st.grid[p].abs() < SIGNAL && !direct.on[p])
+                    .map(|p| (to_line(p), p))
+                    .collect();
+                order.sort();
+                for (current, from) in order {
+                    if node.n >= MAX_MOVES {
+                        break;
+                    }
+                    if moved(&node, from) {
+                        continue;
+                    }
+                    let comm = communications_of(ctx, &node.st, who, &Units::scan(&node.st));
+                    if !comm.on[from] {
+                        continue;
+                    }
+                    reach(ctx, &node.st, from, &mut dests);
+                    let mut best: Option<(usize, usize)> = None;
+                    for &to in &dests {
+                        let to = to as usize;
+                        if ctx.enemy_arsenal_at(&node.st, to, who).is_some() {
+                            continue;
+                        }
+                        let dist = to_line(to);
+                        if dist < current && best.map_or(true, |b| dist < b.1) && connected(&node.st, &comm, from, to, true) {
+                            best = Some((to, dist));
+                        }
+                    }
+                    if let Some((to, _)) = best {
+                        self.step(&mut node, from, to, who);
+                    }
+                }
+            }
+        }
+        if node.n == base.n { None } else { Some(node) }
     }
 
     /// valeur de `st` pour `who`, qui est au trait, a `depth` tours
@@ -412,6 +627,7 @@ impl<'a> Searcher<'a> {
         let started = Instant::now();
         self.nodes = 0;
         self.aborted = false;
+        self.plans = limits.plans;
         self.deadline = None; // la profondeur 1 va toujours au bout : il faut un coup
         let mut roots = self.generate(st, who, limits.root_beam, limits.root_keep);
         let mut result = SearchResult {

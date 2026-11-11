@@ -19,7 +19,7 @@ pub const WIN: i32 = 1_000_000;
 /// valeur relative des unites pour les menaces, en centiemes : -, I, C, A, AC, T, E
 pub const VALUE: [i32; 7] = [0, 100, 120, 140, 160, 130, 150];
 
-pub const NF: usize = 37;
+pub const NF: usize = 39;
 
 pub const FEATURES: [&str; NF] = [
     "infantry_on", "cavalry_on", "artillery_on", "horse_artillery_on", "signal_on", "courier_on",
@@ -49,6 +49,8 @@ pub const FEATURES: [&str; NF] = [
     "signal_threat_other", // les miennes qu'il pourrait detruire s'il avait le trait
     "no_anchor",       // aucune de mes unites combattantes n'est en communication sans mes transmissions
     "one_signal",      // il ne me reste qu'une unite de transmission
+    "hunt_mover",      // je peux detruire tout de suite une transmission dont depend toute son armee
+    "hunt_other",      // il le pourrait contre moi, s'il avait le trait
 ];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -70,6 +72,7 @@ pub const HANDMADE: [f32; NF] = [
     8.0, 0.5, -3.0, -0.5,
     -1200.0, -200.0, 0.0, 0.0,
     0.0, 0.0, 0.0,
+    0.0, 0.0,
     0.0, 0.0,
 ];
 
@@ -264,6 +267,14 @@ pub fn features(ctx: &Ctx, st: &State, to_move: i8, cn: &Comm, cs: &Comm, units:
         }
         if signals[idx(side)] == 1 {
             f[36] += sign(side);
+        }
+        // La chasse aux transmissions : une armee sans ancrage dont une
+        // transmission est a portee de destruction. Deux fois plus grave quand
+        // c'est la derniere : sa perte isole tout d'un coup.
+        let threatened = if side == to_move { f[34] } else { f[33] };
+        if threatened > 0 && direct.count as i32 - signals_direct == 0 {
+            let weight = if signals[idx(side)] as i32 <= threatened { 2 } else { 1 };
+            f[if side == to_move { 38 } else { 37 }] += weight;
         }
     }
     (f, 0)

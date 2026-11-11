@@ -12,6 +12,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# ── Moteur du Jeu de la guerre (bibliotheque du depot, sans dependance) ───────
+kriegspiel = { path = "crates/kriegspiel" }
 # ── Tauri core ────────────────────────────────────────────────────────────────
 tauri = { version = "2.12.5", features = ["devtools"] }
 
@@ -47,6 +49,15 @@ chacha20poly1305 = "0.11"
 hmac        = "0.13"
 sha2        = "0.11"
 anyhow      = "1"         # gestion d'erreurs ergonomique
+
+# Le moteur du Jeu de la guerre se compile pour la vitesse, y compris en
+# developpement : en debug il chercherait vingt fois moins loin, et le
+# profil release de l'application privilegie la taille.
+[profile.dev.package.kriegspiel]
+opt-level = 3
+
+[profile.release.package.kriegspiel]
+opt-level = 3
 
 [profile.release]
 panic         = "abort"   # binaire plus petit, pas de stack unwinding

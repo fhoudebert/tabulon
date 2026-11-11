@@ -10,7 +10,7 @@
 //!       resultats a partir des termes
 //!
 //!   match <ouvertures> <parties> <poids A> <poids B> [--depth n] [--depth-b n]
-//!         [--seed n] [--threads n]
+//!         [--plans 0|1] [--plans-b 0|1] [--seed n] [--threads n]
 //!       fait jouer A contre B, chaque ouverture avec les deux couleurs
 //!
 //! Un jeu de poids est un fichier `nom valeur` par ligne, ou l'un des mots
@@ -82,6 +82,7 @@ fn limits(depth: u32) -> Limits {
         inner_keep: 4,
         leaf_beam: 3,
         leaf_moves: 2,
+        plans: false,
     }
 }
 
@@ -116,6 +117,12 @@ fn play_game(north: &Ctx, south: &Ctx, opening: &State, depth: u32, eps: f64, rn
 
 /// comme [`play_game`], avec une profondeur par camp (Nord, Sud)
 fn play_game_depths(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32), eps: f64, rng: &mut Rng, record: bool) -> (i8, u32, Vec<Sample>) {
+    play_game_full(north, south, opening, depths, (false, false), eps, rng, record)
+}
+
+/// la partie elle-meme : profondeur et plans (voir search::Limits) par camp
+#[allow(clippy::too_many_arguments)]
+fn play_game_full(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32), plans: (bool, bool), eps: f64, rng: &mut Rng, record: bool) -> (i8, u32, Vec<Sample>) {
     let mut st = opening.clone();
     let mut who = NORTH;
     let mut samples = Vec::new();
@@ -123,7 +130,8 @@ fn play_game_depths(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32
     let mut plies = 0;
     loop {
         let ctx = if who > 0 { north } else { south };
-        let limits = limits(if who > 0 { depths.0 } else { depths.1 });
+        let mut limits = limits(if who > 0 { depths.0 } else { depths.1 });
+        limits.plans = if who > 0 { plans.0 } else { plans.1 };
         if record {
             let units = Units::scan(&st);
             let cn = communications_of(ctx, &st, NORTH, &units);
@@ -134,6 +142,7 @@ fn play_game_depths(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32
             }
         }
         let mut searcher = Searcher::new(ctx);
+        searcher.plans = limits.plans;
         let mv = if eps > 0.0 && rng.unit() < eps {
             // un peu de hasard : sans lui, toutes les parties d'une meme
             // ouverture seraient identiques
@@ -305,6 +314,9 @@ fn run_match(args: &[String]) {
     let depth = number(args, "--depth", 2u32);
     // profondeur de B, si elle differe : mesure ce que rapporte un tour de plus
     let depth_b = number(args, "--depth-b", depth);
+    // tours construits selon un plan : 1 ou 0, pour A et pour B
+    let plans_a = number(args, "--plans", 0u32) != 0;
+    let plans_b = number(args, "--plans-b", plans_a as u32) != 0;
     let seed = number(args, "--seed", 1u64);
     let threads = number(args, "--threads", 2usize);
     let eps = number(args, "--eps", 0.05f64);
@@ -323,7 +335,8 @@ fn run_match(args: &[String]) {
                 let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9).wrapping_add((game / 2) as u64 * 7919 + 1));
                 let (north, south) = if a_side > 0 { (&a, &b) } else { (&b, &a) };
                 let depths = if a_side > 0 { (depth, depth_b) } else { (depth_b, depth) };
-                let (winner, plies, _) = play_game_depths(north, south, opening, depths, eps, &mut rng, false);
+                let plans = if a_side > 0 { (plans_a, plans_b) } else { (plans_b, plans_a) };
+                let (winner, plies, _) = play_game_full(north, south, opening, depths, plans, eps, &mut rng, false);
                 let mut t = tally.lock().unwrap();
                 if winner == 0 {
                     t.2 += 1;
@@ -339,7 +352,7 @@ fn run_match(args: &[String]) {
     let t = tally.lock().unwrap();
     let score = (t.0 as f64 + 0.5 * t.2 as f64) / games as f64;
     println!(
-        "{} (depth {depth}) vs {} (depth {depth_b}), {games} games: +{} -{} ={}  score {:.1}%  mean length {} plies",
+        "{} (depth {depth}, plans {plans_a}) vs {} (depth {depth_b}, plans {plans_b}), {games} games: +{} -{} ={}  score {:.1}%  mean length {} plies",
         args[2], args[3], t.0, t.1, t.2, score * 100.0, t.3 / games as u64
     );
     println!("  endings: {}", reasons_text());

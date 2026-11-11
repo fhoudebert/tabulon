@@ -5,6 +5,7 @@ pub mod fs_cmds;
 pub mod hub_cmds;
 pub mod install_cmds;
 pub mod katago_cmds;
+pub mod kriegspiel_cmds;
 pub mod match_cmds;
 pub mod peer_cmds;
 pub mod problem_cmds;

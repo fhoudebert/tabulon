@@ -74,7 +74,7 @@ Autres commandes : `moves` (tours candidats), `eval`, `play <coup>`, `d`,
 
 ## Régler l'évaluation : `kriegspiel-lab`
 
-L'évaluation est une somme pondérée de 37 termes nommés (`eval::FEATURES`),
+L'évaluation est une somme pondérée de 39 termes nommés (`eval::FEATURES`),
 mesurés du point de vue du camp au trait. `kriegspiel-lab` sert à en comparer
 les poids, sans jocly2 et sans horloge (budget en profondeur : les parties
 sont reproductibles).
@@ -113,8 +113,16 @@ incertitude d'environ ±3,5 points.
 | `signal_threat_other` à −2000 | 47,8 % |
 | `no_anchor` à −2500 / −6000 | 48,8 % / 47,8 % |
 | `one_signal` à −800 | 48,4 % |
+| `hunt_mover` / `hunt_other` à ±3000, puis +6000 / −8000 | 50,7 % / 50,2 % |
+| tours construits selon un plan (`--plans 1`) contre le faisceau seul | 50,0 % |
 | profondeur 2 contre profondeur 1, mêmes poids | 52,5 % |
 | profondeur 3 contre profondeur 2, mêmes poids | 54,1 % |
+
+Les tours « selon un plan » (`search::Plan` : mise à l'abri des transmissions,
+avance en ordre par la tête ou par la queue, retour vers une ligne directe
+d'arsenal) s'ajoutent aux tours du faisceau et sont jugés par la même
+évaluation. Ils ne changent rien au score et ne sont donc pas en service
+(`Limits::plans`, faux par défaut).
 
 Aucun réglage essayé ne bat les poids de départ, et un tour de recherche de
 plus ne rapporte que 2 à 4 points. La régression échoue pour une raison
@@ -134,4 +142,15 @@ l'évaluation statique) et l'absence de plan à plusieurs tours.
 - pas de table de transposition entre les nœuds ;
 - pas de détection des répétitions : c'est Jocly qui arbitre la nulle ;
 - évaluation réglée à la main : voir ci-dessus ce qui a été essayé ;
-- pas encore branché dans Tabulon (commandes Tauri et faux Worker à écrire).
+- une seule recherche à la fois : le drapeau d'arrêt est commun.
+
+## Dans Tabulon
+
+Le moteur est lié à l'application (`kriegspiel = { path = "crates/kriegspiel" }`
+dans `src-tauri/Cargo.toml`, compilé en `opt-level = 3` même en debug). Les
+commandes `kriegspiel_probe`, `kriegspiel_search` et `kriegspiel_stop`
+(`src/commands/kriegspiel_cmds.rs`) n'appellent que `service::search_text`.
+Côté interface, `app/content/engine-native.js` remplace le Worker
+`jocly.kriegspielworker.js` de jocly par `NativeKriegspielWorker` ; c'est le
+niveau « Expert » du jeu (`"ai": "kriegspiel"`) qui le demande. Sans Tabulon,
+ce niveau se rabat sur l'IA de jocly et l'annonce.
