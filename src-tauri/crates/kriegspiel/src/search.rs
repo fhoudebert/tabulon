@@ -217,7 +217,7 @@ impl<'a> Searcher<'a> {
                 Outcome::Retreat => evaluate_units(ctx, &st, -who, cn, cs, &units).score,
             } * who as i32;
             // a evaluation egale, on attaque : un petit bonus departage
-            let score = score + VALUE[v.unsigned_abs() as usize] / 100;
+            let score = score + VALUE[v.unsigned_abs() as usize] / 10;
             if score > node.score {
                 node.score = score;
                 node.attack = Some((target as u16, outcome));

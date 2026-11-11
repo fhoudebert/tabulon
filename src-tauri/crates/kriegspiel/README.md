@@ -11,6 +11,7 @@ jocly2 (`src/games/kriegspiel/kriegspiel-rules.js`), qui reste la référence.
 | `src/search.rs` | recherche : tours construits par faisceau, alpha-bêta sur les tours |
 | `src/proto.rs` | format texte des positions et des coups |
 | `src/main.rs` | `kriegspiel-engine`, le moteur en ligne de commande |
+| `src/bin/lab.rs` | `kriegspiel-lab`, le banc de réglage de l'évaluation |
 
 ## Construire et tester
 
@@ -71,9 +72,66 @@ go movetime 2000
 Autres commandes : `moves` (tours candidats), `eval`, `play <coup>`, `d`,
 `setoption maxturns <n>`, `setoption isolation <0|1>`, `quit`.
 
+## Régler l'évaluation : `kriegspiel-lab`
+
+L'évaluation est une somme pondérée de 37 termes nommés (`eval::FEATURES`),
+mesurés du point de vue du camp au trait. `kriegspiel-lab` sert à en comparer
+les poids, sans jocly2 et sans horloge (budget en profondeur : les parties
+sont reproductibles).
+
+```
+# A contre B, chaque ouverture avec les deux couleurs
+kriegspiel-lab match tests/fixtures/openings.txt 200 essai.txt handmade
+# ce que rapporte un tour de recherche de plus
+kriegspiel-lab match tests/fixtures/openings.txt 200 handmade handmade --depth 3 --depth-b 2
+# parties moteur contre lui-même, termes et résultat de chaque position
+kriegspiel-lab selfplay tests/fixtures/openings.txt 1000 echantillons.txt
+# régression logistique sur ces échantillons
+kriegspiel-lab fit echantillons.txt --out poids.txt
+```
+
+Un fichier de poids contient `nom valeur` par ligne ; les termes absents
+gardent leur valeur. `handmade` désigne les poids réglés à la main, `tuned`
+ceux en service (les mêmes pour l'instant). Le moteur les charge par
+`setoption weights <fichier>`, et `features` affiche les termes d'une position.
+
+`tests/fixtures/openings.txt` (200 débuts de partie) vient des gabarits de
+déploiement de jocly2 : `node tests/make-openings.cjs <chemin de jocly2>`.
+
+### Ce que les mesures ont donné (novembre 2026)
+
+Parties à profondeur 2, sauf mention ; 160 à 200 parties par ligne, soit une
+incertitude d'environ ±3,5 points.
+
+| essai, contre les poids réglés à la main | score |
+|---|---|
+| poids issus de la régression logistique (1000 parties, 43 495 positions) | 24,5 % |
+| unités isolées comptées à 30 % de leur valeur au lieu de 65 % | 46,8 % |
+| idem à 10 % | 40,9 % |
+| `advance` à −4 / à 0 (au lieu de −12) | 49,6 % / 43,5 % |
+| `fragile` à −150 / −400 | 50,9 % / 48,4 % |
+| `signal_threat_other` à −2000 | 47,8 % |
+| `no_anchor` à −2500 / −6000 | 48,8 % / 47,8 % |
+| `one_signal` à −800 | 48,4 % |
+| profondeur 2 contre profondeur 1, mêmes poids | 52,5 % |
+| profondeur 3 contre profondeur 2, mêmes poids | 54,1 % |
+
+Aucun réglage essayé ne bat les poids de départ, et un tour de recherche de
+plus ne rapporte que 2 à 4 points. La régression échoue pour une raison
+classique : sur des parties d'un seul joueur, elle apprend ce qui accompagne
+la victoire, pas ce qui la cause.
+
+Deux parties sur trois se terminent en une vingtaine de tours par isolement :
+le perdant a porté son armée loin de ses arsenaux, elle ne tient plus que par
+ses deux unités de transmission, et l'adversaire les détruit en deux tours.
+Le moteur ne voit pas ce danger assez tôt, et le pénaliser dans l'évaluation
+ne suffit pas. Le facteur limitant n'est donc ni le poids des termes ni la
+profondeur, mais la construction des tours (un faisceau glouton sur
+l'évaluation statique) et l'absence de plan à plusieurs tours.
+
 ## Limites de cette version
 
 - pas de table de transposition entre les nœuds ;
 - pas de détection des répétitions : c'est Jocly qui arbitre la nulle ;
-- évaluation réglée à la main, sur peu de parties ;
+- évaluation réglée à la main : voir ci-dessus ce qui a été essayé ;
 - pas encore branché dans Tabulon (commandes Tauri et faux Worker à écrire).

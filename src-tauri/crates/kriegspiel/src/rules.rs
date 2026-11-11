@@ -94,6 +94,8 @@ pub struct Ctx {
     pub max_turns: u32,
     /// victoire quand l'adversaire n'a plus de transmission et que tout est isole
     pub isolation_victory: bool,
+    /// poids de l'evaluation (voir eval.rs)
+    pub weights: crate::eval::Weights,
 }
 
 impl Default for Ctx {
@@ -151,7 +153,7 @@ impl Ctx {
             }
             ars_dist.push(dist);
         }
-        Ctx { terr, ars_pos, ars_side, ars_at, next, ars_dist, max_turns, isolation_victory }
+        Ctx { terr, ars_pos, ars_side, ars_at, next, ars_dist, max_turns, isolation_victory, weights: crate::eval::Weights::default() }
     }
 
     /// l'arsenal ENNEMI encore debout qui se trouve sur cette case
@@ -196,6 +198,8 @@ pub struct Comm {
     pub on: [bool; N],
     pub count: u32,
     pub total: u32,
+    /// nombre de cases sur une ligne
+    pub lit_count: u32,
 }
 
 /// Les cases occupees, relevees une fois : la recherche evite ainsi de
@@ -229,14 +233,23 @@ pub fn communications(ctx: &Ctx, st: &State, side: i8) -> Comm {
 
 /// comme [`communications`], avec la liste des cases occupees deja relevee
 pub fn communications_of(ctx: &Ctx, st: &State, side: i8, units: &Units) -> Comm {
+    communications_relay(ctx, st, side, units, true)
+}
+
+/// Les communications du camp ; avec `relay` a faux, ses unites de
+/// transmission ne relaient rien : ce qui lui resterait s'il les perdait.
+/// (Ce n'est pas une regle du jeu, c'est une mesure pour l'evaluation.)
+pub fn communications_relay(ctx: &Ctx, st: &State, side: i8, units: &Units, relay: bool) -> Comm {
     let grid = &st.grid;
     let mut lit = [false; N];
     let mut on = [false; N];
     let mut emitted = [false; N];
     let mut queue: [u16; 8] = [0; 8]; // 2 arsenaux + 2 transmissions au plus
     let mut len = 0;
+    let mut lit_count = 0u32;
     for i in 0..4 {
         if ctx.ars_side[i] == side && st.ars[i] {
+            lit_count += 1;
             lit[ctx.ars_pos[i]] = true;
             queue[len] = ctx.ars_pos[i] as u16;
             len += 1;
@@ -265,7 +278,7 @@ pub fn communications_of(ctx: &Ctx, st: &State, side: i8, units: &Units) -> Comm
                     if enemy && !signal {
                         break;
                     }
-                    if !enemy && signal && !emitted[p] {
+                    if relay && !enemy && signal && !emitted[p] {
                         emitted[p] = true;
                         if len < queue.len() {
                             queue[len] = p as u16;
@@ -273,7 +286,10 @@ pub fn communications_of(ctx: &Ctx, st: &State, side: i8, units: &Units) -> Comm
                         }
                     }
                 }
-                lit[p] = true;
+                if !lit[p] {
+                    lit[p] = true;
+                    lit_count += 1;
+                }
             }
         }
     }
@@ -316,7 +332,7 @@ pub fn communications_of(ctx: &Ctx, st: &State, side: i8, units: &Units) -> Comm
             }
         }
     }
-    Comm { lit, on, count, total }
+    Comm { lit, on, count, total, lit_count }
 }
 
 /// Cases que l'unite posee en `from` peut atteindre : pas dans les 8

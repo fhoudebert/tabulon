@@ -5,11 +5,13 @@
 //!   kriegspiel                       -> id name ... / ok
 //!   setoption maxturns <n>           nulle apres n coups (0 : sans limite)
 //!   setoption isolation <0|1>        victoire par isolement (RSG)
+//!   setoption weights <fichier>      poids de l'evaluation (voir eval.rs)
 //!   position <position>              voir proto.rs
 //!   go [movetime <ms>] [depth <n>] [beam <n>] [keep <n>]
 //!                                    -> info ... / bestmove <coup>
 //!   moves [beam <n>] [keep <n>]      -> les tours candidats de la position
 //!   eval                             -> evaluation statique
+//!   features                         -> ses termes non nuls
 //!   play <coup>                      joue un coup (valide) sur la position
 //!   d                                affiche la position
 //!   quit
@@ -42,8 +44,17 @@ fn main() {
             }
             "setoption" => {
                 match (words.get(1).copied(), words.get(2).and_then(|v| v.parse::<u32>().ok())) {
-                    (Some("maxturns"), Some(n)) => ctx = Ctx::new(n, ctx.isolation_victory),
-                    (Some("isolation"), Some(n)) => ctx = Ctx::new(ctx.max_turns, n != 0),
+                    (Some("maxturns"), Some(n)) => ctx.max_turns = n,
+                    (Some("isolation"), Some(n)) => ctx.isolation_victory = n != 0,
+                    (Some("weights"), _) if words.len() > 2 => {
+                        match std::fs::read_to_string(words[2])
+                            .map_err(|e| e.to_string())
+                            .and_then(|text| kriegspiel::eval::Weights::parse(&text, &ctx.weights))
+                        {
+                            Ok(weights) => ctx.weights = weights,
+                            Err(e) => println!("error {e}"),
+                        }
+                    }
                     _ => println!("error option inconnue"),
                 }
             }
@@ -58,6 +69,19 @@ fn main() {
             "eval" => {
                 let e = evaluate(&ctx, &st, who);
                 println!("eval {} winner {}", e.score, e.winner);
+            }
+            "features" => {
+                // les termes non nuls de l'evaluation, du point de vue du camp au trait
+                let units = kriegspiel::rules::Units::scan(&st);
+                let cn = kriegspiel::rules::communications_of(&ctx, &st, 1, &units);
+                let cs = kriegspiel::rules::communications_of(&ctx, &st, -1, &units);
+                let (f, winner) = kriegspiel::eval::features(&ctx, &st, who, &cn, &cs, &units);
+                for (i, v) in f.iter().enumerate() {
+                    if *v != 0 {
+                        println!("feature {} {} x {}", kriegspiel::eval::FEATURES[i], v, ctx.weights.0[i]);
+                    }
+                }
+                println!("ok winner {winner} comm N {}/{} S {}/{}", cn.count, cn.total, cs.count, cs.total);
             }
             "play" => match parse_move(line[command.len()..].trim()).and_then(|mv| {
                 play_turn(&ctx, &st, who, &mv).map_err(|e| e.to_string())
