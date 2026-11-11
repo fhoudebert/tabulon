@@ -70,3 +70,12 @@ fn game_options_reach_the_rules() {
     let unlimited = Request { position, move_time_ms: Some(50), max_turns: Some(0), ..Request::default() };
     assert!(search_text(&unlimited, None).unwrap().best_move.is_some());
 }
+
+/// Un reseau illisible est refuse et laisse l'evaluation ponderee en service.
+#[test]
+fn an_unreadable_network_is_refused() {
+    let path = std::env::temp_dir().join("kriegspiel-bad.ksnn");
+    std::fs::write(&path, b"KSNN pas un reseau").unwrap();
+    assert!(kriegspiel::service::set_net(Some(path.to_str().unwrap())).is_err());
+    assert_eq!(kriegspiel::service::net_in_use(), None);
+}

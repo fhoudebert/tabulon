@@ -99,6 +99,9 @@ tabulon/
 └── engine  (expert mode)
     └── nnue  (optionnal)
     └── fairy-stockfish[.exe]  (expert engine)
+    └── kriegspiel-value.ksnn  (optional: value network of the built-in
+                                Jeu de la guerre engine; see
+                                src-tauri/crates/kriegspiel/README.md)
 ```
 
 ## Extensions (import/export games)

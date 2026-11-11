@@ -10,7 +10,7 @@
 //! Le contrat avec jocly est celui des autres moteurs (voir
 //! `app/content/engine-native.js` et `jocly.kriegspiel.js`) :
 //!
-//!   kriegspiel_probe   -> le nom du moteur
+//!   kriegspiel_probe   -> le nom du moteur et l'evaluation en service
 //!   kriegspiel_search  -> { bestMove, ... } ; `bestMove` absent si la partie
 //!                         est finie ; une erreur fait retomber jocly sur son
 //!                         IA interne (phase de placement comprise)
@@ -18,12 +18,55 @@
 //!
 //! La position et le coup sont du texte, au format de `kriegspiel::proto` :
 //! jocly les ecrit et les relit lui-meme, il n'y a aucune conversion ici.
+//!
+//! Le reseau de valeur (voir `crates/kriegspiel/src/nn.rs`) est un fichier a
+//! part, comme le reseau de KataGo : `kriegspiel-value.ksnn`, cherche aux
+//! emplacements des moteurs (`engine/` a cote de l'executable d'abord), ou
+//! designe par la variable TABULON_KRIEGSPIEL_NET. Il est charge une fois, a
+//! la premiere sonde ou recherche. Absent ou illisible, le moteur garde son
+//! evaluation ponderee, et la sonde le dit.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use kriegspiel::service::{search_text, Request};
+use kriegspiel::service::{search_text, set_net, Request};
+
+use crate::commands::engine_cmds::{binary_candidates, searched_paths};
+
+/// nom du fichier du reseau de valeur, cherche comme un binaire de moteur
+const NET_FILE: &str = "kriegspiel-value.ksnn";
+/// variable d'environnement qui designe un autre fichier
+const NET_ENV: &str = "TABULON_KRIEGSPIEL_NET";
+
+/// ce que la sonde annonce de l'evaluation en service
+static NET_STATUS: OnceLock<String> = OnceLock::new();
+
+/// Charge le reseau de valeur la premiere fois ; rend l'etat a annoncer.
+fn ensure_net() -> &'static str {
+    NET_STATUS.get_or_init(|| {
+        let path = match std::env::var(NET_ENV) {
+            Ok(p) if !p.is_empty() => Some(std::path::PathBuf::from(p)),
+            _ => binary_candidates(NET_FILE).into_iter().find(|p| p.is_file()),
+        };
+        let Some(path) = path else {
+            log::info!("Jeu de la guerre : aucun reseau {NET_FILE}, evaluation ponderee. Cherche : {}", searched_paths(NET_FILE));
+            return "evaluation ponderee (aucun reseau)".to_string();
+        };
+        let shown = path.display().to_string();
+        match set_net(Some(&shown)) {
+            Ok(()) => {
+                log::info!("Jeu de la guerre : reseau de valeur {shown}");
+                format!("reseau {shown}")
+            }
+            Err(e) => {
+                log::warn!("Jeu de la guerre : reseau illisible, evaluation ponderee : {e}");
+                format!("evaluation ponderee (reseau illisible : {e})")
+            }
+        }
+    })
+}
 
 /// Drapeau d'arret, partage par toutes les recherches : une seule partie
 /// contre le moteur a la fois dans la pratique, et un arret de trop ne coute
@@ -60,6 +103,7 @@ pub struct KriegspielSearchResult {
 }
 
 pub(crate) fn run_search(request: &KriegspielSearchRequest, stop: &AtomicBool) -> Result<KriegspielSearchResult, String> {
+    ensure_net();
     let reply = search_text(
         &Request {
             position: request.position.clone(),
@@ -80,10 +124,14 @@ pub(crate) fn run_search(request: &KriegspielSearchRequest, stop: &AtomicBool) -
     })
 }
 
-/// Le moteur est lie a l'application : la sonde ne peut pas echouer.
+/// Le moteur est lie a l'application : la sonde ne peut pas echouer. Elle
+/// annonce aussi l'evaluation en service (reseau de valeur ou ponderee).
 #[tauri::command]
 pub async fn kriegspiel_probe() -> Result<String, String> {
-    Ok(format!("Kriegspiel {}", kriegspiel::VERSION))
+    let status = tauri::async_runtime::spawn_blocking(ensure_net)
+        .await
+        .map_err(|e| format!("sonde interrompue : {e}"))?;
+    Ok(format!("Kriegspiel {} — {}", kriegspiel::VERSION, status))
 }
 
 #[tauri::command]

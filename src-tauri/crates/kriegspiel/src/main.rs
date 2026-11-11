@@ -6,6 +6,7 @@
 //!   setoption maxturns <n>           nulle apres n coups (0 : sans limite)
 //!   setoption isolation <0|1>        victoire par isolement (RSG)
 //!   setoption weights <fichier>      poids de l'evaluation (voir eval.rs)
+//!   setoption net <fichier|none>     reseau de valeur (voir nn.rs) ; none : sans
 //!   position <position>              voir proto.rs
 //!   go [movetime <ms>] [depth <n>] [beam <n>] [keep <n>]
 //!                                    -> info ... / bestmove <coup>
@@ -46,6 +47,16 @@ fn main() {
                 match (words.get(1).copied(), words.get(2).and_then(|v| v.parse::<u32>().ok())) {
                     (Some("maxturns"), Some(n)) => ctx.max_turns = n,
                     (Some("isolation"), Some(n)) => ctx.isolation_victory = n != 0,
+                    (Some("net"), _) if words.len() > 2 => {
+                        if words[2] == "none" {
+                            ctx.net = None;
+                        } else {
+                            match kriegspiel::nn::Net::load(words[2]) {
+                                Ok(net) => ctx.net = Some(std::sync::Arc::new(net)),
+                                Err(e) => println!("error {e}"),
+                            }
+                        }
+                    }
                     (Some("weights"), _) if words.len() > 2 => {
                         match std::fs::read_to_string(words[2])
                             .map_err(|e| e.to_string())

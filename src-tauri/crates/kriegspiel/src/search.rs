@@ -15,6 +15,12 @@
 //!    noeud, les `keep` meilleurs tours du faisceau, du plus prometteur au
 //!    moins prometteur.
 //!
+//! Avec un reseau de valeur (`Ctx::net`, voir nn.rs), le faisceau construit
+//! toujours les tours avec l'evaluation ponderee, qui est rapide, mais les
+//! feuilles sont jugees par le reseau : il remplace la reponse adverse que la
+//! recherche construisait a chaque feuille. Le reseau ne sert donc qu'aux
+//! positions de fin de tour, quelques dizaines a quelques centaines par coup.
+//!
 //! Limites connues de cette premiere version : pas de table de transposition
 //! entre les noeuds, pas de detection des repetitions (c'est Jocly qui
 //! arbitre la nulle), pas de placement (Jocly le tire de ses gabarits).
@@ -24,7 +30,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::eval::{evaluate_units, VALUE, WIN};
+use crate::nn::Scratch;
 use crate::rules::*;
+
+/// Echelle des valeurs du reseau ([-1, 1]) dans les unites de la recherche :
+/// assez grande pour que l'arrondi a l'entier ne confonde pas deux positions,
+/// tres en dessous de WIN / 2, ou commencent les fins de partie.
+pub const NET_SCALE: f32 = 20_000.0;
 
 /// Budget d'une recherche.
 #[derive(Clone, Copy, Debug)]
@@ -150,11 +162,16 @@ pub struct Searcher<'a> {
     aborted: bool,
     /// tours construits selon un plan, en plus du faisceau
     pub plans: bool,
+    /// memoire de travail du reseau, s'il y en a un
+    scratch: Option<Scratch>,
+    /// positions jugees par le reseau
+    pub net_evals: u64,
 }
 
 impl<'a> Searcher<'a> {
     pub fn new(ctx: &'a Ctx) -> Searcher<'a> {
-        Searcher { ctx, zobrist: Zobrist::new(), nodes: 0, deadline: None, stop: None, aborted: false, plans: false }
+        let scratch = ctx.net.as_ref().map(|net| net.scratch());
+        Searcher { ctx, zobrist: Zobrist::new(), nodes: 0, deadline: None, stop: None, aborted: false, plans: false, scratch, net_evals: 0 }
     }
 
     /// drapeau d'arret externe (commande `stop`)
@@ -178,6 +195,16 @@ impl<'a> Searcher<'a> {
             }
         }
         self.aborted
+    }
+
+    /// Valeur de `st` pour `who`, au trait, selon le reseau, dans les unites
+    /// de la recherche ; None sans reseau.
+    pub fn net_value(&mut self, st: &State, who: i8) -> Option<i32> {
+        let net = self.ctx.net.as_ref()?;
+        let scratch = self.scratch.as_mut()?;
+        self.nodes += 1;
+        self.net_evals += 1;
+        Some((net.value(self.ctx, st, who, scratch) * NET_SCALE).round() as i32)
     }
 
     fn hash_of(&self, st: &State) -> u64 {
@@ -590,6 +617,13 @@ impl<'a> Searcher<'a> {
 
     /// valeur de `st` pour `who`, qui est au trait, a `depth` tours
     fn negamax(&mut self, st: &State, who: i8, depth: u32, mut alpha: i32, beta: i32, ply: i32, limits: &Limits) -> i32 {
+        if depth <= 1 && self.ctx.net.is_some() {
+            // feuille jugee par le reseau, au lieu de la reponse construite
+            if self.out_of_time() {
+                return 0;
+            }
+            return self.net_value(st, who).unwrap();
+        }
         let cands = if depth <= 1 {
             self.generate_limited(st, who, limits.leaf_beam, 1, limits.leaf_moves)
         } else {
@@ -626,6 +660,7 @@ impl<'a> Searcher<'a> {
     pub fn search(&mut self, st: &State, who: i8, limits: &Limits) -> SearchResult {
         let started = Instant::now();
         self.nodes = 0;
+        self.net_evals = 0;
         self.aborted = false;
         self.plans = limits.plans;
         self.deadline = None; // la profondeur 1 va toujours au bout : il faut un coup

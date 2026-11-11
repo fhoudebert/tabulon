@@ -6,6 +6,8 @@
 //
 // jocly2 doit etre construit (`npx gulp build`) et le moteur aussi
 // (`cargo build --release`). Niveaux : 0 Rapide, 1 Normal, 2 Fort.
+// Avec la variable KRIEGSPIEL_NET=<fichier .ksnn>, le moteur joue avec ce
+// reseau de valeur (setoption net) ; sans elle, avec l'evaluation ponderee.
 // Lancer un seul match a la fois : le budget du moteur est en temps, et deux
 // matchs en parallele sur la meme machine faussent la profondeur atteinte.
 const path = require("path");
@@ -40,8 +42,9 @@ function parseMove(text) {
 }
 const child = spawn(ENGINE);
 const rl = readline.createInterface({ input: child.stdout });
+if (process.env.KRIEGSPIEL_NET) child.stdin.write("setoption net " + path.resolve(process.env.KRIEGSPIEL_NET) + "\n");
 let waiting = null, info = "";
-rl.on("line", (line) => { if (line.startsWith("info")) info = line; if ((line.startsWith("bestmove") || line.startsWith("error")) && waiting) { const w = waiting; waiting = null; w(line); } });
+rl.on("line", (line) => { if (line.startsWith("error") && !waiting) { console.error("moteur :", line); process.exit(1); } if (line.startsWith("info")) info = line; if ((line.startsWith("bestmove") || line.startsWith("error")) && waiting) { const w = waiting; waiting = null; w(line); } });
 function go(board) {
   return new Promise((resolve) => { waiting = resolve; child.stdin.write("position " + positionOf(board) + "\ngo movetime " + movetime + " " + extra + "\n"); });
 }
@@ -69,6 +72,6 @@ function go(board) {
     tally[who]++; lengths.push(plies);
     console.log("game", g + 1, "engine plays", engineSide > 0 ? "North" : "South", "->", who, match.game.mBoard.reason, plies, "plies");
   }
-  console.log("RESULT vs level", levelIndex, "engine", movetime + "ms", extra, JSON.stringify(tally), "mean plies", Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length), "mean engine depth", (depths.reduce((a, b) => a + b, 0) / depths.length).toFixed(1));
+  console.log("RESULT vs level", levelIndex, "engine", movetime + "ms", extra, "net", process.env.KRIEGSPIEL_NET || "none", JSON.stringify(tally), "mean plies", Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length), "mean engine depth", (depths.reduce((a, b) => a + b, 0) / depths.length).toFixed(1));
   child.stdin.write("quit\n");
 })().catch((e) => { console.error("ERROR", e); child.kill(); process.exit(1); });

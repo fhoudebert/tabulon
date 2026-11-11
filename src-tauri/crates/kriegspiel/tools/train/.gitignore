@@ -1,0 +1,11 @@
+# un run se verse au depot par generations.md, generations.jsonl et config.json ;
+# le reste se refait a partir d eux
+runs/*/samples/
+runs/*/nets/
+runs/*/calibration/
+runs/*/best.ksnn
+runs/*/log.txt
+runs/*/state.json
+__pycache__/
+*.kspl
+*.pt

@@ -96,6 +96,9 @@ pub struct Ctx {
     pub isolation_victory: bool,
     /// poids de l'evaluation (voir eval.rs)
     pub weights: crate::eval::Weights,
+    /// reseau de valeur (voir nn.rs) : s'il est la, il juge les feuilles de la
+    /// recherche ; sinon l'evaluation ponderee s'en charge
+    pub net: Option<std::sync::Arc<crate::nn::Net>>,
 }
 
 impl Default for Ctx {
@@ -153,7 +156,7 @@ impl Ctx {
             }
             ars_dist.push(dist);
         }
-        Ctx { terr, ars_pos, ars_side, ars_at, next, ars_dist, max_turns, isolation_victory, weights: crate::eval::Weights::default() }
+        Ctx { terr, ars_pos, ars_side, ars_at, next, ars_dist, max_turns, isolation_victory, weights: crate::eval::Weights::default(), net: None }
     }
 
     /// l'arsenal ENNEMI encore debout qui se trouve sur cette case
