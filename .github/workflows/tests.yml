@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  JOCLY2_REF: main
+  JOCLY2_REF: jeu-de-la-guerre
 
 jobs:
   tests:

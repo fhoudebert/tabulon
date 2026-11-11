@@ -109,3 +109,25 @@ fn every_move_it_returns_is_legal() {
     }
     assert!(searched > 20 && candidates > 2000, "{searched} searches, {candidates} candidates");
 }
+
+/// Avec un reseau de valeur, la recherche s'en sert aux feuilles, rend un
+/// coup legal, et trouve toujours un gain immediat (les fins de partie ne
+/// passent pas par le reseau).
+#[test]
+fn searches_with_a_value_network() {
+    let mut ctx = Ctx::default();
+    ctx.net = Some(std::sync::Arc::new(kriegspiel::nn::Net::random(8, 1, 2, 16, 5)));
+    let text = include_str!("fixtures/openings.txt").lines().next().unwrap();
+    let (st, who) = parse_position(text).unwrap();
+    let mut searcher = Searcher::new(&ctx);
+    let limits = Limits { movetime_ms: 2000, max_depth: 2, ..Limits::default() };
+    let result = searcher.search(&st, who, &limits);
+    assert_eq!(result.depth, 2);
+    assert!(searcher.net_evals > 0, "le reseau n'a pas servi");
+    assert!(play_turn(&ctx, &st, who, &result.best).is_ok(), "coup refuse : {}", format_move(&result.best));
+
+    let mut st = place(&[("S8", SIGNAL), ("S4", CAVALRY), ("D9", INFANTRY), ("K20", -INFANTRY), ("T22", -SIGNAL)]);
+    st.ars = [true, true, true, false];
+    let result = best_move(&ctx, &st, NORTH, &quick(), None).unwrap();
+    assert_eq!(result.best.d, Some(pos_of("T3").unwrap() as u16), "move: {}", format_move(&result.best));
+}

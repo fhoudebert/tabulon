@@ -162,6 +162,10 @@ function buildPayload(method, args) {
     katago_probe:        ([opts])                  => ({ net: (opts && opts.net) || null }),
     katago_search:       ([request])               => ({ request }),
     katago_stop:         ()                        => ({}),
+    // moteur du Jeu de la guerre : lie a l'application, pas de binaire a part
+    kriegspiel_probe:    ()                        => ({}),
+    kriegspiel_search:   ([request])               => ({ request }),
+    kriegspiel_stop:     ()                        => ({}),
     // discussion a distance : le scellement vit en Rust, voir seal_cmds.rs
     open_chat:           ([matchId])               => ({ matchId }),
     seal_text:           ([key, text])             => ({ key, text }),

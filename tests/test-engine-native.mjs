@@ -7,7 +7,7 @@
 //
 // Aucun binaire ni webview requis : le RPC est injecte.
 
-import { installInWindow, NativeFairyWorker, NativeScanWorker, NativeKataWorker } from '../app/content/engine-native.js';
+import { installInWindow, NativeFairyWorker, NativeScanWorker, NativeKataWorker, NativeKriegspielWorker } from '../app/content/engine-native.js';
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
@@ -329,7 +329,69 @@ console.log('Test 12 - KataGo : passe, abandon et interruption');
     ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
 }
 
-console.log('Test 13 - les trois moteurs cohabitent');
+console.log('Test 12b - moteur du Jeu de la guerre (kriegspiel)');
+{
+    const POSITION = 'N 2 14 1111 - 130IIII366';
+    // Init : le moteur est lie a l'application, la sonde repond
+    let rpc = makeRpc({ kriegspiel_probe: () => Promise.resolve('Kriegspiel 0.1.0') });
+    let w = new NativeKriegspielWorker(rpc);
+    let seen = listen(w);
+    w.postMessage({ type: 'Init' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Ready', 'kriegspiel -> Ready');
+    ok(rpc.calls[0].method === 'kriegspiel_probe', 'Init interroge kriegspiel_probe');
+
+    // Init : commande absente (Tabulon plus ancien que le pont) -> repli
+    rpc = makeRpc({ kriegspiel_probe: new Error('command kriegspiel_probe not found') });
+    w = new NativeKriegspielWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Init' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Error', 'sonde en echec -> Error (repli sur l\'IA de jocly)');
+
+    // Search : position et options partent telles quelles, le coup revient en texte
+    rpc = makeRpc({ kriegspiel_search: () => Promise.resolve({ bestMove: '137-112 x212', depth: 3, score: 120 }) });
+    w = new NativeKriegspielWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', position: POSITION, moveTimeMs: 3000, maxTurns: 400, isolationVictory: true });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Done', 'recherche -> Done');
+    ok(seen[0].data && seen[0].data.bestMove === '137-112 x212', 'le coup est rendu sous data.bestMove');
+    ok(seen[0].data.depth === 3, 'la profondeur atteinte est transmise');
+    const sent = rpc.calls[0].args[0];
+    ok(sent.position === POSITION && sent.moveTimeMs === 3000 && sent.maxTurns === 400 && sent.isolationVictory === true,
+       'position et options du jeu sont relayees sans traduction');
+
+    // Partie finie : pas de coup, pas d'erreur
+    rpc = makeRpc({ kriegspiel_search: () => Promise.resolve({ bestMove: null, depth: 0 }) });
+    w = new NativeKriegspielWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', position: POSITION });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Done' && seen[0].data.bestMove === null,
+       'partie finie -> Done sans coup, pas Error');
+
+    // Phase de placement : le moteur refuse, jocly deploie lui-meme
+    rpc = makeRpc({ kriegspiel_search: new Error('phase de placement : le moteur ne place pas les unites') });
+    w = new NativeKriegspielWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', position: 'N 0 0 1111 - 500' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Error' && /placement/.test(seen[0].error),
+       'refus du moteur -> Error avec sa raison');
+
+    // Stop pendant une recherche -> Aborted
+    let reject;
+    rpc = makeRpc({
+        kriegspiel_search: () => new Promise((_, rj) => { reject = rj; }),
+        kriegspiel_stop: () => Promise.resolve(null),
+    });
+    w = new NativeKriegspielWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', position: POSITION });
+    w.postMessage({ type: 'Stop' });
+    ok(rpc.calls.some((c) => c.method === 'kriegspiel_stop'), 'Stop interrompt cote Rust');
+    reject(new Error('stopped'));
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
+}
+
+console.log('Test 13 - les quatre moteurs cohabitent');
 {
     class FakeWorker { constructor(url) { this.url = url; } }
     const created = [];
@@ -342,10 +404,12 @@ console.log('Test 13 - les trois moteurs cohabitent');
        'scanworker -> shim dames');
     ok(new win.Worker('/browser/jocly.kataworker.js') instanceof NativeKataWorker,
        'kataworker -> shim go');
+    ok(new win.Worker('/browser/jocly.kriegspielworker.js') instanceof NativeKriegspielWorker,
+       'kriegspielworker -> shim Jeu de la guerre');
     // Le worker d'IA native reste au hook d'asset-rewrite.
     const ai = new win.Worker('/browser/jocly.aiworker.js');
     ok(!(ai instanceof NativeFairyWorker) && !(ai instanceof NativeScanWorker)
-       && !(ai instanceof NativeKataWorker) && created.length === 1,
+       && !(ai instanceof NativeKataWorker) && !(ai instanceof NativeKriegspielWorker) && created.length === 1,
        'aiworker passe au Worker precedent');
 }
 

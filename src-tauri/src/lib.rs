@@ -6,7 +6,7 @@ mod state;
 mod window_manager;
 mod dist_override;
 
-use commands::{engine_cmds, scan_cmds, katago_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, relay_cmds, seal_cmds, template_cmds, video_cmds, window_cmds};
+use commands::{engine_cmds, scan_cmds, katago_cmds, kriegspiel_cmds, extension_cmds, fs_cmds, hub_cmds, install_cmds, match_cmds, peer_cmds, problem_cmds, relay_cmds, seal_cmds, template_cmds, video_cmds, window_cmds};
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
@@ -145,6 +145,9 @@ pub fn run() {
             katago_cmds::katago_probe,
             katago_cmds::katago_search,
             katago_cmds::katago_stop,
+            kriegspiel_cmds::kriegspiel_probe,
+            kriegspiel_cmds::kriegspiel_search,
+            kriegspiel_cmds::kriegspiel_stop,
             peer_cmds::peer_host_start,
             peer_cmds::peer_connect,
             peer_cmds::peer_send,

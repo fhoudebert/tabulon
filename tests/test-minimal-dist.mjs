@@ -1,7 +1,7 @@
 // test-minimal-dist.mjs — garde le pipeline du dist EMBARQUÉ.
 //
 // Politique : le CONTENU de dist-minimal/ appartient à la personne qui compile
-// (fourinarow par défaut, ou toute sélection de modules via
+// (kriegspiel par défaut, ou toute sélection de modules via
 // make-minimal-dist.mjs). check-dist.mjs ne modifie JAMAIS un minimal valide ;
 // il ne génère que si absent/invalide. Contexte : une AppImage a été livrée
 // avec un index embarqué VIDE — app démarrant sans erreur avec 0 jeu.
@@ -35,7 +35,7 @@ function runFails(script, args = []) {
   catch { return true; }
 }
 
-// ── 1. Génération par défaut (fourinarow) : moteur complet + index cohérent ──
+// ── 1. Génération par défaut (kriegspiel) : moteur complet + index cohérent ──
 run(makeScript);
 for (const f of ['jocly.js', 'jocly.core.js', 'jocly.game.js', 'jocly-allgames.js',
                  'jocly.aiworker.js', 'jocly.embed.html']) {
@@ -44,7 +44,11 @@ for (const f of ['jocly.js', 'jocly.core.js', 'jocly.game.js', 'jocly-allgames.j
 }
 const defGames = lireIndex();
 assert(Object.keys(defGames).length > 0, `défaut : index NON VIDE (${Object.keys(defGames).length} jeux)`);
-assert(Object.values(defGames).every(g => g.module === 'fourinarow'), 'défaut : modules = fourinarow');
+assert(Object.values(defGames).every(g => g.module === 'kriegspiel'), 'défaut : modules = kriegspiel');
+assert('jeu-de-la-guerre' in defGames, 'défaut : Le Jeu de la guerre est embarqué');
+// le niveau adossé au moteur natif a besoin de son worker dans le minimal
+assert(existsSync(path.join(root, 'dist-minimal', 'browser', 'jocly.kriegspielworker.js')),
+  'défaut : jocly.kriegspielworker.js présent (remplacé par le moteur natif de Tabulon)');
 
 // ── 2. Sélection du compilateur : modules passés en argument ─────────────────
 run(makeScript, ['checkers']);
@@ -57,7 +61,7 @@ assert(existsSync(path.join(root, 'dist-minimal', 'browser', 'games', 'checkers'
 
 // ── 3. check-dist NE MODIFIE PAS un minimal valide fourni ────────────────────
 // Même avec un dist/ PLUS RÉCENT (l'ancienne règle mtime aurait régénéré en
-// fourinarow et écrasé le choix du compilateur).
+// kriegspiel et écrasé le choix du compilateur).
 const avant = readFileSync(idxPath, 'utf-8');
 const now = new Date();
 utimesSync(path.join(root, 'dist', 'browser', 'jocly.js'), now, now);

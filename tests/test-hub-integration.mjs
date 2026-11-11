@@ -91,10 +91,12 @@ function assert(cond, msg) {
   console.log('  ✓ ' + msg); passed++;
 }
 
-// 1. Démarrage : nav par défaut = Favorites (defaultFavorites, 10 jeux)
+// 1. Démarrage : nav par défaut = Favorites (defaultFavorites, 11 jeux dont
+//    Le Jeu de la guerre, embarqué par défaut ; il faut donc un dist de jocly2
+//    construit depuis une branche qui a le module kriegspiel)
 await waitFor(() => $$('#game-list li').length > 0, 'liste initiale rendue');
 assert($('#nav-games-fav').classList.contains('active'), 'nav par défaut = Favorites');
-assert($$('#game-list li').length === 10, `Favorites affiche 10 jeux (défauts) — trouvé ${$$('#game-list li').length}`);
+assert($$('#game-list li').length === 11, `Favorites affiche 11 jeux (défauts) — trouvé ${$$('#game-list li').length}`);
 assert($('#game-detail-empty').style.display !== 'none', 'panneau détail vide au départ (pas de last-game)');
 
 // 2. Nav All → tout le catalogue

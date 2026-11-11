@@ -1,12 +1,16 @@
 // scripts/make-minimal-dist.mjs — construit dist-minimal/ : le moteur Jocly +
-// un module de jeux autonome (fourinarow, 5 jeux) + un index RÉDUIT à ces jeux.
+// un module de jeux autonome (kriegspiel : Le Jeu de la guerre) + un index
+// RÉDUIT à ses jeux.
 //
 // C'est ce dist minimal qui est EMBARQUÉ dans le binaire (frontendDist pointe
 // sur dist-minimal/). Un dist/ COMPLET posé à côté de l'exécutable le remplace
 // au runtime (voir dist_override.rs) : l'app marche seule (quelques jeux) et
 // l'utilisateur ajoute la ludothèque complète sans rebuild.
 //
-// Prérequis : un dist/ complet à la racine (build de jocly2). Usage :
+// Prérequis : un dist/ à la racine (build de jocly2), complet ou réduit au
+// module embarqué :
+//   gulp --no-default-games --modules src/games/kriegspiel build --prod
+// Usage :
 //   node scripts/make-minimal-dist.mjs
 import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync, rmSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -15,14 +19,17 @@ import path from 'path';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const src  = path.join(root, 'dist');
 const out  = path.join(root, 'dist-minimal');
-// Le CHOIX des modules embarqués appartient à qui compile : fourinarow (défaut)
-// pour une app minimale, mais chessbase, checkers, ou toute sélection.
+// Le CHOIX des modules embarqués appartient à qui compile : kriegspiel (défaut)
+// pour une app minimale -- c'est le jeu dont Tabulon embarque aussi le moteur
+// natif --, mais chessbase, checkers, fourinarow ou toute sélection.
 //   node scripts/make-minimal-dist.mjs [module …]   ou   TABULON_MODULES="a,b"
+// module embarqué quand rien n'est précisé
+const DEFAULT_MODULE = 'kriegspiel';
 const KEEP_MODULES = process.argv.slice(2).length ? process.argv.slice(2)
-  : (process.env.TABULON_MODULES || 'fourinarow').split(',').map(s => s.trim()).filter(Boolean);
+  : (process.env.TABULON_MODULES || DEFAULT_MODULE).split(',').map(s => s.trim()).filter(Boolean);
 
 if (!existsSync(path.join(src, 'browser', 'jocly.js'))) {
-  console.error('✗ dist/ complet absent — construire jocly2 d\'abord (voir README).');
+  console.error('✗ dist/ absent — construire jocly2 d\'abord (voir README).');
   process.exit(1);
 }
 
@@ -58,7 +65,7 @@ for (const [name, g] of Object.entries(games))
 // en runtime sur une AppImage) — mieux vaut échouer ici, bruyamment, et ne pas
 // laisser traîner un minimal invalide.
 if (Object.keys(kept).length === 0) {
-  console.error(`✗ index réduit VIDE : aucun jeu des modules [${KEEP_MODULES.join(', ')}] dans dist/browser/jocly-allgames.js — nom de module inconnu ou dist/ incomplet ?`);
+  console.error(`✗ index réduit VIDE : aucun jeu des modules [${KEEP_MODULES.join(', ')}] dans dist/browser/jocly-allgames.js — nom de module inconnu, dist/ incomplet, ou jocly2 construit depuis une branche qui n'a pas ce module (kriegspiel : branche jeu-de-la-guerre) ?`);
   rmSync(out, { recursive: true, force: true });
   process.exit(1);
 }
