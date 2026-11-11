@@ -236,7 +236,7 @@ Sous Windows, tout fonctionne de même au processeur, sauf `taskset`.
 **1. Construire et vérifier** (une fois)
 
 ```
-git clone -b 1.1.0 https://github.com/fhoudebert/tabulon && cd tabulon/src-tauri/crates/kriegspiel
+git clone -b <branche de travail> https://github.com/fhoudebert/tabulon && cd tabulon/src-tauri/crates/kriegspiel
 cargo build --release && cargo test --release
 python3 -m venv ~/ks-venv && . ~/ks-venv/bin/activate
 pip install numpy torch --index-url https://download.pytorch.org/whl/cpu     # PyTorch au processeur

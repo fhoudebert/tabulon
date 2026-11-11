@@ -11,7 +11,7 @@
 # - msrv : l'application testee avec sa Rust minimale (1.90, rust-version)
 # - release : pour une etiquette, les paquets publies dans sa release
 # Lance a la main (Actions > Release > Run workflow), ou en poussant une
-# etiquette v* (git tag v1.1.0 && git push origin v1.1.0) : les paquets sont
+# etiquette v* (git tag vX.Y.Z && git push origin vX.Y.Z) : les paquets sont
 # alors aussi publies dans la release de cette etiquette (creee au besoin).
 # Les suites JS + Rust de non-regression restent dans tests.yml, a chaque push.
 name: Release (Linux, Windows, macOS)

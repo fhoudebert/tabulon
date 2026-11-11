@@ -1041,7 +1041,7 @@ weeks without anyone noticing.
 
 `.github/workflows/release.yml` builds the release binaries by hand
 (Actions > Release > Run workflow) or when a tag `v*` is pushed (`git tag
-v1.1.0 && git push origin v1.1.0`); for a tag, a last job publishes the
+vX.Y.Z && git push origin vX.Y.Z`, with the version of `package.json`); for a tag, a last job publishes the
 packages in the GitHub release of that tag (created if needed; the full
 jocly dist is not included, it is published with jocly2). One job builds the jocly2 dist
 once and derives `dist-minimal/` from it (`TABULON_MODULES` in the workflow
