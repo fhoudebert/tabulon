@@ -34,10 +34,11 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CRATE = os.path.abspath(os.path.join(HERE, "..", ".."))
+EXE = ".exe" if os.name == "nt" else ""
 
 
 def lab_path(args):
-    return args.lab or os.path.join(CRATE, "target", "release", "kriegspiel-lab")
+    return args.lab or os.path.join(CRATE, "target", "release", "kriegspiel-lab" + EXE)
 
 
 def run(cmd, log, env=None):
@@ -79,7 +80,8 @@ def options(ap):
     ap.add_argument("--score-weight", type=float, default=0.0)
     ap.add_argument("--channels", type=int, default=32)
     ap.add_argument("--blocks", type=int, default=4)
-    ap.add_argument("--threads", type=int, default=os.cpu_count() or 2, help="fils pour l'auto-jeu et les matchs")
+    ap.add_argument("--threads", type=int, default=os.cpu_count() or 2,
+                    help="fils pour l'auto-jeu et les matchs (conseil : un par coeur physique ; defaut : tous les fils logiques)")
     ap.add_argument("--train-threads", type=int, default=0, help="fils PyTorch (0 : son choix)")
     ap.add_argument("--device", default="auto", help="auto, cpu ou cuda (ROCm)")
     ap.add_argument("--report-every", type=int, default=3)
@@ -178,9 +180,10 @@ def write_markdown(root, args, state, history):
             lines.append(f"| {r['after']} | {r['net']} | {v['score']:.1f} % +-{v['margin']:.1f} (+{v['won']} -{v['lost']} ={v['drawn']}) | {v['endings']} |")
     if state.get("best"):
         net = os.path.abspath(state["best"] + ".ksnn")
-        lines += ["", "## Mesure contre jocly2 (a lancer seul sur la machine)", "", "```",
-                  f"KRIEGSPIEL_NET={net} node {os.path.join(CRATE, 'tools', 'duel-jocly.cjs')} <chemin de jocly2> 2 3000 100",
-                  "```", "",
+        duel = os.path.join(CRATE, "tools", "duel-jocly.cjs")
+        command = (f'$env:KRIEGSPIEL_NET = "{net}"; node "{duel}" <chemin de jocly2> 2 3000 100' if os.name == "nt"
+                   else f"KRIEGSPIEL_NET={net} node {duel} <chemin de jocly2> 2 3000 100")
+        lines += ["", "## Mesure contre jocly2 (a lancer seul sur la machine)", "", "```", command, "```", "",
                   "Le critere de reussite : au moins 70 % contre « Fort » sur 100 parties au moins."]
     with open(os.path.join(root, "generations.md"), "w") as f:
         f.write("\n".join(lines) + "\n")

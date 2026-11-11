@@ -19,7 +19,7 @@ if (!JOCLY || process.argv.length < 6) {
 const { spawn } = require("child_process");
 const readline = require("readline");
 const Jocly = require(path.join(JOCLY, "dist", "node", "jocly.core.js"));
-const ENGINE = path.join(__dirname, "..", "target", "release", "kriegspiel-engine");
+const ENGINE = path.join(__dirname, "..", "target", "release", "kriegspiel-engine" + (process.platform === "win32" ? ".exe" : ""));
 const levelIndex = parseInt(process.argv[3], 10), movetime = parseInt(process.argv[4], 10), games = parseInt(process.argv[5], 10);
 const extra = process.argv.slice(6).join(" ");
 const CH = "ICAHTE";

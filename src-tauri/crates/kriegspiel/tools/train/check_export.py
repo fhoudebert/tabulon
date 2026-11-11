@@ -27,9 +27,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("samples")
     ap.add_argument("--net")
-    ap.add_argument("--lab", default=os.path.join(HERE, "..", "..", "target", "release", "kriegspiel-lab"))
+    exe = ".exe" if os.name == "nt" else ""
+    ap.add_argument("--lab", default=os.path.join(HERE, "..", "..", "target", "release", "kriegspiel-lab" + exe))
     ap.add_argument("--count", type=int, default=64)
     args = ap.parse_args()
+    if not os.path.exists(args.lab):
+        sys.exit(f"{args.lab} introuvable : lancer d'abord `cargo build --release` dans la crate kriegspiel")
 
     if args.net:
         model, _ = load_checkpoint(args.net)

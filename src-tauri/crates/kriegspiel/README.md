@@ -192,9 +192,7 @@ sur 400 parties, à budget égal.
 ### Ce qu'il coûte (mesuré)
 
 Codage plus passe avant, sur un fil, avec AVX2/FMA (détectés à l'exécution,
-repli générique sinon). Mesure faite sur un cœur de la machine de
-développement : la refaire sur la machine cible avec
-`taskset -c 0 kriegspiel-lab nnbench tests/fixtures/openings.txt --channels 32 --blocks 4`.
+repli générique sinon), sur un cœur de la machine de développement :
 
 | réseau | fichier | par évaluation | par seconde |
 |---|---|---|---|
@@ -205,12 +203,19 @@ développement : la refaire sur la machine cible avec
 | 6 × 64 | 2,1 Mo | 20 ms | 50 |
 | 10 × 128 | 12 Mo | 131 ms | 8 |
 
+Sur un cœur du Ryzen AI 9 HX 370, le 4 × 32 coûte 3,1 ms (321 évaluations
+par seconde). La commande de mesure est à l'étape 3 de la procédure.
+
 À 3 s par coup, la vitesse limite la taille bien avant le volume du fichier.
 Un réseau 4 × 32 à profondeur 3 (16 tours à la racine, 6 à chaque nœud
 intérieur) fait environ 100 évaluations, soit 0,6 s sur un seul cœur : il
 tient sur un Core i5.
 
 ### Les commandes
+
+Écrites depuis le répertoire de la crate (`src-tauri/crates/kriegspiel`).
+Sous Windows, les binaires s'appellent `kriegspiel-lab.exe` et
+`kriegspiel-engine.exe`, et les chemins s'écrivent avec `\`.
 
 ```
 # auto-jeu, positions codées pour le réseau (format : write_planes_header, src/bin/lab.rs)
@@ -221,8 +226,18 @@ kriegspiel-lab match tests/fixtures/openings.txt 400 tuned tuned --net-a gen001.
 kriegspiel-lab match tests/fixtures/openings.txt 400 tuned tuned --net-a gen001.ksnn --net-b none --movetime 1000 --threads 12
 # le moteur en ligne de commande
 setoption net gen001.ksnn        # setoption net none : retour à l'évaluation pondérée
-# contre l'IA de jocly2
+```
+
+Contre l'IA de jocly2, avec un réseau :
+
+```
+# Linux
 KRIEGSPIEL_NET=gen001.ksnn node tools/duel-jocly.cjs <chemin de jocly2> 2 3000 100
+```
+```powershell
+# Windows (PowerShell)
+$env:KRIEGSPIEL_NET = "gen001.ksnn"; node tools\duel-jocly.cjs <chemin de jocly2> 2 3000 100
+Remove-Item Env:KRIEGSPIEL_NET     # ensuite, pour revenir à l'évaluation pondérée
 ```
 
 `match` affiche le score avec sa marge d'erreur à 95 % : ±5 points sur 400
@@ -230,41 +245,91 @@ parties, ±10 sur 100.
 
 ### Machine d'entraînement : la procédure
 
-Écrite pour Linux (Ubuntu 24.04 ou plus récent), sur le Ryzen AI 9 HX 370.
-Sous Windows, tout fonctionne de même au processeur, sauf `taskset`.
+Pour le Ryzen AI 9 HX 370, sous Linux (Ubuntu 24.04 ou plus récent) ou sous
+Windows 11. Les commandes Windows sont pour **PowerShell**. Deux pièges de
+PowerShell :
+- une commande qui commence par un chemin entre guillemets doit être
+  précédée de `&` : `& "C:\…\python.exe" check_export.py t.kspl` ;
+- sans cela, PowerShell répond « Jeton inattendu ». `python check_export.py`
+  tout court n'est pas concerné.
+
+**0. Prérequis** (une fois)
+
+- Linux : Rust (`rustup`), Python 3.12 et son module `venv`, Node.js ≥ 22,
+  Git.
+- Windows :
+  - Rust (`rustup`, avec les outils de compilation MSVC de Visual Studio) ;
+  - Python **3.12** (`winget install Python.Python.3.12`) : c'est la version
+    qu'exigent les paquets PyTorch d'AMD pour Windows ;
+  - Node.js ≥ 22 et Git ;
+  - pour autoriser l'activation des environnements virtuels, une fois :
+    `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
 **1. Construire et vérifier** (une fois)
 
 ```
-git clone -b <branche de travail> https://github.com/fhoudebert/tabulon && cd tabulon/src-tauri/crates/kriegspiel
-cargo build --release && cargo test --release
-python3 -m venv ~/ks-venv && . ~/ks-venv/bin/activate
+# Linux
+git clone -b <branche de travail> https://github.com/fhoudebert/tabulon
+cd tabulon/src-tauri/crates/kriegspiel
+cargo build --release
+cargo test --release
+python3 -m venv ~/ks-venv
+. ~/ks-venv/bin/activate
 pip install numpy torch --index-url https://download.pytorch.org/whl/cpu     # PyTorch au processeur
 cd tools/train
 ../../target/release/kriegspiel-lab selfplay ../../tests/fixtures/openings.txt 4 /tmp/t.kspl --planes 1
 python check_export.py /tmp/t.kspl          # doit finir par « ok »
 ```
+```powershell
+# Windows (PowerShell)
+git clone -b <branche de travail> https://github.com/fhoudebert/tabulon
+cd tabulon\src-tauri\crates\kriegspiel
+cargo build --release
+cargo test --release
+py -3.12 -m venv $HOME\ks-venv
+& $HOME\ks-venv\Scripts\Activate.ps1
+pip install numpy torch --index-url https://download.pytorch.org/whl/cpu    # PyTorch au processeur
+cd tools\train
+..\..\target\release\kriegspiel-lab.exe selfplay ..\..\tests\fixtures\openings.txt 4 $env:TEMP\t.kspl --planes 1
+python check_export.py $env:TEMP\t.kspl     # doit finir par « ok »
+```
 
-**2. La carte graphique sert-elle ?** Les versions récentes de ROCm citent
-les Ryzen AI 300 (gfx1150), mais les retours restent inégaux : on mesure.
+Dans chaque nouveau terminal, réactiver l'environnement avant les commandes
+`python` : `. ~/ks-venv/bin/activate` sous Linux,
+`& $HOME\ks-venv\Scripts\Activate.ps1` sous Windows.
+
+**2. La carte graphique sert-elle ?** AMD fournit PyTorch avec ROCm pour la
+Radeon 890M (gfx1150) du HX 370, sous Linux et sous Windows 11 (paquets pour
+Python 3.12 sous Windows). Les retours restent inégaux, donc on mesure.
 Installer ROCm et le PyTorch correspondant en suivant le guide d'AMD
-« ROCm on Radeon and Ryzen » (rocm.docs.amd.com/projects/radeon-ryzen), dans
-un second environnement virtuel, puis :
+« ROCm on Radeon and Ryzen » (rocm.docs.amd.com/projects/radeon-ryzen),
+rubrique Ryzen, pour votre système :
+- sous Linux, il demande un noyau OEM 6.14 sur Ubuntu 24.04 ;
+- sous Windows, un pilote Adrenalin récent.
+
+Faire cette installation dans un **second** environnement virtuel, pour
+garder intact celui de l'étape 1, puis, toujours dans `tools/train` :
 
 ```
 python gpu_check.py          # compare processeur et carte graphique, et conclut
 ```
 
 Il conclut à la carte graphique si elle va au moins 1,5 fois plus vite. Dans
-ce cas, lancer la boucle avec `--device cuda` (ROCm se présente sous ce nom),
-sinon `--device cpu`. L'étape 1 se fait au processeur dans tous les cas ; la
-carte graphique ne fait que raccourcir l'entraînement.
+ce cas, lancer la boucle depuis ce second environnement avec `--device cuda`
+(ROCm se présente sous ce nom) ; sinon, depuis le premier, avec
+`--device cpu`. L'étape 1 se fait au processeur dans tous les cas ; la carte
+graphique ne fait que raccourcir l'entraînement.
 
-**3. Mesurer la vitesse du réseau sur 4 cœurs** (la machine des joueurs la
-plus modeste) :
+**3. Mesurer la vitesse du réseau sur un cœur** (le coût par coup sur la
+machine des joueurs la plus modeste) :
 
 ```
+# Linux
 taskset -c 0 ../../target/release/kriegspiel-lab nnbench ../../tests/fixtures/openings.txt --channels 32 --blocks 4
+```
+```powershell
+# Windows (PowerShell) : /affinity 1 = premier cœur
+cmd /c start /b /wait /affinity 1 ..\..\target\release\kriegspiel-lab.exe nnbench ..\..\tests\fixtures\openings.txt --channels 32 --blocks 4
 ```
 
 Au-dessus de 6 ms par évaluation, prendre `--channels 24` ou `--blocks 3`
@@ -272,20 +337,34 @@ dans la boucle.
 
 **4. Annoncer la durée, puis lancer.** `calibrate` joue deux
 mini-générations chronométrées et extrapole aux volumes demandés, sans rien
-garder :
+garder. Les commandes `python loop.py` sont identiques sous Linux et sous
+Windows (sous Windows, `runs\r1` ou `runs/r1`, au choix) :
 
 ```
 python loop.py calibrate --run runs/r1 --threads 12 --device cpu
 python loop.py run       --run runs/r1 --threads 12 --device cpu --generations 12   # une nuit
 ```
 
-`--threads 12` : un fil par cœur physique pour l'auto-jeu et les matchs.
-La boucle reprend où elle s'est arrêtée si on la relance avec la même
-commande. Pendant qu'elle tourne :
+- `--threads 12` : un fil par cœur physique pour l'auto-jeu et les matchs.
+  Sans cette option, la boucle prend tous les fils logiques (24 sur le
+  HX 370).
+- La boucle reprend où elle s'est arrêtée si on la relance avec la même
+  commande.
+- Sous Windows, empêcher la mise en veille pendant la nuit : dans les
+  paramètres d'alimentation, ou avec
+  `powercfg /change standby-timeout-ac 0`.
+
+Pendant qu'elle tourne :
 
 ```
+# Linux
 cat runs/r1/generations.md        # tableau par génération, mis à jour à chaque génération
 tail -f runs/r1/log.txt           # commandes et sorties brutes
+```
+```powershell
+# Windows (PowerShell)
+Get-Content runs\r1\generations.md
+Get-Content runs\r1\log.txt -Wait -Tail 20
 ```
 
 Les options par défaut sont celles du plan validé : réseau 4 × 32,
@@ -296,10 +375,16 @@ entraînement sur les 3 dernières générations en 4 passes, titre au-delà de
 (`--keep-samples 3` efface les plus anciens).
 
 **5. Mesurer contre jocly2**, seul sur la machine, avec le réseau en titre
-(`runs/r1/best.ksnn`) :
+(`runs/r1/best.ksnn`). `generations.md` donne la commande exacte, chemins
+compris :
 
 ```
+# Linux
 KRIEGSPIEL_NET=runs/r1/best.ksnn node ../duel-jocly.cjs <chemin de jocly2> 2 3000 100
+```
+```powershell
+# Windows (PowerShell)
+$env:KRIEGSPIEL_NET = "runs\r1\best.ksnn"; node ..\duel-jocly.cjs <chemin de jocly2> 2 3000 100
 ```
 
 Critères de réussite : au moins 70 % contre « Fort » sur 100 parties ; au
@@ -308,9 +393,9 @@ moins 65 % contre le moteur sans réseau sur 400 parties, à budget égal
 nom « Moyen (moteur) ».
 
 **6. Verser au dépôt et livrer.**
-- Dans le dépôt : `runs/r1/generations.md` et `runs/r1/config.json`
-  (graine, options), qui suffisent à refaire le run. Les échantillons et les
-  réseaux intermédiaires restent hors du dépôt.
+- Dans le dépôt : `runs/r1/generations.md`, `generations.jsonl` et
+  `config.json` (graine, options), qui suffisent à refaire le run. Les
+  échantillons et les réseaux intermédiaires restent hors du dépôt.
 - Le réseau retenu se publie à part, comme les réseaux de KataGo, sous le
   nom `kriegspiel-value.ksnn`.
 
