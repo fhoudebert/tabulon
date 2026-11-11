@@ -5,7 +5,7 @@
 // La ludothèque complète s'ajoute via un dist/ externe posé à côté de
 // l'exécutable (voir README « Externalized dist »).
 //
-// Le CONTENU de dist-minimal/ appartient à qui compile (fourinarow par défaut,
+// Le CONTENU de dist-minimal/ appartient à qui compile (kriegspiel par défaut,
 // mais chessbase, checkers ou toute sélection via make-minimal-dist.mjs) :
 // ce script ne MODIFIE JAMAIS un dist-minimal valide. Il ne génère (défaut)
 // que s'il est absent ou invalide (index vide, moteur manquant), et échoue

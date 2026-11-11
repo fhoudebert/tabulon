@@ -31,9 +31,11 @@ concurrency:
 env:
   # la branche de jocly2 avec laquelle cette branche de Tabulon est livree
   # (la meme que dans tests.yml : les changer ensemble)
-  JOCLY2_REF: main
+  # (jeu-de-la-guerre : le module kriegspiel, embarque par defaut, n'existe
+  # que sur cette branche tant qu'elle n'est pas fusionnee dans main)
+  JOCLY2_REF: jeu-de-la-guerre
   # modules embarques dans dist-minimal, separes par des virgules (lu par
-  # make-minimal-dist.mjs ; vide = son defaut, fourinarow)
+  # make-minimal-dist.mjs ; vide = son defaut, kriegspiel)
   TABULON_MODULES: ""
 
 jobs:

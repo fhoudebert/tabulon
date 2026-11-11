@@ -82,7 +82,7 @@ function assert(cond, msg) {
 
 // 1. LE POINT DU BUG : la liste des jeux se charge malgré le hub.html obsolète
 await waitFor(() => $$('#game-list li').length > 0, 'liste chargée en mode dégradé');
-assert($$('#game-list li').length === 10, 'Favorites : 10 jeux affichés (avant le fix : 0, TypeError)');
+assert($$('#game-list li').length === 11, 'Favorites : 11 jeux affichés (avant le fix : 0, TypeError)');
 
 // 2. Message d'erreur actionnable en console (pas un TypeError silencieux)
 assert(errors.some(e => e.includes('hub.html obsolète') && e.includes('quickplay')),

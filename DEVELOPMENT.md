@@ -85,7 +85,7 @@ rolling distributions.
 ## Bundled games vs full library (externalized dist)
 
 The compiled app embeds a **minimal** dist (`dist-minimal/`: the Jocly engine +
-a few self-contained games), generated from a full `dist/` by
+one self-contained game module, `kriegspiel` by default), generated from a `dist/` by
 `scripts/make-minimal-dist.mjs` and produced automatically at build time. This
 keeps the installer small and lets Tabulon run on its own.
 
@@ -963,7 +963,7 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | Script | Role |
 |---|---|
 | `check-dist.mjs` | Build guard, run automatically by `npm run dev` / `npm run build`. Validates `dist-minimal/` (engine present, non-empty index) and generates it — default selection — only when missing or invalid. **Never modifies a valid `dist-minimal/`**: the builder's selection is kept as is, whatever the `dist/` timestamps. |
-| `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `fourinarow`; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
+| `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `kriegspiel`, Le Jeu de la guerre — the game whose native engine Tabulon also embeds; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
 | `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
 | `fix-appimage.mjs` | Post-build: strips the bundled `libwayland-*` from the AppImage and repacks it (Arch/Manjaro `EGL_BAD_PARAMETER` fix — see Troubleshooting). Run after every `cargo tauri build` that produces an AppImage. x86_64 and aarch64 (picks the matching `appimagetool`). |
