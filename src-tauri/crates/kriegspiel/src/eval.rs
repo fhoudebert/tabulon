@@ -19,7 +19,7 @@ pub const WIN: i32 = 1_000_000;
 /// valeur relative des unites pour les menaces, en centiemes : -, I, C, A, AC, T, E
 pub const VALUE: [i32; 7] = [0, 100, 120, 140, 160, 130, 150];
 
-pub const NF: usize = 47;
+pub const NF: usize = 50;
 
 pub const FEATURES: [&str; NF] = [
     "infantry_on", "cavalry_on", "artillery_on", "horse_artillery_on", "signal_on", "courier_on",
@@ -60,6 +60,9 @@ pub const FEATURES: [&str; NF] = [
     "column",          // mes cavaliers flanques d'un autre cavalier, quand l'ennemi est a portee de charge
     "fort_behind",     // en inferiorite : mes forteresses et cols tenus
     "home_behind",     // en inferiorite : mes unites entre l'ennemi et mes arsenaux
+    "blitz_ready",     // charge eclair : la meilleure colonne que je forme en un tour (4 x cavaliers - deplacements), moins la sienne
+    "blitz_kill_mover",// une cible que ma charge eclair detruirait au prochain tour (valeur)
+    "blitz_kill_other",// une des miennes que sa charge eclair detruirait
 ];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -84,16 +87,19 @@ pub const HANDMADE: [f32; NF] = [
     0.0, 0.0,
     0.0, 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0,
 ];
 
-/// Les poids en service : ceux de la premiere version, plus trois termes
-/// strategiques (exposition des unites, avance groupee). Mesures au banc,
+/// Les poids en service : ceux de la premiere version, plus quatre termes
+/// strategiques (exposition des unites, avance groupee, pre-positionnement
+/// de la cavalerie pour la charge eclair). Mesures au banc,
 /// voir le README (« Strategies »).
 pub const TUNED: [f32; NF] = {
     let mut w = HANDMADE;
     w[41] = -3.0; // exposed_mover
     w[42] = 1.5; // exposed_other
     w[43] = 6.0; // advance_safe
+    w[47] = 60.0; // blitz_ready : cavalerie pre-positionnee pour la charge eclair
     w
 };
 
@@ -364,7 +370,7 @@ fn race_turns(ctx: &Ctx, st: &State, comm: &Comm, side: i8, from: usize, ars: us
     None
 }
 
-/// Les termes strategiques (indices 39 a 46). Un terme de poids nul n'est
+/// Les termes strategiques (indices 39 a 49). Un terme de poids nul n'est
 /// pas calcule (il vaut 0) : la course aux arsenaux, surtout, coute cher.
 fn strategy(ctx: &Ctx, st: &State, to_move: i8, cn: &Comm, cs: &Comm, units: &Units, defense_of: &[i32; 40], f: &mut [i32; NF]) {
     let w = &ctx.weights.0;
@@ -516,6 +522,27 @@ fn strategy(ctx: &Ctx, st: &State, to_move: i8, cn: &Comm, cs: &Comm, units: &Un
             f[if raider == to_move { 39 } else { 40 }] += value;
         }
     }
+    }
+
+    // 6. Charge eclair : la cavalerie pre-positionnee pour former en un tour
+    //    une colonne de 3 ou 4 sur une cible proche (blitz.rs)
+    if w[47] != 0.0 || w[48] != 0.0 || w[49] != 0.0 {
+        let none = [0u64; 8];
+        for side in [to_move, -to_move] {
+            f[47] += sign(side) * crate::blitz::readiness(ctx, st, side, comm_of(side), units, 6);
+            if w[48] != 0.0 || w[49] != 0.0 {
+                let cols = crate::blitz::columns(ctx, st, side, comm_of(side), units, &none, 6);
+                let mut kill = 0;
+                for column in cols.iter().take(3) {
+                    if let Some((att, def)) = crate::blitz::strength_after(ctx, st, side, column) {
+                        if att - def >= 2 {
+                            kill = kill.max(VALUE[st.grid[column.target as usize].unsigned_abs() as usize]);
+                        }
+                    }
+                }
+                f[if side == to_move { 48 } else { 49 }] = kill;
+            }
+        }
     }
 
     // 5. Posture en inferiorite : tenir forteresses et cols, et se tenir

@@ -12,6 +12,7 @@ jocly2 (`src/games/kriegspiel/kriegspiel-rules.js`), qui reste la référence.
 | `src/proto.rs` | format texte des positions et des coups |
 | `src/main.rs` | `kriegspiel-engine`, le moteur en ligne de commande |
 | `src/nn.rs` | réseau de valeur : codage de la position, passe avant (voir « Réseau de valeur ») |
+| `src/blitz.rs` | charge éclair : colonnes de cavalerie formables en un tour |
 | `src/bin/lab.rs` | `kriegspiel-lab`, le banc de réglage de l'évaluation |
 
 ## Construire et tester
@@ -76,7 +77,7 @@ Autres commandes : `moves` (tours candidats), `eval`, `play <coup>`, `d`,
 
 ## Régler l'évaluation : `kriegspiel-lab`
 
-L'évaluation est une somme pondérée de 47 termes nommés (`eval::FEATURES`),
+L'évaluation est une somme pondérée de 50 termes nommés (`eval::FEATURES`),
 mesurés du point de vue du camp au trait. `kriegspiel-lab` sert à en comparer
 les poids, sans jocly2 et sans horloge (budget en profondeur : les parties
 sont reproductibles).
@@ -94,7 +95,7 @@ kriegspiel-lab fit echantillons.txt --out poids.txt
 
 Un fichier de poids contient `nom valeur` par ligne ; les termes absents
 gardent leur valeur. `handmade` désigne les poids réglés à la main, `tuned`
-ceux en service (`handmade` plus trois termes stratégiques, voir plus bas). Le moteur les charge par
+ceux en service (`handmade` plus quatre termes stratégiques, voir plus bas). Le moteur les charge par
 `setoption weights <fichier>`, et `features` affiche les termes d'une position.
 
 `tests/fixtures/openings.txt` (200 débuts de partie) vient des gabarits de
@@ -211,6 +212,46 @@ qu'ils sont formulés : le raid envoie la cavalerie loin de l'armée, ce que
 l'exposition sanctionne ensuite, et la posture fige un camp déjà en retard.
 La colonne est neutre : la recherche la forme déjà quand une charge est à un
 tour.
+
+### Charge éclair (12 novembre 2026)
+
+Une cavalerie **pré-positionnée** — par exemple deux colonnes de deux
+cavaliers, des cases vides entre elles — peut se déployer en un tour en une
+colonne de 3 ou 4 alignée sur une cible, dans l'une des huit directions, avec
+peu de déplacements ; il en reste pour amener de l'artillerie ou de
+l'infanterie à portée avant l'attaque. `blitz.rs` :
+
+- `columns` : contre chaque cible proche, la meilleure colonne formable en un
+  tour (cavaliers en communication, destinations par les cases vides, pas de
+  charge contre une forteresse ou un col ni depuis une forteresse) ;
+- `readiness` : la même mesure, sans allocation, pour l'évaluation
+  (`blitz_ready` = 4 × cavaliers de la colonne − déplacements nécessaires) ;
+- `play_column` : la colonne jouée dans un ordre légal ; la recherche
+  (`Limits::blitz`) ajoute ce tour, complété par les soutiens qui augmentent
+  l'attaque sur la cible, aux tours du faisceau.
+
+Charges jouées par chaque camp, pour 200 parties (`kriegspiel-lab match`
+les compte désormais) :
+
+| | charges à 1 / 2 / 3 / 4 cavaliers |
+|---|---|
+| moteur précédent | 342 / 89 / 15 / 3 |
+| avec la charge éclair | 379 / 221 / 105 / 29 |
+
+| essai, contre le moteur précédent | score |
+|---|---|
+| générateur seul | 51,2 % (200 parties) |
+| générateur + `blitz_ready 60`, deux séries d'ouvertures | 55,8 % et 51,0 %, soit 53,4 % sur 400 parties |
+| idem, à temps égal (0,6 s par coup, `--movetime 600`) | **57,5 %** sur 120 parties (+62 −44 =14) |
+| générateur + `blitz_ready 30` | 49,0 % |
+| générateur + `blitz_ready 150` | 47,5 % |
+| idem + destruction possible au prochain tour (`blitz_kill_*`) | 43,2 % |
+
+En service : le générateur et `blitz_ready 60`. Le terme coûte environ 25 %
+de positions par seconde (profondeur 3 au lieu de 4 en 3 s sur une partie des
+positions de milieu de partie) ; la mesure à temps égal en tient compte. Le
+moteur trouve aussi des charges en plusieurs directions à la fois (deux
+cavaliers en colonne droite et un en diagonale chargent chacun à 7).
 
 ### Ligne de base (11 novembre 2026, avant tout réseau)
 

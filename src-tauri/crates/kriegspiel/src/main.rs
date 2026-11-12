@@ -6,6 +6,7 @@
 //!   setoption maxturns <n>           nulle apres n coups (0 : sans limite)
 //!   setoption isolation <0|1>        victoire par isolement (RSG)
 //!   setoption weights <fichier>      poids de l'evaluation (voir eval.rs)
+//!   setoption blitz <0|1>            charges eclair dans la recherche (blitz.rs)
 //!   setoption net <fichier|none>     reseau de valeur (voir nn.rs) ; none : sans
 //!   position <position>              voir proto.rs
 //!   go [movetime <ms>] [depth <n>] [beam <n>] [keep <n>]
@@ -32,6 +33,8 @@ fn main() {
     let mut ctx = Ctx::default();
     let mut st = State::new();
     let mut who: i8 = 1;
+    // charges eclair dans la recherche (Limits::blitz)
+    let mut blitz = Limits::default().blitz;
     let stdin = io::stdin();
     let mut out = io::stdout();
     for line in stdin.lock().lines() {
@@ -57,6 +60,7 @@ fn main() {
                             }
                         }
                     }
+                    (Some("blitz"), Some(n)) => blitz = n != 0,
                     (Some("weights"), _) if words.len() > 2 => {
                         match std::fs::read_to_string(words[2])
                             .map_err(|e| e.to_string())
@@ -120,6 +124,7 @@ fn main() {
             }
             "go" => {
                 let mut limits = Limits::default();
+                limits.blitz = blitz;
                 if let Some(v) = option(&words, "movetime") {
                     limits.movetime_ms = v;
                 }

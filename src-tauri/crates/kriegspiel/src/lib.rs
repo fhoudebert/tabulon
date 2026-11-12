@@ -12,6 +12,7 @@
 //! lignes, `pos = ligne * 25 + colonne - 1` (ligne A = 0) ; camps 1 = Nord,
 //! -1 = Sud ; une case de la grille vaut 0 (vide) ou `camp * type`.
 
+pub mod blitz;
 pub mod eval;
 pub mod nn;
 pub mod proto;
