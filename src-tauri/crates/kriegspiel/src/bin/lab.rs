@@ -352,7 +352,8 @@ fn fit(args: &[String]) {
         let var = xs.iter().map(|r| (r[j] - mean).powi(2)).sum::<f64>() / n as f64;
         scale[j] = if var > 1e-9 { var.sqrt() } else { 0.0 };
     }
-    scale[NF - 1] = 1.0; // tempo : constante, sert d'ordonnee a l'origine
+    // tempo : constante, sert d'ordonnee a l'origine
+    scale[FEATURES.iter().position(|f| *f == "tempo").unwrap()] = 1.0;
     let loss = |theta: &[f64; NF]| -> (f64, f64) {
         let (mut total, mut right) = (0.0, 0.0);
         for (row, &y) in xs.iter().zip(&ys) {
@@ -381,7 +382,7 @@ fn fit(args: &[String]) {
             }
         }
         for j in 0..NF {
-            let g = grad[j] / n as f64 + if j < NF - 1 { l2 * theta[j] } else { 0.0 };
+            let g = grad[j] / n as f64 + if FEATURES[j] != "tempo" { l2 * theta[j] } else { 0.0 };
             m[j] = b1 * m[j] + (1.0 - b1) * g;
             v[j] = b2 * v[j] + (1.0 - b2) * g * g;
             let (mh, vh) = (m[j] / (1.0 - b1.powi(step as i32)), v[j] / (1.0 - b2.powi(step as i32)));

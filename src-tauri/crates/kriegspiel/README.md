@@ -76,7 +76,7 @@ Autres commandes : `moves` (tours candidats), `eval`, `play <coup>`, `d`,
 
 ## Régler l'évaluation : `kriegspiel-lab`
 
-L'évaluation est une somme pondérée de 39 termes nommés (`eval::FEATURES`),
+L'évaluation est une somme pondérée de 47 termes nommés (`eval::FEATURES`),
 mesurés du point de vue du camp au trait. `kriegspiel-lab` sert à en comparer
 les poids, sans jocly2 et sans horloge (budget en profondeur : les parties
 sont reproductibles).
@@ -94,7 +94,7 @@ kriegspiel-lab fit echantillons.txt --out poids.txt
 
 Un fichier de poids contient `nom valeur` par ligne ; les termes absents
 gardent leur valeur. `handmade` désigne les poids réglés à la main, `tuned`
-ceux en service (les mêmes pour l'instant). Le moteur les charge par
+ceux en service (`handmade` plus trois termes stratégiques, voir plus bas). Le moteur les charge par
 `setoption weights <fichier>`, et `features` affiche les termes d'une position.
 
 `tests/fixtures/openings.txt` (200 débuts de partie) vient des gabarits de
@@ -175,6 +175,42 @@ Les plans d'entrée sont décrits en tête de `src/nn.rs`. Outre les unités et
 le terrain, ils donnent au réseau les lignes de communication, les unités en
 communication et les lignes qui resteraient sans les transmissions : il n'a
 pas à réapprendre la règle, et voit le danger d'isolement.
+
+### Stratégies (12 novembre 2026)
+
+Six idées de jeu ont été traduites en termes d'évaluation (`eval::strategy`,
+indices 39 à 46) et mesurées une à une, chacune contre le moteur sans elle.
+Un terme de poids nul n'est pas calculé ; les tests sont dans
+`tests/strategy.rs`.
+
+| idée | terme(s) | mesure |
+|---|---|---|
+| ne pas laisser d'unité à la merci des forces adverses proches ; rester groupé | `exposed_mover` / `exposed_other` : pour chaque unité, ce que les unités adverses à portée de mouvement + tir pourraient porter contre elle, comparé à sa défense actuelle | **69,8 %** contre `handmade` (+117 −38 =45) |
+| avancer en restant groupé | `advance_safe` : progrès vers l'arsenal adverse des seules unités non exposées | 54,0 % en plus de l'exposition |
+| cavalerie en colonne avant l'affrontement | `column` : cavaliers flanqués d'un autre, ennemi à 6 cases | 51,5 %, puis 50,5 % en plus de l'exposition |
+| raid de cavalerie sur un arsenal non défendu | `race_mover` / `race_other` : arsenal vide atteint (en restant chaque tour là où l'on peut bouger) avant que le propriétaire puisse l'occuper | 44,2 %, puis 47,2 % en plus de l'exposition |
+| en infériorité, position défensive et route de l'ennemi coupée | `fort_behind` / `home_behind` | 46,2 %, puis 44,5 % |
+| attirer l'ennemi avec une troupe isolée, puis le frapper avec l'armée | pas de terme : cela demande un plan sur plusieurs tours, que ni la recherche (deux tours de profondeur à ce budget) ni l'évaluation ne portent | — |
+
+Poids retenus (`TUNED`) : `exposed_mover −3`, `exposed_other 1,5`,
+`advance_safe 6`. Contre l'exposition seule (−2 / 1) : 57,0 % sur 400 parties
+(+173 −117 =110) ; contre `handmade` : 70,0 % sur 200 parties (+111 −31 =58).
+Le coût est négligeable : profondeur 4 en 3 s, comme avant.
+
+Contre « Fort » de jocly2, 3 s par coup pour le moteur : **6 victoires,
+4 défaites, 2 nulles sur 12 parties (58 %, ±28 points)**, 93 coups en
+moyenne, profondeur 4,1 ; la ligne de base ci-dessous était de 9 sur 20.
+L'échantillon est trop petit pour conclure contre jocly2 : le gain établi est
+celui de l'auto-jeu. Les défaites restent des pertes d'arsenaux et
+d'anéantissement ; les victoires, presque toutes par isolement.
+
+« Rester groupé » et « se regrouper après un succès » sont couverts par
+l'exposition : une unité seule devient une cible dès qu'une force adverse
+peut l'atteindre. Le raid et la posture défensive perdent des points tels
+qu'ils sont formulés : le raid envoie la cavalerie loin de l'armée, ce que
+l'exposition sanctionne ensuite, et la posture fige un camp déjà en retard.
+La colonne est neutre : la recherche la forme déjà quand une charge est à un
+tour.
 
 ### Ligne de base (11 novembre 2026, avant tout réseau)
 
