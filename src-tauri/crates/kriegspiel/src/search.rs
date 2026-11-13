@@ -61,6 +61,9 @@ pub struct Limits {
     /// (avance en ordre, mise a l'abri des transmissions, retour sur une
     /// ligne directe) : voir `plans`
     pub plans: bool,
+    /// ajouter les charges eclair (blitz.rs) aux tours du faisceau : la
+    /// colonne de cavalerie, puis les soutiens, puis l'attaque
+    pub blitz: bool,
 }
 
 impl Default for Limits {
@@ -77,6 +80,7 @@ impl Default for Limits {
             // mesures au banc : aucun effet (50,0 % sur 200 parties) ; les
             // plans restent disponibles pour les essais, pas en service
             plans: false,
+            blitz: true,
         }
     }
 }
@@ -162,6 +166,8 @@ pub struct Searcher<'a> {
     aborted: bool,
     /// tours construits selon un plan, en plus du faisceau
     pub plans: bool,
+    /// charges eclair, voir `Limits::blitz`
+    pub blitz: bool,
     /// memoire de travail du reseau, s'il y en a un
     scratch: Option<Scratch>,
     /// positions jugees par le reseau
@@ -171,7 +177,7 @@ pub struct Searcher<'a> {
 impl<'a> Searcher<'a> {
     pub fn new(ctx: &'a Ctx) -> Searcher<'a> {
         let scratch = ctx.net.as_ref().map(|net| net.scratch());
-        Searcher { ctx, zobrist: Zobrist::new(), nodes: 0, deadline: None, stop: None, aborted: false, plans: false, scratch, net_evals: 0 }
+        Searcher { ctx, zobrist: Zobrist::new(), nodes: 0, deadline: None, stop: None, aborted: false, plans: false, blitz: true, scratch, net_evals: 0 }
     }
 
     /// drapeau d'arret externe (commande `stop`)
@@ -410,6 +416,15 @@ impl<'a> Searcher<'a> {
                 }
             }
         }
+        if self.blitz && max_moves == MAX_MOVES && !self.aborted {
+            let base = if need_retreat { pool.iter().filter(|n| n.n == 1).max_by_key(|n| n.score).cloned() } else { pool.first().cloned() };
+            if let Some(base) = base {
+                for mut node in self.blitz_turns(&base, who) {
+                    self.score_node(&mut node, who);
+                    pool.push(node);
+                }
+            }
+        }
         if pool.is_empty() {
             // retraite due mais impossible : ne devrait pas arriver, les regles
             // detruisent l'unite des l'attaque ; on rend le tour vide
@@ -428,6 +443,74 @@ impl<'a> Searcher<'a> {
                     break;
                 }
             }
+        }
+        out
+    }
+
+    /// Les charges eclair a partir de `base` : pour les meilleures colonnes
+    /// formables en un tour, la colonne, puis des soutiens qui ajoutent a
+    /// l'attaque sur la cible, tant qu'il reste des deplacements. L'attaque
+    /// elle-meme est choisie ensuite par `score_node`, comme pour tout tour.
+    fn blitz_turns(&mut self, base: &Node, who: i8) -> Vec<Node> {
+        let ctx = self.ctx;
+        if base.d.is_some() {
+            return Vec::new(); // un arsenal detruit tient lieu d'attaque
+        }
+        let units = Units::scan(&base.st);
+        let comm = communications_of(ctx, &base.st, who, &units);
+        let mut out = Vec::new();
+        for column in crate::blitz::columns(ctx, &base.st, who, &comm, &units, &base.moved, 6).into_iter().take(3) {
+            if base.n as usize + column.moves.len() > MAX_MOVES as usize {
+                continue;
+            }
+            let Some((played, _)) = crate::blitz::play_column(ctx, &base.st, who, &column) else { continue };
+            let mut node = base.clone();
+            for &(from, to) in &played {
+                self.step(&mut node, from as usize, to as usize, who);
+            }
+            let target = column.target as usize;
+            // soutiens : le deplacement qui ajoute le plus a l'attaque, tant
+            // qu'il en reste un qui ajoute quelque chose
+            let mut dests: Vec<u16> = Vec::with_capacity(24);
+            while node.n < MAX_MOVES {
+                let units = Units::scan(&node.st);
+                let ca = communications_of(ctx, &node.st, who, &units);
+                let cd = communications_of(ctx, &node.st, -who, &units);
+                let (now, _) = strength(ctx, &node.st, target, who, &ca, &cd, node.excluded);
+                let mut best: Option<(usize, usize, i32)> = None;
+                for from in units.iter() {
+                    let v = node.st.grid[from];
+                    if v.signum() != who || v.abs() >= SIGNAL || v.abs() == CAVALRY || !ca.on[from] || distance(from, target) > 6 {
+                        continue;
+                    }
+                    if node.moved[from >> 6] & (1 << (from & 63)) != 0 {
+                        continue;
+                    }
+                    reach(ctx, &node.st, from, &mut dests);
+                    for &to in &dests {
+                        let to = to as usize;
+                        if ctx.enemy_arsenal_at(&node.st, to, who).is_some() {
+                            continue;
+                        }
+                        let mut trial = node.st.clone();
+                        trial.grid[to] = v;
+                        trial.grid[from] = 0;
+                        let tu = Units::scan(&trial);
+                        let ta = communications_of(ctx, &trial, who, &tu);
+                        if !ta.on[to] {
+                            continue; // un soutien isole ne compte pas
+                        }
+                        let td = communications_of(ctx, &trial, -who, &tu);
+                        let (att, _) = strength(ctx, &trial, target, who, &ta, &td, node.excluded);
+                        if att > now && best.map_or(true, |b| att > b.2) {
+                            best = Some((from, to, att));
+                        }
+                    }
+                }
+                let Some((from, to, _)) = best else { break };
+                self.step(&mut node, from, to, who);
+            }
+            out.push(node);
         }
         out
     }
@@ -663,6 +746,7 @@ impl<'a> Searcher<'a> {
         self.net_evals = 0;
         self.aborted = false;
         self.plans = limits.plans;
+        self.blitz = limits.blitz;
         self.deadline = None; // la profondeur 1 va toujours au bout : il faut un coup
         let mut roots = self.generate(st, who, limits.root_beam, limits.root_keep);
         let mut result = SearchResult {

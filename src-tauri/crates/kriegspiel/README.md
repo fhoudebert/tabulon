@@ -12,6 +12,7 @@ jocly2 (`src/games/kriegspiel/kriegspiel-rules.js`), qui reste la référence.
 | `src/proto.rs` | format texte des positions et des coups |
 | `src/main.rs` | `kriegspiel-engine`, le moteur en ligne de commande |
 | `src/nn.rs` | réseau de valeur : codage de la position, passe avant (voir « Réseau de valeur ») |
+| `src/blitz.rs` | charge éclair : colonnes de cavalerie formables en un tour |
 | `src/bin/lab.rs` | `kriegspiel-lab`, le banc de réglage de l'évaluation |
 
 ## Construire et tester
@@ -76,7 +77,7 @@ Autres commandes : `moves` (tours candidats), `eval`, `play <coup>`, `d`,
 
 ## Régler l'évaluation : `kriegspiel-lab`
 
-L'évaluation est une somme pondérée de 39 termes nommés (`eval::FEATURES`),
+L'évaluation est une somme pondérée de 50 termes nommés (`eval::FEATURES`),
 mesurés du point de vue du camp au trait. `kriegspiel-lab` sert à en comparer
 les poids, sans jocly2 et sans horloge (budget en profondeur : les parties
 sont reproductibles).
@@ -94,7 +95,7 @@ kriegspiel-lab fit echantillons.txt --out poids.txt
 
 Un fichier de poids contient `nom valeur` par ligne ; les termes absents
 gardent leur valeur. `handmade` désigne les poids réglés à la main, `tuned`
-ceux en service (les mêmes pour l'instant). Le moteur les charge par
+ceux en service (`handmade` plus quatre termes stratégiques, voir plus bas). Le moteur les charge par
 `setoption weights <fichier>`, et `features` affiche les termes d'une position.
 
 `tests/fixtures/openings.txt` (200 débuts de partie) vient des gabarits de
@@ -176,6 +177,82 @@ le terrain, ils donnent au réseau les lignes de communication, les unités en
 communication et les lignes qui resteraient sans les transmissions : il n'a
 pas à réapprendre la règle, et voit le danger d'isolement.
 
+### Stratégies (12 novembre 2026)
+
+Six idées de jeu ont été traduites en termes d'évaluation (`eval::strategy`,
+indices 39 à 46) et mesurées une à une, chacune contre le moteur sans elle.
+Un terme de poids nul n'est pas calculé ; les tests sont dans
+`tests/strategy.rs`.
+
+| idée | terme(s) | mesure |
+|---|---|---|
+| ne pas laisser d'unité à la merci des forces adverses proches ; rester groupé | `exposed_mover` / `exposed_other` : pour chaque unité, ce que les unités adverses à portée de mouvement + tir pourraient porter contre elle, comparé à sa défense actuelle | **69,8 %** contre `handmade` (+117 −38 =45) |
+| avancer en restant groupé | `advance_safe` : progrès vers l'arsenal adverse des seules unités non exposées | 54,0 % en plus de l'exposition |
+| cavalerie en colonne avant l'affrontement | `column` : cavaliers flanqués d'un autre, ennemi à 6 cases | 51,5 %, puis 50,5 % en plus de l'exposition |
+| raid de cavalerie sur un arsenal non défendu | `race_mover` / `race_other` : arsenal vide atteint (en restant chaque tour là où l'on peut bouger) avant que le propriétaire puisse l'occuper | 44,2 %, puis 47,2 % en plus de l'exposition |
+| en infériorité, position défensive et route de l'ennemi coupée | `fort_behind` / `home_behind` | 46,2 %, puis 44,5 % |
+| attirer l'ennemi avec une troupe isolée, puis le frapper avec l'armée | pas de terme : cela demande un plan sur plusieurs tours, que ni la recherche (deux tours de profondeur à ce budget) ni l'évaluation ne portent | — |
+
+Poids retenus (`TUNED`) : `exposed_mover −3`, `exposed_other 1,5`,
+`advance_safe 6`. Contre l'exposition seule (−2 / 1) : 57,0 % sur 400 parties
+(+173 −117 =110) ; contre `handmade` : 70,0 % sur 200 parties (+111 −31 =58).
+Le coût est négligeable : profondeur 4 en 3 s, comme avant.
+
+Contre « Fort » de jocly2, 3 s par coup pour le moteur : **6 victoires,
+4 défaites, 2 nulles sur 12 parties (58 %, ±28 points)**, 93 coups en
+moyenne, profondeur 4,1 ; la ligne de base ci-dessous était de 9 sur 20.
+L'échantillon est trop petit pour conclure contre jocly2 : le gain établi est
+celui de l'auto-jeu. Les défaites restent des pertes d'arsenaux et
+d'anéantissement ; les victoires, presque toutes par isolement.
+
+« Rester groupé » et « se regrouper après un succès » sont couverts par
+l'exposition : une unité seule devient une cible dès qu'une force adverse
+peut l'atteindre. Le raid et la posture défensive perdent des points tels
+qu'ils sont formulés : le raid envoie la cavalerie loin de l'armée, ce que
+l'exposition sanctionne ensuite, et la posture fige un camp déjà en retard.
+La colonne est neutre : la recherche la forme déjà quand une charge est à un
+tour.
+
+### Charge éclair (12 novembre 2026)
+
+Une cavalerie **pré-positionnée** — par exemple deux colonnes de deux
+cavaliers, des cases vides entre elles — peut se déployer en un tour en une
+colonne de 3 ou 4 alignée sur une cible, dans l'une des huit directions, avec
+peu de déplacements ; il en reste pour amener de l'artillerie ou de
+l'infanterie à portée avant l'attaque. `blitz.rs` :
+
+- `columns` : contre chaque cible proche, la meilleure colonne formable en un
+  tour (cavaliers en communication, destinations par les cases vides, pas de
+  charge contre une forteresse ou un col ni depuis une forteresse) ;
+- `readiness` : la même mesure, sans allocation, pour l'évaluation
+  (`blitz_ready` = 4 × cavaliers de la colonne − déplacements nécessaires) ;
+- `play_column` : la colonne jouée dans un ordre légal ; la recherche
+  (`Limits::blitz`) ajoute ce tour, complété par les soutiens qui augmentent
+  l'attaque sur la cible, aux tours du faisceau.
+
+Charges jouées par chaque camp, pour 200 parties (`kriegspiel-lab match`
+les compte désormais) :
+
+| | charges à 1 / 2 / 3 / 4 cavaliers |
+|---|---|
+| moteur précédent | 342 / 89 / 15 / 3 |
+| avec la charge éclair | 379 / 221 / 105 / 29 |
+
+| essai, contre le moteur précédent | score |
+|---|---|
+| générateur seul | 51,2 % (200 parties) |
+| générateur + `blitz_ready 60`, deux séries d'ouvertures | 55,8 % et 51,0 %, soit 53,4 % sur 400 parties |
+| idem, à temps égal (0,6 s par coup, `--movetime 600`) | **57,5 %** sur 120 parties (+62 −44 =14) |
+| générateur + `blitz_ready 30` | 49,0 % |
+| générateur + `blitz_ready 150` | 47,5 % |
+| idem + destruction possible au prochain tour (`blitz_kill_*`) | 43,2 % |
+
+En service : le générateur et `blitz_ready 60`. Le terme coûte environ 25 %
+de positions par seconde (profondeur 3 au lieu de 4 en 3 s sur une partie des
+positions de milieu de partie) ; la mesure à temps égal en tient compte. Le
+moteur trouve aussi des charges en plusieurs directions à la fois (deux
+cavaliers en colonne droite et un en diagonale chargent chacun à 7).
+
 ### Ligne de base (11 novembre 2026, avant tout réseau)
 
 - moteur contre lui-même, profondeur 2 : 50,0 % (+76 −76 =48 sur 200
@@ -192,9 +269,7 @@ sur 400 parties, à budget égal.
 ### Ce qu'il coûte (mesuré)
 
 Codage plus passe avant, sur un fil, avec AVX2/FMA (détectés à l'exécution,
-repli générique sinon). Mesure faite sur un cœur de la machine de
-développement : la refaire sur la machine cible avec
-`taskset -c 0 kriegspiel-lab nnbench tests/fixtures/openings.txt --channels 32 --blocks 4`.
+repli générique sinon), sur un cœur de la machine de développement :
 
 | réseau | fichier | par évaluation | par seconde |
 |---|---|---|---|
@@ -205,12 +280,19 @@ développement : la refaire sur la machine cible avec
 | 6 × 64 | 2,1 Mo | 20 ms | 50 |
 | 10 × 128 | 12 Mo | 131 ms | 8 |
 
+Sur un cœur du Ryzen AI 9 HX 370, le 4 × 32 coûte 3,1 ms (321 évaluations
+par seconde). La commande de mesure est à l'étape 3 de la procédure.
+
 À 3 s par coup, la vitesse limite la taille bien avant le volume du fichier.
 Un réseau 4 × 32 à profondeur 3 (16 tours à la racine, 6 à chaque nœud
 intérieur) fait environ 100 évaluations, soit 0,6 s sur un seul cœur : il
 tient sur un Core i5.
 
 ### Les commandes
+
+Écrites depuis le répertoire de la crate (`src-tauri/crates/kriegspiel`).
+Sous Windows, les binaires s'appellent `kriegspiel-lab.exe` et
+`kriegspiel-engine.exe`, et les chemins s'écrivent avec `\`.
 
 ```
 # auto-jeu, positions codées pour le réseau (format : write_planes_header, src/bin/lab.rs)
@@ -221,8 +303,18 @@ kriegspiel-lab match tests/fixtures/openings.txt 400 tuned tuned --net-a gen001.
 kriegspiel-lab match tests/fixtures/openings.txt 400 tuned tuned --net-a gen001.ksnn --net-b none --movetime 1000 --threads 12
 # le moteur en ligne de commande
 setoption net gen001.ksnn        # setoption net none : retour à l'évaluation pondérée
-# contre l'IA de jocly2
+```
+
+Contre l'IA de jocly2, avec un réseau :
+
+```
+# Linux
 KRIEGSPIEL_NET=gen001.ksnn node tools/duel-jocly.cjs <chemin de jocly2> 2 3000 100
+```
+```powershell
+# Windows (PowerShell)
+$env:KRIEGSPIEL_NET = "gen001.ksnn"; node tools\duel-jocly.cjs <chemin de jocly2> 2 3000 100
+Remove-Item Env:KRIEGSPIEL_NET     # ensuite, pour revenir à l'évaluation pondérée
 ```
 
 `match` affiche le score avec sa marge d'erreur à 95 % : ±5 points sur 400
@@ -230,41 +322,91 @@ parties, ±10 sur 100.
 
 ### Machine d'entraînement : la procédure
 
-Écrite pour Linux (Ubuntu 24.04 ou plus récent), sur le Ryzen AI 9 HX 370.
-Sous Windows, tout fonctionne de même au processeur, sauf `taskset`.
+Pour le Ryzen AI 9 HX 370, sous Linux (Ubuntu 24.04 ou plus récent) ou sous
+Windows 11. Les commandes Windows sont pour **PowerShell**. Deux pièges de
+PowerShell :
+- une commande qui commence par un chemin entre guillemets doit être
+  précédée de `&` : `& "C:\…\python.exe" check_export.py t.kspl` ;
+- sans cela, PowerShell répond « Jeton inattendu ». `python check_export.py`
+  tout court n'est pas concerné.
+
+**0. Prérequis** (une fois)
+
+- Linux : Rust (`rustup`), Python 3.12 et son module `venv`, Node.js ≥ 22,
+  Git.
+- Windows :
+  - Rust (`rustup`, avec les outils de compilation MSVC de Visual Studio) ;
+  - Python **3.12** (`winget install Python.Python.3.12`) : c'est la version
+    qu'exigent les paquets PyTorch d'AMD pour Windows ;
+  - Node.js ≥ 22 et Git ;
+  - pour autoriser l'activation des environnements virtuels, une fois :
+    `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
 **1. Construire et vérifier** (une fois)
 
 ```
-git clone -b <branche de travail> https://github.com/fhoudebert/tabulon && cd tabulon/src-tauri/crates/kriegspiel
-cargo build --release && cargo test --release
-python3 -m venv ~/ks-venv && . ~/ks-venv/bin/activate
+# Linux
+git clone -b <branche de travail> https://github.com/fhoudebert/tabulon
+cd tabulon/src-tauri/crates/kriegspiel
+cargo build --release
+cargo test --release
+python3 -m venv ~/ks-venv
+. ~/ks-venv/bin/activate
 pip install numpy torch --index-url https://download.pytorch.org/whl/cpu     # PyTorch au processeur
 cd tools/train
 ../../target/release/kriegspiel-lab selfplay ../../tests/fixtures/openings.txt 4 /tmp/t.kspl --planes 1
 python check_export.py /tmp/t.kspl          # doit finir par « ok »
 ```
+```powershell
+# Windows (PowerShell)
+git clone -b <branche de travail> https://github.com/fhoudebert/tabulon
+cd tabulon\src-tauri\crates\kriegspiel
+cargo build --release
+cargo test --release
+py -3.12 -m venv $HOME\ks-venv
+& $HOME\ks-venv\Scripts\Activate.ps1
+pip install numpy torch --index-url https://download.pytorch.org/whl/cpu    # PyTorch au processeur
+cd tools\train
+..\..\target\release\kriegspiel-lab.exe selfplay ..\..\tests\fixtures\openings.txt 4 $env:TEMP\t.kspl --planes 1
+python check_export.py $env:TEMP\t.kspl     # doit finir par « ok »
+```
 
-**2. La carte graphique sert-elle ?** Les versions récentes de ROCm citent
-les Ryzen AI 300 (gfx1150), mais les retours restent inégaux : on mesure.
+Dans chaque nouveau terminal, réactiver l'environnement avant les commandes
+`python` : `. ~/ks-venv/bin/activate` sous Linux,
+`& $HOME\ks-venv\Scripts\Activate.ps1` sous Windows.
+
+**2. La carte graphique sert-elle ?** AMD fournit PyTorch avec ROCm pour la
+Radeon 890M (gfx1150) du HX 370, sous Linux et sous Windows 11 (paquets pour
+Python 3.12 sous Windows). Les retours restent inégaux, donc on mesure.
 Installer ROCm et le PyTorch correspondant en suivant le guide d'AMD
-« ROCm on Radeon and Ryzen » (rocm.docs.amd.com/projects/radeon-ryzen), dans
-un second environnement virtuel, puis :
+« ROCm on Radeon and Ryzen » (rocm.docs.amd.com/projects/radeon-ryzen),
+rubrique Ryzen, pour votre système :
+- sous Linux, il demande un noyau OEM 6.14 sur Ubuntu 24.04 ;
+- sous Windows, un pilote Adrenalin récent.
+
+Faire cette installation dans un **second** environnement virtuel, pour
+garder intact celui de l'étape 1, puis, toujours dans `tools/train` :
 
 ```
 python gpu_check.py          # compare processeur et carte graphique, et conclut
 ```
 
 Il conclut à la carte graphique si elle va au moins 1,5 fois plus vite. Dans
-ce cas, lancer la boucle avec `--device cuda` (ROCm se présente sous ce nom),
-sinon `--device cpu`. L'étape 1 se fait au processeur dans tous les cas ; la
-carte graphique ne fait que raccourcir l'entraînement.
+ce cas, lancer la boucle depuis ce second environnement avec `--device cuda`
+(ROCm se présente sous ce nom) ; sinon, depuis le premier, avec
+`--device cpu`. L'étape 1 se fait au processeur dans tous les cas ; la carte
+graphique ne fait que raccourcir l'entraînement.
 
-**3. Mesurer la vitesse du réseau sur 4 cœurs** (la machine des joueurs la
-plus modeste) :
+**3. Mesurer la vitesse du réseau sur un cœur** (le coût par coup sur la
+machine des joueurs la plus modeste) :
 
 ```
+# Linux
 taskset -c 0 ../../target/release/kriegspiel-lab nnbench ../../tests/fixtures/openings.txt --channels 32 --blocks 4
+```
+```powershell
+# Windows (PowerShell) : /affinity 1 = premier cœur
+cmd /c start /b /wait /affinity 1 ..\..\target\release\kriegspiel-lab.exe nnbench ..\..\tests\fixtures\openings.txt --channels 32 --blocks 4
 ```
 
 Au-dessus de 6 ms par évaluation, prendre `--channels 24` ou `--blocks 3`
@@ -272,20 +414,34 @@ dans la boucle.
 
 **4. Annoncer la durée, puis lancer.** `calibrate` joue deux
 mini-générations chronométrées et extrapole aux volumes demandés, sans rien
-garder :
+garder. Les commandes `python loop.py` sont identiques sous Linux et sous
+Windows (sous Windows, `runs\r1` ou `runs/r1`, au choix) :
 
 ```
 python loop.py calibrate --run runs/r1 --threads 12 --device cpu
 python loop.py run       --run runs/r1 --threads 12 --device cpu --generations 12   # une nuit
 ```
 
-`--threads 12` : un fil par cœur physique pour l'auto-jeu et les matchs.
-La boucle reprend où elle s'est arrêtée si on la relance avec la même
-commande. Pendant qu'elle tourne :
+- `--threads 12` : un fil par cœur physique pour l'auto-jeu et les matchs.
+  Sans cette option, la boucle prend tous les fils logiques (24 sur le
+  HX 370).
+- La boucle reprend où elle s'est arrêtée si on la relance avec la même
+  commande.
+- Sous Windows, empêcher la mise en veille pendant la nuit : dans les
+  paramètres d'alimentation, ou avec
+  `powercfg /change standby-timeout-ac 0`.
+
+Pendant qu'elle tourne :
 
 ```
+# Linux
 cat runs/r1/generations.md        # tableau par génération, mis à jour à chaque génération
 tail -f runs/r1/log.txt           # commandes et sorties brutes
+```
+```powershell
+# Windows (PowerShell)
+Get-Content runs\r1\generations.md
+Get-Content runs\r1\log.txt -Wait -Tail 20
 ```
 
 Les options par défaut sont celles du plan validé : réseau 4 × 32,
@@ -296,10 +452,16 @@ entraînement sur les 3 dernières générations en 4 passes, titre au-delà de
 (`--keep-samples 3` efface les plus anciens).
 
 **5. Mesurer contre jocly2**, seul sur la machine, avec le réseau en titre
-(`runs/r1/best.ksnn`) :
+(`runs/r1/best.ksnn`). `generations.md` donne la commande exacte, chemins
+compris :
 
 ```
+# Linux
 KRIEGSPIEL_NET=runs/r1/best.ksnn node ../duel-jocly.cjs <chemin de jocly2> 2 3000 100
+```
+```powershell
+# Windows (PowerShell)
+$env:KRIEGSPIEL_NET = "runs\r1\best.ksnn"; node ..\duel-jocly.cjs <chemin de jocly2> 2 3000 100
 ```
 
 Critères de réussite : au moins 70 % contre « Fort » sur 100 parties ; au
@@ -308,9 +470,9 @@ moins 65 % contre le moteur sans réseau sur 400 parties, à budget égal
 nom « Moyen (moteur) ».
 
 **6. Verser au dépôt et livrer.**
-- Dans le dépôt : `runs/r1/generations.md` et `runs/r1/config.json`
-  (graine, options), qui suffisent à refaire le run. Les échantillons et les
-  réseaux intermédiaires restent hors du dépôt.
+- Dans le dépôt : `runs/r1/generations.md`, `generations.jsonl` et
+  `config.json` (graine, options), qui suffisent à refaire le run. Les
+  échantillons et les réseaux intermédiaires restent hors du dépôt.
 - Le réseau retenu se publie à part, comme les réseaux de KataGo, sous le
   nom `kriegspiel-value.ksnn`.
 

@@ -19,7 +19,7 @@ if (!JOCLY || process.argv.length < 6) {
 const { spawn } = require("child_process");
 const readline = require("readline");
 const Jocly = require(path.join(JOCLY, "dist", "node", "jocly.core.js"));
-const ENGINE = path.join(__dirname, "..", "target", "release", "kriegspiel-engine");
+const ENGINE = path.join(__dirname, "..", "target", "release", "kriegspiel-engine" + (process.platform === "win32" ? ".exe" : ""));
 const levelIndex = parseInt(process.argv[3], 10), movetime = parseInt(process.argv[4], 10), games = parseInt(process.argv[5], 10);
 const extra = process.argv.slice(6).join(" ");
 const CH = "ICAHTE";
@@ -43,6 +43,8 @@ function parseMove(text) {
 const child = spawn(ENGINE);
 const rl = readline.createInterface({ input: child.stdout });
 if (process.env.KRIEGSPIEL_NET) child.stdin.write("setoption net " + path.resolve(process.env.KRIEGSPIEL_NET) + "\n");
+// poids de l'evaluation a essayer (fichier `nom valeur`, voir eval.rs)
+if (process.env.KRIEGSPIEL_WEIGHTS) child.stdin.write("setoption weights " + path.resolve(process.env.KRIEGSPIEL_WEIGHTS) + "\n");
 let waiting = null, info = "";
 rl.on("line", (line) => { if (line.startsWith("error") && !waiting) { console.error("moteur :", line); process.exit(1); } if (line.startsWith("info")) info = line; if ((line.startsWith("bestmove") || line.startsWith("error")) && waiting) { const w = waiting; waiting = null; w(line); } });
 function go(board) {

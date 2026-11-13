@@ -113,7 +113,17 @@ fn limits(depth: u32) -> Limits {
         leaf_beam: 3,
         leaf_moves: 2,
         plans: false,
+        blitz: true,
     }
+}
+
+/// Les attaques jouees par un camp, et combien de cavaliers chargeaient :
+/// [attaques, sans charge, 1, 2, 3, 4 cavaliers].
+type Charges = [u32; 6];
+
+/// une ligne de `match` : les attaques et les charges d'un camp
+fn charges_text(c: &Charges) -> String {
+    format!("{} attacks, charges of 1/2/3/4 cavalry: {}/{}/{}/{}", c[0], c[2], c[3], c[4], c[5])
 }
 
 /// comment les parties se terminent : un reglage qui gagne par isolement ne
@@ -173,7 +183,7 @@ fn write_planes_header(file: &mut fs::File) {
 /// Joue une partie : `north` et `south` portent les poids de chaque camp.
 /// Renvoie le vainqueur (0 : nulle), le nombre de coups, et les positions.
 fn play_game(north: &Ctx, south: &Ctx, opening: &State, depth: u32, eps: f64, rng: &mut Rng, record: Record) -> (i8, u32, Vec<Sample>) {
-    play_game_full(north, south, opening, (depth, depth), (false, false), eps, rng, record)
+    play_game_full(north, south, opening, (depth, depth), (false, false), (true, true), eps, rng, record, &mut [[0; 6]; 2])
 }
 
 /// ce que `play_game` releve de chaque position
@@ -187,7 +197,7 @@ enum Record {
 
 /// la partie elle-meme : profondeur et plans (voir search::Limits) par camp
 #[allow(clippy::too_many_arguments)]
-fn play_game_full(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32), plans: (bool, bool), eps: f64, rng: &mut Rng, record: Record) -> (i8, u32, Vec<Sample>) {
+fn play_game_full(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32), plans: (bool, bool), blitz: (bool, bool), eps: f64, rng: &mut Rng, record: Record, charges: &mut [Charges; 2]) -> (i8, u32, Vec<Sample>) {
     let mut st = opening.clone();
     let mut who = NORTH;
     let mut samples = Vec::new();
@@ -198,6 +208,7 @@ fn play_game_full(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32),
         let ctx = if who > 0 { north } else { south };
         let mut limits = limits(if who > 0 { depths.0 } else { depths.1 });
         limits.plans = if who > 0 { plans.0 } else { plans.1 };
+        limits.blitz = if who > 0 { blitz.0 } else { blitz.1 };
         let mut recorded = false;
         if record != Record::Nothing {
             let units = Units::scan(&st);
@@ -218,6 +229,7 @@ fn play_game_full(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32),
         }
         let mut searcher = Searcher::new(ctx);
         searcher.plans = limits.plans;
+        searcher.blitz = limits.blitz;
         let mv = if eps > 0.0 && rng.unit() < eps {
             // un peu de hasard : sans lui, toutes les parties d'une meme
             // ouverture seraient identiques
@@ -230,6 +242,16 @@ fn play_game_full(north: &Ctx, south: &Ctx, opening: &State, depths: (u32, u32),
             }
             result.best
         };
+        if let Some(target) = mv.a {
+            // la position au moment de l'attaque : apres les deplacements
+            let mut turn = Turn::new(ctx, &st, who);
+            for &(from, to) in mv.r.iter().chain(mv.m.iter()) {
+                turn.apply_move(from as usize, to as usize);
+            }
+            let c = &mut charges[if who > 0 { 0 } else { 1 }];
+            c[0] += 1;
+            c[1 + kriegspiel::blitz::charge_length(ctx, &turn.st, target as usize, who) as usize] += 1;
+        }
         let (next, _) = play_turn(ctx, &st, who, &mv).expect("the engine plays legal moves");
         st = next;
         plies += 1;
@@ -352,7 +374,8 @@ fn fit(args: &[String]) {
         let var = xs.iter().map(|r| (r[j] - mean).powi(2)).sum::<f64>() / n as f64;
         scale[j] = if var > 1e-9 { var.sqrt() } else { 0.0 };
     }
-    scale[NF - 1] = 1.0; // tempo : constante, sert d'ordonnee a l'origine
+    // tempo : constante, sert d'ordonnee a l'origine
+    scale[FEATURES.iter().position(|f| *f == "tempo").unwrap()] = 1.0;
     let loss = |theta: &[f64; NF]| -> (f64, f64) {
         let (mut total, mut right) = (0.0, 0.0);
         for (row, &y) in xs.iter().zip(&ys) {
@@ -381,7 +404,7 @@ fn fit(args: &[String]) {
             }
         }
         for j in 0..NF {
-            let g = grad[j] / n as f64 + if j < NF - 1 { l2 * theta[j] } else { 0.0 };
+            let g = grad[j] / n as f64 + if FEATURES[j] != "tempo" { l2 * theta[j] } else { 0.0 };
             m[j] = b1 * m[j] + (1.0 - b1) * g;
             v[j] = b2 * v[j] + (1.0 - b2) * g * g;
             let (mh, vh) = (m[j] / (1.0 - b1.powi(step as i32)), v[j] / (1.0 - b2.powi(step as i32)));
@@ -423,12 +446,17 @@ fn run_match(args: &[String]) {
     // tours construits selon un plan : 1 ou 0, pour A et pour B
     let plans_a = number(args, "--plans", 0u32) != 0;
     let plans_b = number(args, "--plans-b", plans_a as u32) != 0;
+    // charges eclair (blitz.rs) : 1 ou 0, pour A et pour B
+    let blitz_a = number(args, "--blitz", 1u32) != 0;
+    let blitz_b = number(args, "--blitz-b", blitz_a as u32) != 0;
     let seed = number(args, "--seed", 1u64);
     let threads = number(args, "--threads", 2usize);
     let eps = number(args, "--eps", 0.05f64);
     MOVETIME_MS.store(number(args, "--movetime", 0u64), Ordering::Relaxed);
     let next = AtomicUsize::new(0);
     let tally = Mutex::new((0u32, 0u32, 0u32, 0u64));
+    // charges de A et de B
+    let charges_ab: Mutex<[Charges; 2]> = Mutex::new([[0; 6]; 2]);
     std::thread::scope(|scope| {
         for _ in 0..threads {
             scope.spawn(|| loop {
@@ -443,7 +471,18 @@ fn run_match(args: &[String]) {
                 let (north, south) = if a_side > 0 { (&a, &b) } else { (&b, &a) };
                 let depths = if a_side > 0 { (depth, depth_b) } else { (depth_b, depth) };
                 let plans = if a_side > 0 { (plans_a, plans_b) } else { (plans_b, plans_a) };
-                let (winner, plies, _) = play_game_full(north, south, opening, depths, plans, eps, &mut rng, Record::Nothing);
+                let blitz = if a_side > 0 { (blitz_a, blitz_b) } else { (blitz_b, blitz_a) };
+                let mut by_side = [[0u32; 6]; 2];
+                let (winner, plies, _) = play_game_full(north, south, opening, depths, plans, blitz, eps, &mut rng, Record::Nothing, &mut by_side);
+                {
+                    // camp Nord/Sud -> A/B
+                    let (a, b) = if a_side > 0 { (by_side[0], by_side[1]) } else { (by_side[1], by_side[0]) };
+                    let mut c = charges_ab.lock().unwrap();
+                    for i in 0..6 {
+                        c[0][i] += a[i];
+                        c[1][i] += b[i];
+                    }
+                }
                 let mut t = tally.lock().unwrap();
                 if winner == 0 {
                     t.2 += 1;
@@ -462,10 +501,13 @@ fn run_match(args: &[String]) {
     let var = ((t.0 as f64) * (1.0 - score).powi(2) + (t.1 as f64) * score.powi(2) + (t.2 as f64) * (0.5 - score).powi(2)) / games as f64;
     let margin = 1.96 * (var / games as f64).sqrt();
     println!(
-        "{} net {net_a} (depth {depth}, plans {plans_a}) vs {} net {net_b} (depth {depth_b}, plans {plans_b}), {games} games: +{} -{} ={}  score {:.1}% (+-{:.1})  mean length {} plies",
+        "{} net {net_a} (depth {depth}, plans {plans_a}, blitz {blitz_a}) vs {} net {net_b} (depth {depth_b}, plans {plans_b}, blitz {blitz_b}), {games} games: +{} -{} ={}  score {:.1}% (+-{:.1})  mean length {} plies",
         args[2], args[3], t.0, t.1, t.2, score * 100.0, margin * 100.0, t.3 / games as u64
     );
     println!("  endings: {}", reasons_text());
+    let c = charges_ab.lock().unwrap();
+    println!("  A (blitz {blitz_a}): {}", charges_text(&c[0]));
+    println!("  B (blitz {blitz_b}): {}", charges_text(&c[1]));
 }
 
 /// Valeurs du reseau pour les premieres positions d'un fichier d'echantillons.

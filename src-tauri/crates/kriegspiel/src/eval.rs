@@ -19,7 +19,7 @@ pub const WIN: i32 = 1_000_000;
 /// valeur relative des unites pour les menaces, en centiemes : -, I, C, A, AC, T, E
 pub const VALUE: [i32; 7] = [0, 100, 120, 140, 160, 130, 150];
 
-pub const NF: usize = 39;
+pub const NF: usize = 50;
 
 pub const FEATURES: [&str; NF] = [
     "infantry_on", "cavalry_on", "artillery_on", "horse_artillery_on", "signal_on", "courier_on",
@@ -51,6 +51,18 @@ pub const FEATURES: [&str; NF] = [
     "one_signal",      // il ne me reste qu'une unite de transmission
     "hunt_mover",      // je peux detruire tout de suite une transmission dont depend toute son armee
     "hunt_other",      // il le pourrait contre moi, s'il avait le trait
+    // --- strategies (voir le README, « Strategies ») ---
+    "race_mover",      // raids que je gagne : un arsenal adverse vide que j'atteins avant qu'il puisse le couvrir
+    "race_other",      // raids qu'il gagne contre moi
+    "exposed_mover",   // mes unites que ses forces proches pourraient detruire a son prochain tour
+    "exposed_other",   // les siennes, que mes forces proches pourraient detruire
+    "advance_safe",    // progres vers l'arsenal adverse (40 - distance), unites non exposees seulement
+    "column",          // mes cavaliers flanques d'un autre cavalier, quand l'ennemi est a portee de charge
+    "fort_behind",     // en inferiorite : mes forteresses et cols tenus
+    "home_behind",     // en inferiorite : mes unites entre l'ennemi et mes arsenaux
+    "blitz_ready",     // charge eclair : la meilleure colonne que je forme en un tour (4 x cavaliers - deplacements), moins la sienne
+    "blitz_kill_mover",// une cible que ma charge eclair detruirait au prochain tour (valeur)
+    "blitz_kill_other",// une des miennes que sa charge eclair detruirait
 ];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -74,10 +86,22 @@ pub const HANDMADE: [f32; NF] = [
     0.0, 0.0, 0.0,
     0.0, 0.0,
     0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0,
 ];
 
-/// Les poids en service. Voir le README pour la facon de les reproduire.
-pub const TUNED: [f32; NF] = HANDMADE;
+/// Les poids en service : ceux de la premiere version, plus quatre termes
+/// strategiques (exposition des unites, avance groupee, pre-positionnement
+/// de la cavalerie pour la charge eclair). Mesures au banc,
+/// voir le README (« Strategies »).
+pub const TUNED: [f32; NF] = {
+    let mut w = HANDMADE;
+    w[41] = -3.0; // exposed_mover
+    w[42] = 1.5; // exposed_other
+    w[43] = 6.0; // advance_safe
+    w[47] = 60.0; // blitz_ready : cavalerie pre-positionnee pour la charge eclair
+    w
+};
 
 impl Weights {
     pub fn handmade() -> Weights {
@@ -215,15 +239,18 @@ pub fn features(ctx: &Ctx, st: &State, to_move: i8, cn: &Comm, cs: &Comm, units:
     }
 
     // menaces : ce que chaque camp peut detruire tout de suite
+    // (la defense de chaque unite est gardee pour les termes strategiques)
+    let mut defense_of = [0i32; 40];
     for att_side in [to_move, -to_move] {
         let (ca, cd) = (comm_of(att_side), comm_of(-att_side));
         let (mut best, mut sum) = (0i32, 0i32);
-        for pos in units.iter() {
+        for (k, pos) in units.iter().enumerate() {
             let v = st.grid[pos];
             if v == 0 || (v > 0) == (att_side > 0) {
                 continue;
             }
             let (att, def) = strength(ctx, st, pos, att_side, ca, cd, -1);
+            defense_of[k] = def;
             if att > def {
                 if v.abs() >= SIGNAL {
                     f[if att_side == to_move { 33 } else { 34 }] += 1;
@@ -277,7 +304,283 @@ pub fn features(ctx: &Ctx, st: &State, to_move: i8, cn: &Comm, cs: &Comm, units:
             f[if side == to_move { 38 } else { 37 }] += weight;
         }
     }
+    strategy(ctx, st, to_move, cn, cs, units, &defense_of, &mut f);
     (f, 0)
+}
+
+/// Combien de tours faut-il a l'unite en `from` pour entrer dans l'arsenal
+/// `ars` (vide), en partant de chaque tour d'une case d'ou elle peut bouger :
+/// sur une ligne de son camp, ou au contact d'une unite combattante amie en
+/// communication. Les autres unites sont supposees immobiles. None au-dela de
+/// `max_turns`.
+fn race_turns(ctx: &Ctx, st: &State, comm: &Comm, side: i8, from: usize, ars: usize, max_turns: u8) -> Option<u8> {
+    let t = st.grid[from].unsigned_abs() as usize;
+    let target = ctx.ars_pos[ars];
+    let mut seen = [false; N];
+    let mut frontier: Vec<u16> = vec![from as u16];
+    seen[from] = true;
+    for turn in 1..=max_turns {
+        let mut reached: Vec<u16> = Vec::new();
+        let mut layer = frontier.clone();
+        for _ in 0..MOVE[t] {
+            let mut next_layer = Vec::new();
+            for &p in &layer {
+                for d in 0..8 {
+                    let q = ctx.next[p as usize * 8 + d];
+                    if q < 0 {
+                        continue;
+                    }
+                    let q = q as usize;
+                    if q == target {
+                        return Some(turn);
+                    }
+                    if seen[q] || ctx.terr[q] == MOUNTAIN || st.grid[q] != 0 {
+                        continue;
+                    }
+                    // une unite combattante s'arrete dans un arsenal ennemi
+                    if ctx.enemy_arsenal_at(st, q, side).is_some() {
+                        continue;
+                    }
+                    seen[q] = true;
+                    next_layer.push(q as u16);
+                    reached.push(q as u16);
+                }
+            }
+            layer = next_layer;
+        }
+        // le tour suivant ne part que des cases d'ou l'unite peut bouger
+        frontier = reached
+            .into_iter()
+            .filter(|&q| {
+                let q = q as usize;
+                comm.lit[q]
+                    || (0..8).any(|d| {
+                        let r = ctx.next[q * 8 + d];
+                        r >= 0 && r as usize != from && comm.on[r as usize] && {
+                            let w = st.grid[r as usize];
+                            w.signum() == side && w.abs() < SIGNAL
+                        }
+                    })
+            })
+            .collect();
+        if frontier.is_empty() {
+            return None;
+        }
+    }
+    None
+}
+
+/// Les termes strategiques (indices 39 a 49). Un terme de poids nul n'est
+/// pas calcule (il vaut 0) : la course aux arsenaux, surtout, coute cher.
+fn strategy(ctx: &Ctx, st: &State, to_move: i8, cn: &Comm, cs: &Comm, units: &Units, defense_of: &[i32; 40], f: &mut [i32; NF]) {
+    let w = &ctx.weights.0;
+    let sign = |side: i8| if side == to_move { 1i32 } else { -1i32 };
+    let comm_of = |side: i8| if side > 0 { cn } else { cs };
+
+    // materiel, pour la posture : un camp est en inferiorite quand il a
+    // perdu l'equivalent d'une infanterie et demie de plus que l'autre
+    let mut material = [0i32; 2];
+    for pos in units.iter() {
+        let v = st.grid[pos];
+        if v != 0 && v.abs() < SIGNAL {
+            material[if v.signum() == to_move { 0 } else { 1 }] += VALUE[v.unsigned_abs() as usize];
+        }
+    }
+    let behind = |side: i8| {
+        let (mine, theirs) = if side == to_move { (material[0], material[1]) } else { (material[1], material[0]) };
+        mine - theirs <= -150
+    };
+
+    // 1. Exposition : ce que les forces adverses proches pourraient porter
+    //    contre chaque unite apres un deplacement (portee + mouvement), contre
+    //    sa defense actuelle. Une borne haute, sans les montagnes.
+    let mut exposed = [false; 40];
+    for (k, pos) in units.iter().enumerate() {
+        let v = st.grid[pos];
+        if v == 0 {
+            continue;
+        }
+        let side = v.signum();
+        let enemy_comm = comm_of(-side);
+        let charge_ok = ctx.terr[pos] != FORT && ctx.terr[pos] != PASS;
+        let mut potential = 0i32;
+        for q in units.iter() {
+            let w = st.grid[q];
+            if w == 0 || w.signum() == side || w.abs() >= SIGNAL || !enemy_comm.on[q] {
+                continue;
+            }
+            let t = w.unsigned_abs() as usize;
+            let d = distance(pos, q);
+            if d <= MOVE[t] as usize + RANGE[t] as usize {
+                potential += if t as i8 == CAVALRY && charge_ok && d <= MOVE[t] as usize + 1 { CHARGE } else { ATTACK[t] };
+            }
+        }
+        let deficit = potential - defense_of[k];
+        if deficit >= 1 {
+            exposed[k] = deficit >= 2;
+            let value = VALUE[v.unsigned_abs() as usize];
+            let loss = if deficit >= 2 { value } else { value * 35 / 100 };
+            f[if side == to_move { 41 } else { 42 }] += loss;
+        }
+    }
+
+    // 2. Avance groupee : le progres vers l'arsenal adverse (40 - distance)
+    //    ne compte que pour les unites qui ne sont pas exposees. (Compter la
+    //    distance des seules unites non exposees, comme dans un premier essai,
+    //    recompensait l'exposition : l'unite exposee sortait de la somme.)
+    if w[43] != 0.0 {
+    for (k, pos) in units.iter().enumerate() {
+        let v = st.grid[pos];
+        if v == 0 || v.abs() >= SIGNAL || exposed[k] || !comm_of(v.signum()).on[pos] {
+            continue;
+        }
+        let side = v.signum();
+        let mut dist = 999u16;
+        for i in 0..4 {
+            if ctx.ars_side[i] != side && st.ars[i] {
+                dist = dist.min(ctx.ars_dist[i][pos]);
+            }
+        }
+        if dist < 999 {
+            f[43] += sign(side) * (40 - dist.min(40) as i32);
+        }
+    }
+    }
+
+    // 3. Colonne de cavalerie : un cavalier flanque d'un autre, quand une
+    //    unite combattante adverse est a portee de charge (6 cases)
+    if w[44] != 0.0 {
+    for pos in units.iter() {
+        let v = st.grid[pos];
+        if v.abs() != CAVALRY || !comm_of(v.signum()).on[pos] {
+            continue;
+        }
+        let side = v.signum();
+        let near_enemy = units.iter().any(|q| {
+            let w = st.grid[q];
+            w != 0 && w.signum() != side && w.abs() < SIGNAL && distance(pos, q) <= 6
+        });
+        if !near_enemy {
+            continue;
+        }
+        let paired = (0..8).any(|d| {
+            let q = ctx.next[pos * 8 + d];
+            q >= 0 && st.grid[q as usize] == v
+        });
+        if paired {
+            f[44] += sign(side);
+        }
+    }
+    }
+
+    // 4. Course aux arsenaux : un raid compte s'il arrive avant que le
+    //    proprietaire puisse occuper l'arsenal (le camp au trait joue d'abord)
+    if w[39] != 0.0 || w[40] != 0.0 {
+    for i in 0..4 {
+        if !st.ars[i] || st.grid[ctx.ars_pos[i]] != 0 {
+            continue;
+        }
+        let owner = ctx.ars_side[i];
+        let raider = -owner;
+        // en combien de tours le proprietaire peut-il occuper son arsenal ?
+        let owner_comm = comm_of(owner);
+        let mut defend = 99u16;
+        for q in units.iter() {
+            let w = st.grid[q];
+            if w == 0 || w.signum() != owner {
+                continue;
+            }
+            let t = w.unsigned_abs() as usize;
+            if (t as i8) < SIGNAL && !owner_comm.on[q] {
+                continue;
+            }
+            let d = ctx.ars_dist[i][q];
+            defend = defend.min((d + MOVE[t] as u16 - 1) / MOVE[t] as u16);
+        }
+        let raider_comm = comm_of(raider);
+        let mut best = 0u8;
+        for q in units.iter() {
+            let w = st.grid[q];
+            if w == 0 || w.signum() != raider || w.abs() >= SIGNAL || !raider_comm.on[q] {
+                continue;
+            }
+            let t = w.unsigned_abs() as usize;
+            if ctx.ars_dist[i][q] > 4 * MOVE[t] as u16 {
+                continue;
+            }
+            if let Some(k) = race_turns(ctx, st, raider_comm, raider, q, i, 4) {
+                let first = raider == to_move;
+                let won = if first { defend >= k as u16 } else { defend >= k as u16 + 1 };
+                if won {
+                    best = best.max(5 - k);
+                }
+            }
+        }
+        if best > 0 {
+            let alive = (0..4).filter(|&j| st.ars[j] && ctx.ars_side[j] == owner).count();
+            let value = best as i32 * if alive == 1 { 2 } else { 1 };
+            f[if raider == to_move { 39 } else { 40 }] += value;
+        }
+    }
+    }
+
+    // 6. Charge eclair : la cavalerie pre-positionnee pour former en un tour
+    //    une colonne de 3 ou 4 sur une cible proche (blitz.rs)
+    if w[47] != 0.0 || w[48] != 0.0 || w[49] != 0.0 {
+        let none = [0u64; 8];
+        for side in [to_move, -to_move] {
+            f[47] += sign(side) * crate::blitz::readiness(ctx, st, side, comm_of(side), units, 6);
+            if w[48] != 0.0 || w[49] != 0.0 {
+                let cols = crate::blitz::columns(ctx, st, side, comm_of(side), units, &none, 6);
+                let mut kill = 0;
+                for column in cols.iter().take(3) {
+                    if let Some((att, def)) = crate::blitz::strength_after(ctx, st, side, column) {
+                        if att - def >= 2 {
+                            kill = kill.max(VALUE[st.grid[column.target as usize].unsigned_abs() as usize]);
+                        }
+                    }
+                }
+                f[if side == to_move { 48 } else { 49 }] = kill;
+            }
+        }
+    }
+
+    // 5. Posture en inferiorite : tenir forteresses et cols, et se tenir
+    //    entre l'ennemi et ses arsenaux
+    if w[45] != 0.0 || w[46] != 0.0 {
+    for side in [to_move, -to_move] {
+        if !behind(side) {
+            continue;
+        }
+        let comm = comm_of(side);
+        // distance de l'ennemi le plus proche a chacun de mes arsenaux
+        let mut enemy_dist = [999u16; 4];
+        for i in 0..4 {
+            if ctx.ars_side[i] != side || !st.ars[i] {
+                continue;
+            }
+            for q in units.iter() {
+                let w = st.grid[q];
+                if w != 0 && w.signum() != side && w.abs() < SIGNAL {
+                    enemy_dist[i] = enemy_dist[i].min(ctx.ars_dist[i][q]);
+                }
+            }
+        }
+        for pos in units.iter() {
+            let v = st.grid[pos];
+            if v == 0 || v.signum() != side || v.abs() >= SIGNAL || !comm.on[pos] {
+                continue;
+            }
+            let t = v.unsigned_abs() as usize;
+            if (ctx.terr[pos] == FORT && FORT_BONUS[t] > 0) || (ctx.terr[pos] == PASS && PASS_BONUS[t] > 0) {
+                f[45] += sign(side);
+            }
+            if (0..4).any(|i| enemy_dist[i] < 999 && ctx.ars_dist[i][pos] < enemy_dist[i]) {
+                f[46] += sign(side);
+            }
+        }
+    }
+    }
 }
 
 /// Evalue `st` quand c'est a `to_move` de jouer.
