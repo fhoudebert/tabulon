@@ -7,6 +7,7 @@ pub mod install_cmds;
 pub mod katago_cmds;
 pub mod kriegspiel_cmds;
 pub mod match_cmds;
+pub mod pean_cmds;
 pub mod peer_cmds;
 pub mod problem_cmds;
 pub mod relay_cmds;

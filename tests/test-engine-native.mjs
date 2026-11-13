@@ -7,7 +7,7 @@
 //
 // Aucun binaire ni webview requis : le RPC est injecte.
 
-import { installInWindow, NativeFairyWorker, NativeScanWorker, NativeKataWorker, NativeKriegspielWorker } from '../app/content/engine-native.js';
+import { installInWindow, NativeFairyWorker, NativeScanWorker, NativeKataWorker, NativeKriegspielWorker, NativePeanWorker } from '../app/content/engine-native.js';
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log('  \u2713', m); } else { FAIL++; console.log('  \u2717 ECHEC:', m); } };
@@ -391,7 +391,57 @@ console.log('Test 12b - moteur du Jeu de la guerre (kriegspiel)');
     ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
 }
 
-console.log('Test 13 - les quatre moteurs cohabitent');
+console.log('Test 12c - moteur de Péan (niveau Maréchal)');
+{
+    const REQUEST = JSON.stringify({ context: { cols: 25 }, state: { phase: 2 }, moveTimeMs: 2500 });
+    let rpc = makeRpc({ pean_probe: () => Promise.resolve('Péan 0.1.0') });
+    let w = new NativePeanWorker(rpc);
+    let seen = listen(w);
+    w.postMessage({ type: 'Init' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Ready', 'pean -> Ready');
+    ok(rpc.calls[0].method === 'pean_probe', 'Init interroge pean_probe');
+
+    rpc = makeRpc({ pean_probe: new Error('command pean_probe not found') });
+    w = new NativePeanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Init' });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Error', 'sonde en echec -> Error (repli sur l\'IA de jocly)');
+
+    // Search : la requete (texte JSON) part telle quelle, le tour revient en JSON
+    const MOVE = { o: [{ u: [3], c: [210, 185] }], k: [{ a: [3], t: 17, h: 160 }] };
+    rpc = makeRpc({ pean_search: () => Promise.resolve({ bestMove: MOVE, depth: 3, score: 1.5 }) });
+    w = new NativePeanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', request: REQUEST });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Done', 'recherche -> Done');
+    ok(seen[0].data && seen[0].data.bestMove === MOVE, 'le tour est rendu sous data.bestMove');
+    ok(seen[0].data.depth === 3, 'la profondeur atteinte est transmise');
+    ok(rpc.calls[0].method === 'pean_search' && rpc.calls[0].args[0].request === REQUEST,
+       'la requete est relayee sans traduction');
+
+    rpc = makeRpc({ pean_search: new Error('placement') });
+    w = new NativePeanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', request: REQUEST });
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Error' && /placement/.test(seen[0].error),
+       'refus du moteur -> Error avec sa raison');
+
+    let reject;
+    rpc = makeRpc({
+        pean_search: () => new Promise((_, rj) => { reject = rj; }),
+        pean_stop: () => Promise.resolve(null),
+    });
+    w = new NativePeanWorker(rpc); seen = listen(w);
+    w.postMessage({ type: 'Search', request: REQUEST });
+    w.postMessage({ type: 'Stop' });
+    ok(rpc.calls.some((c) => c.method === 'pean_stop'), 'Stop interrompt cote Rust');
+    reject(new Error('stopped'));
+    await settle();
+    ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
+}
+
+console.log('Test 13 - les moteurs cohabitent');
 {
     class FakeWorker { constructor(url) { this.url = url; } }
     const created = [];
@@ -406,10 +456,13 @@ console.log('Test 13 - les quatre moteurs cohabitent');
        'kataworker -> shim go');
     ok(new win.Worker('/browser/jocly.kriegspielworker.js') instanceof NativeKriegspielWorker,
        'kriegspielworker -> shim Jeu de la guerre');
+    ok(new win.Worker('/browser/jocly.peanworker.js') instanceof NativePeanWorker,
+       'peanworker -> shim Péan');
     // Le worker d'IA native reste au hook d'asset-rewrite.
     const ai = new win.Worker('/browser/jocly.aiworker.js');
     ok(!(ai instanceof NativeFairyWorker) && !(ai instanceof NativeScanWorker)
-       && !(ai instanceof NativeKataWorker) && !(ai instanceof NativeKriegspielWorker) && created.length === 1,
+       && !(ai instanceof NativeKataWorker) && !(ai instanceof NativeKriegspielWorker)
+       && !(ai instanceof NativePeanWorker) && created.length === 1,
        'aiworker passe au Worker precedent');
 }
 

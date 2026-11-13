@@ -34,6 +34,7 @@ const FAIRY_WORKER_RE = /(^|\/)jocly\.fairyworker\.js(\?|$)/;
 const SCAN_WORKER_RE  = /(^|\/)jocly\.scanworker\.js(\?|$)/;
 const KATA_WORKER_RE  = /(^|\/)jocly\.kataworker\.js(\?|$)/;
 const KRIEGSPIEL_WORKER_RE = /(^|\/)jocly\.kriegspielworker\.js(\?|$)/;
+const PEAN_WORKER_RE = /(^|\/)jocly\.peanworker\.js(\?|$)/;
 
 // Une trace par variante : le joueur doit pouvoir constater si Expert tourne
 // avec son reseau NNUE ou en evaluation classique, sans lire les logs de
@@ -469,6 +470,93 @@ class NativeKriegspielWorker {
 }
 
 /**
+ * Faux Worker pour le moteur de Péan (wargame à hexagones), niveau
+ * « Maréchal ». Même contrat que celui du Jeu de la guerre : moteur lié à
+ * l'application (crate Rust `pean`), rien à traduire — jocly.pean.js écrit la
+ * requête (texte JSON : contexte du scénario, état, temps) et relit le tour,
+ * qu'il valide lui-même. Le déploiement libre ne passe pas par ici : jocly le
+ * joue avec son IA.
+ */
+class NativePeanWorker {
+    constructor(rpc) {
+        this._rpc = rpc;
+        this.onmessage = null;
+        this.onerror = null;
+        this._searching = false;
+        this._stopped = false;
+        this._dead = false;
+    }
+
+    _post(msg) {
+        if (this._dead) return;
+        Promise.resolve().then(() => {
+            if (this._dead) return;
+            try { if (this.onmessage) this.onmessage({ data: msg }); }
+            catch (e) { console.error('[engine-native] onmessage:', e); }
+        });
+    }
+
+    _fail(err) {
+        this._post({ type: 'Error', error: String((err && err.message) || err) });
+    }
+
+    postMessage(msg) {
+        const type = msg && msg.type;
+        if (type === 'Init')   return this._init();
+        if (type === 'Search') return this._search(msg);
+        if (type === 'Stop')   return this._stop();
+        console.warn('[engine-native] message ignoré (pean):', type);
+    }
+
+    terminate() {
+        this._dead = true;
+        if (this._searching) this._rpc.call('pean_stop').catch(() => {});
+    }
+
+    _init() {
+        this._rpc.call('pean_probe')
+            .then((name) => {
+                console.info('[engine-native] moteur de Péan :', name);
+                this._post({ type: 'Ready' });
+            })
+            .catch((err) => {
+                // Un Tabulon plus ancien que ce pont n'a pas la commande.
+                console.warn('[engine-native] moteur de Péan indisponible — ' +
+                    'repli sur l’IA de jocly :', (err && err.message) || err);
+                this._fail(err);
+            });
+    }
+
+    _search(msg) {
+        this._stopped = false;
+        this._searching = true;
+        this._rpc.call('pean_search', { request: msg.request })
+            .then((res) => {
+                this._searching = false;
+                if (this._stopped) return this._post({ type: 'Aborted' });
+                this._post({ type: 'Done', data: {
+                    bestMove: (res && res.bestMove) || null,
+                    depth:    res && res.depth,
+                    score:    res && res.score,
+                } });
+            })
+            .catch((err) => {
+                this._searching = false;
+                if (this._stopped) return this._post({ type: 'Aborted' });
+                console.warn('[engine-native] recherche (Péan) échouée :',
+                    (err && err.message) || err);
+                this._fail(err);
+            });
+    }
+
+    _stop() {
+        if (!this._searching) return;
+        this._stopped = true;
+        this._rpc.call('pean_stop').catch(() => {});
+    }
+}
+
+/**
  * Remplace `Worker` dans une fenêtre donnée pour intercepter la seule
  * création du worker fairy-stockfish. Idempotent.
  */
@@ -485,6 +573,7 @@ export function installInWindow(win, rpc) {
         if (SCAN_WORKER_RE.test(s))  return new NativeScanWorker(rpc);
         if (KATA_WORKER_RE.test(s))  return new NativeKataWorker(rpc);
         if (KRIEGSPIEL_WORKER_RE.test(s)) return new NativeKriegspielWorker(rpc);
+        if (PEAN_WORKER_RE.test(s)) return new NativePeanWorker(rpc);
         return new Previous(url, opts);
     }
     PatchedWorker.prototype = Previous.prototype;
@@ -516,4 +605,4 @@ export function installNativeEngine(root, rpc) {
     }
 }
 
-export { NativeFairyWorker, NativeScanWorker, NativeKataWorker, NativeKriegspielWorker };
+export { NativeFairyWorker, NativeScanWorker, NativeKataWorker, NativeKriegspielWorker, NativePeanWorker };
