@@ -77,9 +77,10 @@ const defaultFavorites = {
     'morris9': 65, 'fourinarow': 60, 'tafl-hnefatafl': 55,
     'yohoho': 50, 'margo6': 40,
     // 'pensoc' n'y est plus : jocly2 le marque obsolete, comme 'scrum'.
-    // 'pean-leuctres' : Péan, le wargame à hexagones (branche pean de jocly2 ;
-    // tant que le dist ne l'a pas, InitGames() le retire sans bruit).
-    'go13': 38, 'shogi': 36, 'xiangqi': 34, 'rococo': 32, 'pean-leuctres': 30,
+    // 'pean' : Péan, le wargame à hexagones (branche pean de jocly2), un seul
+    // jeu dont la bataille se choisit au prelude ; tant que le dist ne l'a
+    // pas, InitGames() le retire sans bruit.
+    'go13': 38, 'shogi': 36, 'xiangqi': 34, 'rococo': 32, 'pean': 30,
 };
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────

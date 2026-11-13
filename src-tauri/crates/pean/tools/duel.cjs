@@ -7,7 +7,7 @@
  *   node tools/duel.cjs <racine jocly2> [options]
  *
  *   --games N        parties par scénario (défaut 10)
- *   --scenarios a,b  noms des parties jocly2 (défaut : les quatre)
+ *   --scenarios a,b  batailles (identifiants des scénarios ; défaut : les quatre)
  *   --level L        niveau jocly2 adverse (défaut 2 : Général)
  *   --ms T           temps du Maréchal par coup (défaut 2500)
  *   --loops N        borne le niveau jocly2 à N itérations (sans limite de
@@ -15,8 +15,8 @@
  *                    niveau tel quel (5 s, 500 itérations)
  *   --engine PATH    binaire (défaut target/release/pean-engine)
  *
- * Le déploiement libre (bataille libre) est joué par jocly2 pour les deux
- * camps. Chaque coup du moteur est validé par jocly2 (IsValidMove) ; un coup
+ * La bataille est choisie au prélude du jeu « pean » (« #k », puis « -- »). Le
+ * déploiement libre (bataille libre) est joué par jocly2 pour les deux camps. Chaque coup du moteur est validé par jocly2 (IsValidMove) ; un coup
  * refusé est une erreur.
  */
 "use strict";
@@ -32,7 +32,7 @@ function opt(name, def) {
 	return k >= 0 ? args[k + 1] : def;
 }
 const GAMES = parseInt(opt("games", "10"), 10);
-const SCENARIOS = opt("scenarios", "pean-bataille-libre,pean-leuctres,pean-platees,pean-laurion").split(",");
+const SCENARIOS = opt("scenarios", "bataille-libre,leuctres-371,platees-479,laurion-413").split(",");
 const LEVEL = parseInt(opt("level", "2"), 10);
 const MS = parseInt(opt("ms", "2500"), 10);
 const LOOPS = parseInt(opt("loops", "0"), 10);
@@ -54,8 +54,12 @@ function ask(req) {
 }
 
 async function game(name, marechalSide) {
-	const match = await Jocly.createMatch(name);
+	const match = await Jocly.createMatch("pean");
 	const config = await match.getConfig();
+	const k = config.model.gameOptions.scenarios.findIndex((sc) => sc.id === name);
+	if(k < 0) throw new Error("bataille inconnue : " + name);
+	await match.applyMove({ setup: k });
+	await match.applyMove({ skip: 1 });
 	const level = Object.assign({}, config.model.levels[LEVEL]);
 	if(LOOPS) {
 		level.maxLoops = LOOPS;

@@ -27,10 +27,6 @@ cargo test --release
 Les fixtures livrées réduisent destinations et états à une empreinte FNV-1a de leur JSON ; `--full` les écrit en
 clair pour un diagnostic.
 
-Écart volontaire avec jocly2 : dans `buildTurn`, `var facing` n'est pas remis à zéro d'un ordre à l'autre, et une
-orientation demandée pour une phalange « fuit » vers l'ordre suivant. Le moteur reproduit ce comportement quand il
-s'agit de vérifier les tours candidats (`candidates`), pas quand il cherche (`candidates_with(.., false)`).
-
 ## Mesure
 
 `tools/duel.cjs` : le Maréchal contre un niveau jocly2 (Général par défaut, tel quel : 5 s par tour), camps alternés,
@@ -41,12 +37,14 @@ cargo build --release
 node tools/duel.cjs <racine jocly2> --games 13
 ```
 
-Novembre 2026, 2,5 s par tour, 13 parties par scénario :
+Novembre 2026, 2,5 s par tour, 13 parties par scénario, contre « Général » après la correction de pean-ai.js :
 
 | scénario | Maréchal contre Général |
 |---|---|
-| Bataille libre | 8 V / 0 N / 5 D (6 sur 6 en second, 2 sur 7 en premier) |
-| Leuctres | 12 V / 0 N / 1 D |
-| Platées | 10 V / 1 N / 2 D |
-| Laurion | 10 V / 0 N / 3 D |
-| total | 40 V / 1 N / 11 D, 78 % ; tour le plus long 2,55 s |
+| Bataille libre | 11 V / 0 N / 2 D |
+| Leuctres | 9 V / 0 N / 4 D |
+| Platées | 6 V / 2 N / 5 D |
+| Laurion | 9 V / 0 N / 4 D |
+| total | 35 V / 2 N / 15 D, 69 % ; tour le plus long 2,56 s |
+
+(Avant la correction, contre un « Général » plus faible : 40 V / 1 N / 11 D, 78 %.)

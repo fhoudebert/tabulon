@@ -10,7 +10,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::ai::{candidates_with, evaluate, Rng, WEIGHTS};
+use crate::ai::{candidates, evaluate, Rng, WEIGHTS};
 use crate::ctx::Ctx;
 use crate::rules::{apply, outcome, to_move, Move, State};
 
@@ -118,7 +118,7 @@ impl<'a> Search<'a> {
         }
         let ctx = self.ctx;
         let mut rng = Rng::new(seed_of(&node.st));
-        let moves = candidates_with(ctx, &node.st, node.who, self.width(ply), &mut rng, false);
+        let moves = candidates(ctx, &node.st, node.who, self.width(ply), &mut rng);
         let mut children = Vec::with_capacity(moves.len());
         for mv in moves {
             let Ok(st) = apply(ctx, &node.st, node.who, &mv) else { continue };

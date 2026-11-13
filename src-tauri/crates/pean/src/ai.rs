@@ -430,16 +430,15 @@ pub struct Plan {
     pub groups: f64,
     pub greed: f64,
     pub noise: f64,
-    pub compat: bool,
 }
 
 pub const PLANS: [Plan; 6] = [
-    Plan { mode: Mode::Advance, groups: 1.0, greed: 0.5, noise: 0.0, compat: false },
-    Plan { mode: Mode::Objective, groups: 1.0, greed: 0.5, noise: 0.0, compat: false },
-    Plan { mode: Mode::Hold, groups: 0.6, greed: 1.0, noise: 0.0, compat: false },
-    Plan { mode: Mode::Advance, groups: 0.0, greed: -2.0, noise: 0.0, compat: false },
-    Plan { mode: Mode::Advance, groups: 1.4, greed: 0.0, noise: 0.0, compat: false },
-    Plan { mode: Mode::Objective, groups: 0.5, greed: 0.0, noise: 0.0, compat: false },
+    Plan { mode: Mode::Advance, groups: 1.0, greed: 0.5, noise: 0.0 },
+    Plan { mode: Mode::Objective, groups: 1.0, greed: 0.5, noise: 0.0 },
+    Plan { mode: Mode::Hold, groups: 0.6, greed: 1.0, noise: 0.0 },
+    Plan { mode: Mode::Advance, groups: 0.0, greed: -2.0, noise: 0.0 },
+    Plan { mode: Mode::Advance, groups: 1.4, greed: 0.0, noise: 0.0 },
+    Plan { mode: Mode::Objective, groups: 0.5, greed: 0.0, noise: 0.0 },
 ];
 
 fn friends_map(ctx: &Ctx, turn: &Turn, who: i8) -> Vec<usize> {
@@ -471,10 +470,6 @@ pub fn build_turn<'a>(ctx: &'a Ctx, st: &State, who: i8, plan: &Plan, rng: &mut 
 pub fn build_turn_cached<'a>(ctx: &'a Ctx, st: &State, who: i8, plan: &Plan, rng: &mut Rng, cache: &mut ReachCache) -> Turn<'a> {
     let mut turn = Turn::new(ctx, st, who);
     let noise = plan.noise;
-    // jocly2 déclare `var facing` dans la boucle : la variable n'est pas
-    // remise à zéro d'un ordre à l'autre (une orientation fuit vers l'ordre
-    // suivant). `plan.compat` reproduit ce comportement, pour les tests.
-    let mut facing = Facing::None;
     let jitter = |rng: &mut Rng| if noise != 0.0 { (rng.next(1000) as f64 / 1000.0 - 0.5) * noise } else { 0.0 };
     let enemies_owned: Vec<Unit> = units_of(&turn.st, -who).into_iter().cloned().collect();
     let enemies: Vec<&Unit> = enemies_owned.iter().collect();
@@ -530,9 +525,7 @@ pub fn build_turn_cached<'a>(ctx: &'a Ctx, st: &State, who: i8, plan: &Plan, rng
             }
         }
         let Some((ids, path, _)) = best else { break };
-        if !plan.compat {
-            facing = Facing::None;
-        }
+        let mut facing = Facing::None;
         let t0 = &ctx.x.types[turn.st.u[ids[0]].t];
         if ctx.x.options.orientation && t0.phalanx {
             let end = *path.last().unwrap();
@@ -572,10 +565,6 @@ pub fn build_turn_cached<'a>(ctx: &'a Ctx, st: &State, who: i8, plan: &Plan, rng
 /// Les tours candidats de jocly2 : combats sans bouger, puis les plans, puis
 /// les plans bruités, sans doublon.
 pub fn candidates(ctx: &Ctx, st: &State, who: i8, max: usize, rng: &mut Rng) -> Vec<Move> {
-    candidates_with(ctx, st, who, max, rng, true)
-}
-
-pub fn candidates_with(ctx: &Ctx, st: &State, who: i8, max: usize, rng: &mut Rng, compat: bool) -> Vec<Move> {
     let mut list: Vec<Move> = Vec::new();
     let mut cache = ReachCache::default();
     let mut still = Turn::new(ctx, st, who);
@@ -585,7 +574,7 @@ pub fn candidates_with(ctx: &Ctx, st: &State, who: i8, max: usize, rng: &mut Rng
     while list.len() < max && tries < max * 2 {
         let base = PLANS[tries % PLANS.len()];
         let noisy = tries >= PLANS.len();
-        let plan = Plan { noise: if noisy { 6.0 + (tries % 3) as f64 * 4.0 } else { 0.0 }, compat, ..base };
+        let plan = Plan { noise: if noisy { 6.0 + (tries % 3) as f64 * 4.0 } else { 0.0 }, ..base };
         let mv = build_turn_cached(ctx, st, who, &plan, rng, &mut cache).to_move();
         if !list.contains(&mv) {
             list.push(mv);
