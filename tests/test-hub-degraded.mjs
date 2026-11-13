@@ -7,6 +7,7 @@
 // Après le fix : la liste DOIT se charger quand même (mode dégradé), avec un
 // message d'erreur actionnable en console.
 // Usage : node test-hub-degraded.mjs   (depuis tabulon/)
+import { expectedFavorites } from './helpers/default-favorites.mjs';
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
 import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
@@ -82,7 +83,9 @@ function assert(cond, msg) {
 
 // 1. LE POINT DU BUG : la liste des jeux se charge malgré le hub.html obsolète
 await waitFor(() => $$('#game-list li').length > 0, 'liste chargée en mode dégradé');
-assert($$('#game-list li').length === 10, 'Favorites : 10 jeux affichés (avant le fix : 0, TypeError)');
+const favorites = expectedFavorites(await globalThis.Jocly.listGames());
+assert($$('#game-list li').length === favorites.length,
+  `Favorites : ${favorites.length} jeux affichés (avant le fix : 0, TypeError)`);
 
 // 2. Message d'erreur actionnable en console (pas un TypeError silencieux)
 assert(errors.some(e => e.includes('hub.html obsolète') && e.includes('quickplay')),
