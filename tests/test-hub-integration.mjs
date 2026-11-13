@@ -6,6 +6,7 @@
 // store/os/window), exactement ce que Tauri injecte au runtime.
 //
 // Usage : node test-hub-integration.mjs   (depuis tabulon/, après npm i jsdom dans app/)
+import { expectedFavorites } from './helpers/default-favorites.mjs';
 import { JSDOM } from '../app/node_modules/jsdom/lib/api.js';
 import { completeTauriInjection } from './helpers/tauri-mock.mjs';
 process.chdir(new URL('..', import.meta.url).pathname);   // cwd = racine tabulon/
@@ -91,12 +92,15 @@ function assert(cond, msg) {
   console.log('  ✓ ' + msg); passed++;
 }
 
-// 1. Démarrage : nav par défaut = Favorites (defaultFavorites, 10 jeux dont
+// 1. Démarrage : nav par défaut = Favorites (defaultFavorites connus du dist, dont
 //    Le Jeu de la guerre, embarqué par défaut ; il faut donc un dist de jocly2
 //    construit depuis une branche qui a le module kriegspiel)
 await waitFor(() => $$('#game-list li').length > 0, 'liste initiale rendue');
 assert($('#nav-games-fav').classList.contains('active'), 'nav par défaut = Favorites');
-assert($$('#game-list li').length === 10, `Favorites affiche 10 jeux (défauts) — trouvé ${$$('#game-list li').length}`);
+const defaults = expectedFavorites(await globalThis.Jocly.listGames());
+assert(defaults.length >= 12, `au moins 12 favoris par défaut dans le dist (${defaults.length})`);
+assert($$('#game-list li').length === defaults.length,
+  `Favorites affiche les ${defaults.length} favoris par défaut connus du dist — trouvé ${$$('#game-list li').length}`);
 assert($('#game-detail-empty').style.display !== 'none', 'panneau détail vide au départ (pas de last-game)');
 
 // 2. Nav All → tout le catalogue
