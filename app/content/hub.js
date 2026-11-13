@@ -65,7 +65,9 @@ const defaultFavorites = {
     // 'jeu-de-la-guerre' : le jeu embarque par defaut (dist-minimal). Sans
     // lui dans cette liste, une installation sans dist externe ouvrait sur
     // une page de favoris vide.
-    'classic-chess': 100, 'jeu-de-la-guerre': 95, 'draughts': 90, 'scrum': 80, 'reversi': 70,
+    // 'scrum' n'y est plus : jocly2 (main) le marque obsolete et le laisse
+    // hors du dist -- le Jeu de la guerre a pris sa place.
+    'classic-chess': 100, 'jeu-de-la-guerre': 95, 'draughts': 90, 'reversi': 70,
     // 'morris9' et non '9-men-morris' : c'est le nom que porte le jeu dans le
     // dist de jocly (ses voisins '6-men-morris' et '7-men-morris' ont garde
     // l'ancienne forme, la ligne ci-dessous ne vaut donc que pour celui-ci).
