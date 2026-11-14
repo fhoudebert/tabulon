@@ -22,7 +22,7 @@ Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-def
 ## Examples
 | ![Rococo](game.png) | ![Le jeu de la guerre](jeu-de-la-guerre.png) |
 |:---:|:---:|
-| *Rococo* | *Le jeu de la guerre* |
+| *Rococo* | *Le jeu de la guerre (Guy Debord)* |
 ## Getting started
 
 **You can get ready-to-use, pre-compiled versions of Tabulon available for Windows and Linux (x64 and ARM64) and macOS** on the [Releases page](https://github.com/fhoudebert/tabulon/releases). Download the package for your platform, install (or unpack) it, and launch — Tabulon works out of the box with a starter selection of built-in games. (Prefer building from source? See [DEVELOPMENT.md](DEVELOPMENT.md).)
