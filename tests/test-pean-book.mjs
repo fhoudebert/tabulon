@@ -45,12 +45,14 @@ function pjn(tokens) {
     return '[JoclyGame "pean"]\n[PlyCount "' + tokens.length + '"]\n\n' + body + '\n';
 }
 
-async function playSome(scenarioIndex, plies) {
+async function playSome(scenarioId, plies) {
     const match = await Jocly.createMatch('pean');
     const config = await match.getConfig();
+    const scenarioIndex = config.model.gameOptions.scenarios.findIndex(sc => sc.id === scenarioId);
     const level = Object.assign({}, config.model.levels[0], { maxDuration: 0.3, maxLoops: 10 });
     await match.applyMove({ setup: scenarioIndex });
     await match.applyMove({ skip: 1 });
+    match.scenarioIndex = scenarioIndex;
     for (let i = 0; i < plies; i++) {
         const r = await match.machineSearch({ level, threaded: false });
         if ((await match.applyMove(r.move)).finished) break;
@@ -80,9 +82,11 @@ async function reopen(text) {
     return { match, recorded, format, played, unresolved, total: moves.length };
 }
 
-for (const [name, index, plies] of [['bataille libre', 3, 8], ['Platées', 0, 8], ['Laurion', 1, 6]]) {
+for (const [name, id, plies] of [['bataille libre', 'bataille-libre', 8], ['Platées', 'platees-479', 8],
+                                 ['Laurion', 'laurion-413', 6], ['Thermopyles', 'thermopyles-480', 4]]) {
     console.log('\n' + name);
-    const a = await playSome(index, plies);
+    const a = await playSome(id, plies);
+    const index = a.scenarioIndex;
     const tokens = await a.getMoveString(await a.getPlayedMoves());
     assert(tokens.every(tok => tok && !/\s/.test(tok)), 'un jeton par demi-coup : ' + tokens.slice(2, 4).join(' ') + ' …');
     const back = await reopen(pjn(tokens));
@@ -96,7 +100,9 @@ for (const [name, index, plies] of [['bataille libre', 3, 8], ['Platées', 0, 8]
 
 console.log('\nancienne notation (un jeton par ordre)');
 {
-    const old = '[JoclyGame "pean"]\n\n1. #2 -- 2. D10-D7 1xD6+ 3. K4-K7 L4-L7\n';
+    const config = await (await Jocly.createMatch('pean')).getConfig();
+    const leuctres = config.model.gameOptions.scenarios.findIndex(sc => sc.id === 'leuctres-371');
+    const old = '[JoclyGame "pean"]\n\n1. #' + leuctres + ' -- 2. D10-D7 1xD6+ 3. K4-K7 L4-L7\n';
     const back = await reopen(old);
     // « D10-D7 » se lit seul comme un tour d'un ordre ; « 1xD6+ » ne désigne
     // pas ses attaquants : la lecture s'arrête là au lieu de deviner
