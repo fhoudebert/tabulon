@@ -79,3 +79,17 @@ fn an_unreadable_network_is_refused() {
     assert!(kriegspiel::service::set_net(Some(path.to_str().unwrap())).is_err());
     assert_eq!(kriegspiel::service::net_in_use(), None);
 }
+
+#[test]
+fn readable_notation_is_one_word_like_jocly() {
+    // celle de Move.ToString dans jocly2 : un PJN separe ses coups par des
+    // blancs, un coup ne doit donc pas en contenir
+    use kriegspiel::proto::move_notation;
+    use kriegspiel::rules::{pos_name, Move};
+    let p = |name: &str| (0..500u16).find(|&i| pos_name(i as usize) == name).unwrap();
+    let mv = Move { r: Some((p("E5"), p("E6"))), m: vec![(p("F3"), p("G4")), (p("H2"), p("H4"))], a: Some(p("E7")), ..Move::default() };
+    assert_eq!(move_notation(&mv), "r:E5-E6,F3-G4,H2-H4,xE7");
+    let destroy = Move { m: vec![(p("G7"), p("T3"))], d: Some(p("T3")), ..Move::default() };
+    assert_eq!(move_notation(&destroy), "G7-T3!");
+    assert_eq!(move_notation(&Move::default()), "-");
+}

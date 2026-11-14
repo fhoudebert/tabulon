@@ -2966,9 +2966,16 @@ async function BookReplay(book) {
             exact = MoveFromWestern;
         if (exact) console.info('[play] book: notation', format, '— résolution exacte');
 
+        // Le Jeu de la guerre s'ecrivait avec des blancs dans un coup (avant sa
+        // notation en un mot) : un PJN de ce temps-la se relit en regroupant
+        // les jetons. Sur exactement -- il relit sa notation lui-meme (voir
+        // ReplayBookMoves) ; huit jetons : retraite, cinq pas, attaque, et un
+        // de marge.
+        const join = gameName === 'jeu-de-la-guerre' ? 8 : 0;
         const replay = () => ReplayBookMoves(book.moves, {
             pick: (s) => joclyMatch.pickMove(s).catch(() => null),
             exact,
+            join,
             play: (m) => joclyMatch.playMove(m),
         });
         let { played, unresolved } = await replay();
