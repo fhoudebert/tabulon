@@ -110,7 +110,7 @@ jobs:
             name: windows-arm64
             build: npm run build -- --bundles nsis
             bundle: src-tauri/target/release/bundle
-            portable: tabulon-portable-arm64.exe
+            portable: Tabulon-portable-arm64.exe
           # une seule application pour Apple silicon et Intel ; signature ad hoc
           # ("-") : sans elle le binaire arm64 est refuse par macOS, et sans
           # certificat Apple on ne peut pas faire mieux
@@ -166,14 +166,23 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p out
+          # fichiers publies en « Tabulon* » (productName) ; le nom du paquet
+          # .deb/.rpm reste « tabulon », en minuscules comme Debian et RPM
+          # l'exigent : une installation existante se met a jour. Le renommage
+          # ci-dessous ne sert que si un outil de paquet ecrit encore le fichier
+          # en minuscules
           for f in ${{ matrix.bundle }}/appimage/*.AppImage ${{ matrix.bundle }}/deb/*.deb ${{ matrix.bundle }}/rpm/*.rpm; do
-            if [ -e "$f" ]; then cp "$f" out/; fi
+            if [ -e "$f" ]; then
+              name="$(basename "$f")"
+              cp "$f" "out/Tabulon${name#[Tt]abulon}"
+            fi
           done
-          # l'executable seul, comme tabulon-portable.exe sous Windows : il
+          # l'executable seul, comme Tabulon-portable.exe sous Windows : il
           # n'embarque PAS WebKitGTK (a installer : libwebkit2gtk-4.1), au
           # contraire de l'AppImage ; nomme comme l'artefact (linux-x64,
-          # linux-arm64) pour ne pas confondre les deux architectures
-          cp src-tauri/target/release/tabulon "out/tabulon-${{ matrix.name }}"
+          # linux-arm64) pour ne pas confondre les deux architectures. Le binaire
+          # lui-meme reste « tabulon » (mainBinaryName)
+          cp src-tauri/target/release/tabulon "out/Tabulon-${{ matrix.name }}"
           ls -l out
 
       - name: Collect (Windows)
@@ -186,8 +195,8 @@ jobs:
           if compgen -G "${{ matrix.bundle }}/msi/*.msi" > /dev/null; then
             cp ${{ matrix.bundle }}/msi/*.msi out/
           fi
-          # l'exe seul, nomme selon l'architecture (tabulon-portable.exe en x64)
-          cp src-tauri/target/release/tabulon.exe "out/${{ matrix.portable || 'tabulon-portable.exe' }}"
+          # l'exe seul, nomme selon l'architecture (Tabulon-portable.exe en x64)
+          cp src-tauri/target/release/tabulon.exe "out/${{ matrix.portable || 'Tabulon-portable.exe' }}"
           file out/* 2>/dev/null || true
           ls -l out
 
@@ -204,7 +213,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: tabulon-${{ matrix.name }}
+          name: Tabulon-${{ matrix.name }}
           path: out/*
           if-no-files-found: error
           retention-days: 30
@@ -250,7 +259,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: tabulon-*
+          pattern: Tabulon-*
           path: out
           merge-multiple: true
 

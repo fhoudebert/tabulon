@@ -1051,20 +1051,20 @@ GitHub's native ARM64 runner `ubuntu-22.04-arm`, since Tauri does not
 cross-compile AppImages), Windows (NSIS and MSI
 installers, plus the bare `.exe`; once on x64 and once on GitHub's native
 ARM64 runner `windows-11-arm`, where Tauri makes no MSI: NSIS installer and
-`tabulon-portable-arm64.exe` only) and macOS (one universal app for Apple
+`Tabulon-portable-arm64.exe` only) and macOS (one universal app for Apple
 silicon and Intel, `.dmg` and zipped `.app`) each run `cargo test` then the
 release build, and a last job runs `cargo test --locked` with Rust 1.90, the
-`rust-version`. Artifacts: `tabulon-linux-x64`, `tabulon-linux-arm64`, `tabulon-windows`,
-`tabulon-windows-arm64`,
-`tabulon-macos`, plus `jocly-dist` (the full game library, to place as
+`rust-version`. Artifacts: `Tabulon-linux-x64`, `Tabulon-linux-arm64`, `Tabulon-windows`,
+`Tabulon-windows-arm64`,
+`Tabulon-macos`, plus `jocly-dist` (the full game library, to place as
 `dist/` next to the program). Each Linux artifact also holds the bare
-executable, named like the artifact (`tabulon-linux-x64`,
-`tabulon-linux-arm64`): unlike the AppImage it does not bundle WebKitGTK, so
+executable, named like the artifact (`Tabulon-linux-x64`,
+`Tabulon-linux-arm64`): unlike the AppImage it does not bundle WebKitGTK, so
 it needs `libwebkit2gtk-4.1` installed (as the `.deb`/`.rpm` do). Two limits:
 artifacts lose the executable bit (`chmod +x` the AppImage or the bare
 executable after download), and the macOS app is only signed
 ad hoc, not notarized — Gatekeeper blocks it on first launch (right-click >
-Open, or `xattr -dr com.apple.quarantine tabulon.app`).
+Open, or `xattr -dr com.apple.quarantine Tabulon.app`).
 
 Prerequisites: `dist/` in place (see above), `dist-minimal/` generated
 (`npm run check:dist`) and `npm --prefix app install` (jsdom). The runner
