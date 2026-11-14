@@ -30,6 +30,28 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "BoardGame",
+    "shortDescription": "Play chess, draughts, shogi and many more board games",
+    "longDescription": "Tabulon is a free application for playing board games on your desktop: chess and its variants, draughts, shogi, xiangqi, go, mills, tafl and many more, built on the Jocly game library.",
+    "homepage": "https://github.com/fhoudebert/tabulon",
+    "license": "AGPL-3.0-only",
+    "linux": {
+      "appimage": {
+        "files": {
+          "/usr/share/metainfo/fr.biscandine.tabulon.metainfo.xml": "linux/fr.biscandine.tabulon.metainfo.xml"
+        }
+      },
+      "deb": {
+        "files": {
+          "/usr/share/metainfo/fr.biscandine.tabulon.metainfo.xml": "linux/fr.biscandine.tabulon.metainfo.xml"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/share/metainfo/fr.biscandine.tabulon.metainfo.xml": "linux/fr.biscandine.tabulon.metainfo.xml"
+        }
+      }
+    }
   }
 }

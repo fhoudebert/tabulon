@@ -1,9 +1,15 @@
 # Tabulon : binaires Tauri pour Linux, Windows et macOS.
 # - jocly : dist de jocly2 (branche JOCLY2_REF) construit une fois, puis le
-#   dist-minimal embarque qui en est tire ; les deux deviennent des artefacts
+#   dist-minimal embarque qui en est tire ; les deux deviennent des artefacts,
+#   avec dist-selection : les jeux de selection.txt (gulp --games, --prod)
 # - desktop : tests Rust puis build de release sur chaque systeme
 #     Linux   : AppImage (purgee des libwayland-*, via compil.sh), .deb, .rpm,
 #               en x86_64 et en ARM64 (runner ARM natif : Tauri ne croise pas)
+#               Deux AppImages, qui se mettent a jour (AppImageUpdate, .zsync) :
+#                 Tabulon-minimal-<version>-<arch>.AppImage : le dist minimal,
+#                   a completer par un dist/ externe ou des extensions
+#                 Tabulon-selection-<version>-<arch>.AppImage : les jeux de
+#                   selection.txt, prete a jouer ; celle d'appimage.github.io
 #     Windows : installeurs NSIS (.exe) et MSI, plus l'exe seul, en x64 ;
 #               en ARM64 (runner ARM natif windows-11-arm) : NSIS et exe seul
 #     macOS   : une seule application pour Apple silicon et Intel (universelle),
@@ -52,9 +58,21 @@ jobs:
         with:
           node-version: 26
 
-      - name: Build the jocly2 dist
+      # gulp vide dist/ a chaque build : la selection est copiee (browser/
+      # seulement, l'application n'utilise pas node/) avant le build complet
+      - name: Build the jocly2 dists (selection, then full)
         working-directory: jocly2
-        run: npm install --no-audit --no-fund && npx gulp build
+        run: |
+          npm install --no-audit --no-fund
+          npx gulp --games "$(node ../scripts/selection-games.mjs)" build --prod
+          mkdir -p ../dist-selection
+          cp -r dist/browser ../dist-selection/
+          npx gulp build
+
+      # gulp --games ignore un nom inconnu sans rien dire : chaque jeu de
+      # selection.txt doit etre dans le dist construit
+      - name: Selection check
+        run: node scripts/selection-games.mjs --check dist-selection
 
       # check-dist genere dist-minimal (TABULON_MODULES) et echoue s'il est
       # vide ou sans moteur (une app sans aucun jeu a deja ete livree ainsi)
@@ -67,6 +85,14 @@ jobs:
         with:
           name: dist-minimal
           path: dist-minimal
+          if-no-files-found: error
+          retention-days: 7
+
+      # embarque tel quel dans Tabulon-selection (comme dist-minimal)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-selection
+          path: dist-selection
           if-no-files-found: error
           retention-days: 7
 
@@ -90,6 +116,7 @@ jobs:
           # utilisables sur le plus grand nombre de distributions
           - os: ubuntu-22.04
             name: linux-x64
+            variant: minimal
             build: ./compil.sh
             bundle: src-tauri/target/release/bundle
           # ARM64 (Raspberry Pi 4/5 en 64 bits, portables Snapdragon, serveurs
@@ -97,7 +124,22 @@ jobs:
           # 22.04 que ci-dessus pour la meme raison de glibc
           - os: ubuntu-22.04-arm
             name: linux-arm64
+            variant: minimal
             build: ./compil.sh
+            bundle: src-tauri/target/release/bundle
+          # Tabulon-selection : AppImage seule, dist-selection embarque a la
+          # place de dist-minimal ; meme glibc (22.04) que ci-dessus
+          - os: ubuntu-22.04
+            name: linux-x64-selection
+            variant: selection
+            dist: dist-selection
+            build: ./compil.sh --bundles appimage
+            bundle: src-tauri/target/release/bundle
+          - os: ubuntu-22.04-arm
+            name: linux-arm64-selection
+            variant: selection
+            dist: dist-selection
+            build: ./compil.sh --bundles appimage
             bundle: src-tauri/target/release/bundle
           - os: windows-latest
             name: windows
@@ -124,9 +166,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # le dist embarque : dist-minimal, ou dist-selection pour Tabulon-selection
       - uses: actions/download-artifact@v8
         with:
-          name: dist-minimal
+          name: ${{ matrix.dist || 'dist-minimal' }}
           path: dist-minimal
 
       - name: Linux libraries for Tauri
@@ -151,12 +194,21 @@ jobs:
       - name: Tauri command line
         run: npm ci --no-audit --no-fund
 
+      # une fois par systeme : la variante selection ne change que le dist
       - name: Rust tests
+        if: matrix.variant != 'selection'
         working-directory: src-tauri
         run: cargo test --locked
 
+      # Linux : TABULON_VARIANT nomme l'AppImage Tabulon-<variante>-<version>-
+      # <arch> et TABULON_UPDATE_REPO y inscrit sa mise a jour
+      # (gh-releases-zsync, derniere release de ce depot), avec le .zsync a
+      # publier a cote (scripts/fix-appimage.mjs) ; sans effet ailleurs
       - name: Build
         shell: bash
+        env:
+          TABULON_VARIANT: ${{ matrix.variant }}
+          TABULON_UPDATE_REPO: ${{ matrix.variant && github.repository || '' }}
         run: ${{ matrix.build }}
 
       # upload-artifact perd les droits d'execution : l'AppImage est remise
@@ -171,18 +223,24 @@ jobs:
           # l'exigent : une installation existante se met a jour. Le renommage
           # ci-dessous ne sert que si un outil de paquet ecrit encore le fichier
           # en minuscules
-          for f in ${{ matrix.bundle }}/appimage/*.AppImage ${{ matrix.bundle }}/deb/*.deb ${{ matrix.bundle }}/rpm/*.rpm; do
+          for f in ${{ matrix.bundle }}/deb/*.deb ${{ matrix.bundle }}/rpm/*.rpm; do
             if [ -e "$f" ]; then
               name="$(basename "$f")"
               cp "$f" "out/Tabulon${name#[Tt]abulon}"
             fi
           done
+          # l'AppImage et son .zsync, deja sous leur nom publie (compil.sh) :
+          # le .zsync designe l'AppImage par son nom, ne pas la renommer
+          cp ${{ matrix.bundle }}/appimage/Tabulon-${{ matrix.variant }}-*.AppImage out/
+          cp ${{ matrix.bundle }}/appimage/Tabulon-${{ matrix.variant }}-*.AppImage.zsync out/
           # l'executable seul, comme Tabulon-portable.exe sous Windows : il
           # n'embarque PAS WebKitGTK (a installer : libwebkit2gtk-4.1), au
           # contraire de l'AppImage ; nomme comme l'artefact (linux-x64,
           # linux-arm64) pour ne pas confondre les deux architectures. Le binaire
           # lui-meme reste « tabulon » (mainBinaryName)
-          cp src-tauri/target/release/tabulon "out/Tabulon-${{ matrix.name }}"
+          if [ "${{ matrix.variant }}" = minimal ]; then
+            cp src-tauri/target/release/tabulon "out/Tabulon-${{ matrix.name }}"
+          fi
           ls -l out
 
       - name: Collect (Windows)
@@ -272,5 +330,5 @@ jobs:
           ls -l out
           gh release view "$TAG" > /dev/null 2>&1 \
             || gh release create "$TAG" --title "Tabulon $TAG" \
-                 --notes "Tabulon pour Linux (x86-64, ARM64 : AppImage, .deb, .rpm, executable seul), Windows x64 (installeurs NSIS et MSI, exe portable) et ARM64 (installeur NSIS, exe portable) et macOS (application universelle, signee ad hoc)."
+                 --notes "Tabulon pour Linux (x86-64, ARM64 : AppImages Tabulon-selection, prete a jouer, et Tabulon-minimal, mises a jour par AppImageUpdate ; .deb, .rpm, executable seul), Windows x64 (installeurs NSIS et MSI, exe portable) et ARM64 (installeur NSIS, exe portable) et macOS (application universelle, signee ad hoc)."
           gh release upload "$TAG" out/* --clobber

@@ -25,6 +25,8 @@ Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-def
 
 **You can get ready-to-use, pre-compiled versions of Tabulon available for Windows and Linux (x64 and ARM64) and macOS** on the [Releases page](https://github.com/fhoudebert/tabulon/releases). Download the package for your platform, install (or unpack) it, and launch — Tabulon works out of the box with a starter selection of built-in games. (Prefer building from source? See [DEVELOPMENT.md](DEVELOPMENT.md).)
 
+On Linux, two AppImages need no installation: **`Tabulon-selection`** comes with about thirty-five ready-to-play games (chess and variants, shogi, xiangqi, draughts, go 9×9, reversi, tafl…), **`Tabulon-minimal`** is the small one to complete with the full library or extensions. Make the file executable (`chmod +x Tabulon-selection-*.AppImage`) and run it. Both update themselves to the latest release with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate), downloading only what changed. They run on Ubuntu 22.04 and later and on distributions of the same age (glibc 2.35).
+
 These pre-built versions are not fixed: the game library of any installed Tabulon can be **customized** — up to the **full 125-game library** — in two ways:
 
 1. **Install extensions (add or remove games)** — the easiest way. Open the **Extensions** screen (hub sidebar, Configuration group) and import downloaded `.tabulon-ext` files. Browse the catalogue:

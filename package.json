@@ -30,7 +30,7 @@
     "test:all": "npm test && npm run test:rust",
     "check:dist": "node scripts/check-dist.mjs",
     "set-version": "node scripts/set-version.mjs",
-    "version": "node scripts/set-version.mjs && git add package-lock.json app/package.json src-tauri/Cargo.toml src-tauri/Cargo.lock"
+    "version": "node scripts/set-version.mjs && git add package-lock.json app/package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/linux/fr.biscandine.tabulon.metainfo.xml"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4"

@@ -94,7 +94,7 @@ the executable — no rebuild needed:
 
 ```
 tabulon/
-├── tabulon.exe          (or tabulon.AppImage, Tabulon.app)
+├── tabulon.exe          (or Tabulon-minimal-….AppImage, Tabulon.app)
 └── dist/                a full jocly2 build (browser/ + games/)
 └── engine  (expert mode)
     └── nnue  (optionnal)
@@ -103,6 +103,73 @@ tabulon/
                                 Jeu de la guerre engine; see
                                 src-tauri/crates/kriegspiel/README.md)
 ```
+
+## Linux AppImages: two variants, self-updating, appimage.github.io
+
+The release workflow publishes two AppImages per architecture (`x86_64`,
+`aarch64`), named as appimage.github.io expects
+(`App-version-arch.AppImage`):
+
+| AppImage | Embedded dist | For |
+|---|---|---|
+| `Tabulon-minimal-<version>-<arch>.AppImage` | `dist-minimal/` as usual (`kriegspiel`) | an external `dist/` next to it, or extensions |
+| `Tabulon-selection-<version>-<arch>.AppImage` | the games of `selection.txt` | playing at once, no install; the one listed on appimage.github.io |
+
+`selection.txt` lists jocly2 **game names** (keys of `jocly-allgames.js`, e.g.
+`morris9`, not `9-men-morris`). `gulp --games` silently skips an unknown name,
+so `node scripts/selection-games.mjs --check <dist>` checks that each one made
+it (the workflow runs it; `tests/test-selection.mjs` covers the script). To
+build the selection AppImage locally:
+
+```bash
+# in jocly2 (gulp empties dist/ on every build)
+npx gulp --games "$(node ../tabulon/scripts/selection-games.mjs)" build --prod
+# in tabulon: the selection becomes the embedded dist (browser/ only)
+rm -rf dist-minimal src-tauri/target/release && mkdir dist-minimal
+cp -r ../jocly2/dist/browser dist-minimal/
+node scripts/selection-games.mjs --check dist-minimal
+TABULON_VARIANT=selection ./compil.sh --bundles appimage
+```
+
+**Updates.** With `TABULON_VARIANT` and `TABULON_UPDATE_REPO=owner/repo`,
+`scripts/fix-appimage.mjs` embeds the update information
+`gh-releases-zsync|owner|repo|latest|Tabulon-<variant>-*-<arch>.AppImage.zsync`
+and writes the `.zsync` next to the AppImage (appimagetool's built-in
+zsyncmake); both go into the release. Each variant and architecture only
+updates to itself. Users update with
+[AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (or
+`appimageupdatetool Tabulon-selection-….AppImage`), which downloads only the
+changed blocks; AppImageLauncher or Gear Lever do it from the desktop. The
+app itself does not check for updates. Never rename a published AppImage:
+its `.zsync` names it.
+
+**glibc.** An AppImage needs at least the glibc of the machine that built it
+(WebKitGTK and GTK come from the host's glibc ecosystem, so bundling glibc is
+not an option). The workflow builds on Ubuntu 22.04 (glibc 2.35): the AppImages
+run on 22.04, 24.04 (2.39) and later, and on other distributions of the same
+age. A local build on 24.04 needs `GLIBC_2.39` and does **not** start on 22.04:
+publish the workflow's AppImages, not local ones.
+
+**appimage.github.io.** What its test checks, and how Tabulon meets it:
+starts on the oldest supported Ubuntu LTS (22.04 build), `desktop-file-validate`
+(`bundle.category` gives `Categories=Game;BoardGame;`, `shortDescription` the
+`Comment`), `appdir-lint.sh` (`.DirIcon`, one desktop file), AppStream metainfo
+`usr/share/metainfo/fr.biscandine.tabulon.metainfo.xml`
+(`src-tauri/linux/`, installed by `bundle.linux.*.files`; `set-version.mjs`
+adds a `<release>` for each new version), a window under X11 without network.
+Their lint only looks for `*appdata.xml` and warns about a missing appdata
+file; that warning does not fail the test. Submission, once a release with the
+AppImages exists: a pull request to
+[AppImage/appimage.github.io](https://github.com/AppImage/appimage.github.io)
+adding the file `data/Tabulon`, containing the single line
+
+```
+https://github.com/fhoudebert/tabulon#selection
+```
+
+The `#selection` channel picks `Tabulon-selection-…-x86_64.AppImage` among
+the release's AppImages (their `find-appimage.sh`); without it the test stops
+on "several AppImages".
 
 ## Extensions (import/export games)
 
@@ -179,7 +246,7 @@ At startup Tabulon looks for a usable external dist in this order: the
 `TABULON_DIST` environment variable (absolute path), then `dist/` next to the
 program. For an **AppImage**, "next to the program" means next to the
 `.AppImage` file itself (resolved via `$APPIMAGE`), not the temporary mount —
-so place `dist/` in the same folder as `tabulon.AppImage`. For a macOS `.app`
+so place `dist/` in the same folder as the `.AppImage`. For a macOS `.app`
 bundle, place `dist/` next to the bundle. If found, requests for `browser/**` and `games/**` are
 served from it (falling back to the embedded minimal dist for anything
 missing); otherwise only the bundled games are available. The active source is
@@ -969,7 +1036,8 @@ All scripts live in `scripts/` and run with Node (≥ 20), no install needed.
 | `make-minimal-dist.mjs` | Builds `dist-minimal/` (the embedded library) from a full `dist/`. The module selection belongs to whoever builds: `node scripts/make-minimal-dist.mjs chessbase checkers` (default: `kriegspiel`, Le Jeu de la guerre — the game whose native engine Tabulon also embeds; also `TABULON_MODULES="a,b"`). Fails loudly — and leaves nothing behind — if the selection keeps no game or a game file is missing. Remember `rm -rf src-tauri/target` afterwards so the build re-embeds it. |
 | `make-extension.mjs` | Packages extensions without the app — the tool that feeds the extension catalogue. Game: `node scripts/make-extension.mjs seireigi out/`. Module: `node scripts/make-extension.mjs --module margo out/`. Source: the repo's `dist/` by default, or any dist via `--dist path` (including a single-module gulp build). Mirrors the Rust logic in `src-tauri/src/commands/extension_cmds.rs` — keep both in sync. |
 | `export-all.mjs` | One-shot full export of a dist into the publishable catalogue: every module to `modules/`, every game to `games/`, each with a static `index.html` (download links; games grouped by module then sorted by title) and a landing page. `node scripts/export-all.mjs [outdir=ext] [--dist path]`, then publish `outdir` content under `ext/` on GitHub Pages. Reuses `make-extension.mjs`; a failing item is reported and does not stop the run (exit 1 at the end). |
-| `fix-appimage.mjs` | Post-build: strips the bundled `libwayland-*` from the AppImage and repacks it (Arch/Manjaro `EGL_BAD_PARAMETER` fix — see Troubleshooting). Run after every `cargo tauri build` that produces an AppImage. x86_64 and aarch64 (picks the matching `appimagetool`). |
+| `fix-appimage.mjs` | Post-build: strips the bundled `libwayland-*` from the AppImage and repacks it (Arch/Manjaro `EGL_BAD_PARAMETER` fix — see Troubleshooting). Run after every `cargo tauri build` that produces an AppImage. x86_64 and aarch64 (picks the matching `appimagetool`). With `TABULON_VARIANT` (and `TABULON_UPDATE_REPO`): published name and update information, see "Linux AppImages". |
+| `selection-games.mjs` | The games of `Tabulon-selection` (`selection.txt`): prints them `:`-separated for `gulp --games`, or `--check <dist>` verifies a built dist contains each one. |
 | `check-webrtc-webview.py` | Empirical probe: does the embedded webview (WebKitGTK on Linux) expose `RTCPeerConnection`? Loads an offscreen WebView and, if the API exists, runs a full local WebRTC loopback (offer/answer, ICE without STUN, DataChannel ping/pong) and prints a JSON verdict. Current verdict (Ubuntu 24.04 / WebKitGTK 2.52): **no** — distribution builds are compiled without WebRTC, the finding that steered peer-to-peer play to the Rust TCP transport. **Keep it around to re-evaluate WebRTC in the future**: rerun on new distros/WebKitGTK releases; if it ever reports a working DataChannel, WebRTC (with STUN/TURN) becomes a candidate transport adding the NAT traversal TCP lacks. Needs `python3-gi gir1.2-webkit2-4.1 xvfb`; run: `xvfb-run -a python3 scripts/check-webrtc-webview.py`. Linux-only by nature (WebView2/Chromium on Windows ships WebRTC). |
 | `check-remote-relay.mjs` | Live smoke test of the remote-play HTTP protocol against a real jocly-simple-match `fileio.php` instance: `node scripts/check-remote-relay.mjs [relay-url]` (default: biscandine.fr's instance). Writes/reads only a randomly-generated test match id. |
 | `check-jocly-compat.mjs` | Same idea, for the `'jocly-simple-match'` codec specifically: `node scripts/check-jocly-compat.mjs [relay-url]`. Confirms both directions — what Tabulon writes has the exact shape `control.js` expects, and Tabulon correctly reads a payload shaped exactly like what `control.js` itself writes. |
@@ -1045,8 +1113,10 @@ vX.Y.Z && git push origin vX.Y.Z`, with the version of `package.json`); for a ta
 packages in the GitHub release of that tag (created if needed; the full
 jocly dist is not included, it is published with jocly2). One job builds the jocly2 dist
 once and derives `dist-minimal/` from it (`TABULON_MODULES` in the workflow
-chooses the embedded modules); then Linux (Ubuntu 22.04, the oldest glibc:
-AppImage purged by `compil.sh`, `.deb`, `.rpm`; once on x86_64 and once on
+chooses the embedded modules), plus `dist-selection` (the games of
+`selection.txt`); then Linux (Ubuntu 22.04, the oldest glibc:
+AppImages `Tabulon-minimal-…` and `Tabulon-selection-…` with their `.zsync`,
+purged by `compil.sh`, `.deb`, `.rpm`; once on x86_64 and once on
 GitHub's native ARM64 runner `ubuntu-22.04-arm`, since Tauri does not
 cross-compile AppImages), Windows (NSIS and MSI
 installers, plus the bare `.exe`; once on x64 and once on GitHub's native
@@ -1054,7 +1124,8 @@ ARM64 runner `windows-11-arm`, where Tauri makes no MSI: NSIS installer and
 `Tabulon-portable-arm64.exe` only) and macOS (one universal app for Apple
 silicon and Intel, `.dmg` and zipped `.app`) each run `cargo test` then the
 release build, and a last job runs `cargo test --locked` with Rust 1.90, the
-`rust-version`. Artifacts: `Tabulon-linux-x64`, `Tabulon-linux-arm64`, `Tabulon-windows`,
+`rust-version`. Artifacts: `Tabulon-linux-x64`, `Tabulon-linux-arm64`,
+`Tabulon-linux-x64-selection`, `Tabulon-linux-arm64-selection`, `Tabulon-windows`,
 `Tabulon-windows-arm64`,
 `Tabulon-macos`, plus `jocly-dist` (the full game library, to place as
 `dist/` next to the program). Each Linux artifact also holds the bare
