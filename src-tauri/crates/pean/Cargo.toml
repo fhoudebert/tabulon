@@ -1,0 +1,33 @@
+# Moteur de Péan (wargame à hexagones, jocly2) pour Tabulon : niveau Maréchal.
+#
+# Les règles sont celles de jocly2 (src/games/pean/pean-rules.js), qui reste la
+# référence : tests/differential.rs rejoue des parties produites par ce
+# fichier et compare tout, position par position. Le moteur ne lit pas les
+# scénarios : jocly2 lui envoie le contexte déjà compilé
+# (PeanRules.exportContext), en JSON.
+[package]
+name         = "pean"
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.75"
+license      = "AGPL-3.0-only"
+description  = "Moteur de Péan (jocly2) : règles, évaluation, recherche"
+
+[lib]
+name = "pean"
+path = "src/lib.rs"
+
+# un coup par ligne, en JSON : pour les tests et les matchs de mesure
+[[bin]]
+name = "pean-engine"
+path = "src/main.rs"
+
+[dependencies]
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+panic         = "abort"

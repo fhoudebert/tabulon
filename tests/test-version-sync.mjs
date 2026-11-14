@@ -64,6 +64,11 @@ console.log('Fichiers dérivés');
         const entry = /\[\[package\]\]\r?\nname = "tabulon"\r?\nversion = "([^"]*)"/.exec(lock);
         ok(entry && entry[1] === version, `src-tauri/Cargo.lock (trouvé : ${entry?.[1]})`);
     }
+
+    // Métadonnées AppStream : la version en cours est la première <release>.
+    const meta = readFileSync(at('src-tauri', 'linux', 'fr.biscandine.tabulon.metainfo.xml'), 'utf-8');
+    const rel = /<releases>\s*<release\s+version="([^"]*)"\s+date="(\d{4}-\d{2}-\d{2})"/.exec(meta);
+    ok(rel && rel[1] === version, `metainfo AppStream, première <release> (trouvé : ${rel?.[1]})`);
 }
 
 console.log('Outillage');
@@ -86,7 +91,8 @@ console.log('Outillage');
     // et passait au second, parce qu'elle avait elle-même modifié l'arbre.
     const tmp = mkdtempSync(path.join(os.tmpdir(), 'tabulon-version-'));
     for (const rel of ['package.json', 'package-lock.json', 'app/package.json',
-                       'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'scripts/set-version.mjs']) {
+                       'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'scripts/set-version.mjs',
+                       'src-tauri/linux/fr.biscandine.tabulon.metainfo.xml']) {
         mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
         copyFileSync(at(rel), path.join(tmp, rel));
     }
@@ -111,7 +117,8 @@ console.log('Aucune copie oubliée ailleurs');
     try {
         files = execFileSync('git', ['-C', root, 'grep', '-l', '-F', version, '--',
             ':!package.json', ':!package-lock.json', ':!app/package.json',
-            ':!src-tauri/Cargo.toml', ':!src-tauri/Cargo.lock', ':!tests/test-version-sync.mjs'],
+            ':!src-tauri/Cargo.toml', ':!src-tauri/Cargo.lock', ':!tests/test-version-sync.mjs',
+            ':!src-tauri/linux/fr.biscandine.tabulon.metainfo.xml'],
             { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
     } catch { /* git grep sort en 1 quand il ne trouve rien : c'est le cas nominal */ }
     ok(files.length === 0,

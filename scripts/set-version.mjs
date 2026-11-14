@@ -11,6 +11,9 @@
 //   app/package.json      version du paquet frontend
 //   src-tauri/Cargo.toml  version du crate
 //   src-tauri/Cargo.lock  entree du crate tabulon (le lock est versionne)
+//   src-tauri/linux/fr.biscandine.tabulon.metainfo.xml
+//                         une <release> datee du jour en tete, si la version
+//                         n'y est pas deja (AppStream, appimage.github.io)
 //
 // Ce qui n'est PAS écrit, et pourquoi : src-tauri/tauri.conf.json porte
 // désormais `"version": "../package.json"`. Ce n'est pas une astuce, c'est le
@@ -108,6 +111,24 @@ function setVersion(version) {
         if (!entry.test(text))
             throw new Error('src-tauri/Cargo.lock : entree du crate tabulon introuvable');
         if (write(lockRs, text.replace(entry, `$1"${version}"`))) touched.push('src-tauri/Cargo.lock');
+    }
+
+    // 6. Métadonnées AppStream (logithèques Linux, appimage.github.io) : la
+    //    version en cours doit être la PREMIÈRE <release>, la plus récente.
+    //    Les précédentes restent (historique). Date du jour à l'ajout ; une
+    //    version déjà listée n'est jamais redatée (idempotence).
+    const metaFile = at('src-tauri', 'linux', 'fr.biscandine.tabulon.metainfo.xml');
+    if (existsSync(metaFile)) {
+        const meta = readFileSync(metaFile, 'utf-8');
+        const first = /<releases>\s*<release\s+version="([^"]*)"/.exec(meta);
+        if (!/<releases>/.test(meta))
+            throw new Error('metainfo : aucune section <releases>');
+        if (!first || first[1] !== version) {
+            const today = new Date().toISOString().slice(0, 10);
+            const next = meta.replace(/(<releases>)(\s*)/,
+                (m, tag, ws) => `${tag}${ws}<release version="${version}" date="${today}"/>${ws}`);
+            if (write(metaFile, next)) touched.push('src-tauri/linux/fr.biscandine.tabulon.metainfo.xml');
+        }
     }
 
     return { version, previous, touched };

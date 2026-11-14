@@ -1,0 +1,47 @@
+# Jeux embarqués dans Tabulon-selection (AppImage publiée sur appimage.github.io).
+# Un nom de jeu jocly2 par ligne (clé de jocly-allgames.js, pas le module) ;
+# lu par scripts/selection-games.mjs, qui donne la liste à `gulp --games` et
+# vérifie que le dist construit contient chacun d'eux. Voir DEVELOPMENT.md.
+
+# échecs et variantes
+classic-chess
+losing-chess
+chess960
+crazyhouse
+capablanca-chess
+courier-chess
+heavychess
+hectochess
+fantasticXIII-chess
+bigorra-chess
+werewolf-chess
+spartan-chess
+khans-chess
+seirawan-chess
+shako-chess
+glinski-chess
+metamachy-chess
+raumschach
+ultima
+rococo
+rocaille
+
+# Asie
+xiangqi
+shogi
+kyoto-shogi
+minjiku-shogi
+go9
+
+# dames
+draughts
+turkish-draughts
+
+# autres
+morris9
+fiveinarow
+reversi
+margo6
+tafl-hnefatafl
+alea-evangelii
+jeu-de-la-guerre

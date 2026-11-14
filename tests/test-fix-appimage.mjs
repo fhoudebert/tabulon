@@ -7,7 +7,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, chmodSync, statSync, symlinkSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import os from 'node:os';
-import { shouldStrip, stripAppDir, appimageArch, restoreModes } from '../scripts/fix-appimage.mjs';
+import { shouldStrip, stripAppDir, appimageArch, restoreModes, releaseName, updateInformation } from '../scripts/fix-appimage.mjs';
 
 let passed = 0;
 function assert(cond, msg) {
@@ -87,6 +87,28 @@ for (const a of ['arm', 'ia32', 'riscv64', 'ppc64', undefined]) {
     assert(JSON.stringify(stripAppDir(dir)) === JSON.stringify([]),
         'AppDir sans usr/lib toléré (liste vide)');
     rmSync(dir, { recursive: true, force: true });
+}
+
+// ── 6. Publication : nom et information de mise à jour ──────────────────────
+{
+    const throws = (f) => { try { f(); return false; } catch { return true; } };
+    assert(releaseName('minimal', '1.2.0', 'x86_64') === 'Tabulon-minimal-1.2.0-x86_64.AppImage',
+        'nom publié : Tabulon-<variante>-<version>-<arch>.AppImage');
+    assert(releaseName('selection', '1.2.0-rc1', 'aarch64') === 'Tabulon-selection-1.2.0-rc1-aarch64.AppImage',
+        'pré-version et ARM64');
+    assert(throws(() => releaseName('all', '1.2.0', 'x86_64')), 'variante inconnue refusée');
+    assert(throws(() => releaseName('minimal', 'v1.2', 'x86_64')), 'version invalide refusée');
+    const u = updateInformation('fhoudebert/tabulon', 'selection', 'x86_64');
+    assert(u === 'gh-releases-zsync|fhoudebert|tabulon|latest|Tabulon-selection-*-x86_64.AppImage.zsync',
+        'gh-releases-zsync : dernière release, même variante, même architecture');
+    // le motif doit reconnaître le .zsync du nom publié, et lui seul
+    const glob = u.split('|')[4];
+    const re = new RegExp('^' + glob.replace(/[.]/g, '\\.').replace(/\*/g, '.*') + '$');
+    assert(re.test(releaseName('selection', '9.9.9', 'x86_64') + '.zsync'), 'le motif reconnaît le .zsync publié');
+    assert(!re.test(releaseName('minimal', '9.9.9', 'x86_64') + '.zsync'), 'pas celui de l\'autre variante');
+    assert(!re.test(releaseName('selection', '9.9.9', 'aarch64') + '.zsync'), 'ni celui de l\'autre architecture');
+    assert(throws(() => updateInformation('tabulon', 'minimal', 'x86_64')), 'dépôt sans propriétaire refusé');
+    assert(throws(() => updateInformation('a/b|c', 'minimal', 'x86_64')), 'séparateur | refusé dans le dépôt');
 }
 
 console.log(`\ntest-fix-appimage: ${passed} assertions OK`);

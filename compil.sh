@@ -17,6 +17,11 @@
 #           src-tauri/target/release/bundle/appimage/
 #           (l'originale non purgée est conservée en .AppImage.orig —
 #           NE PAS distribuer le .orig)
+#
+# Publication (workflow de release) :
+#   TABULON_VARIANT=minimal|selection TABULON_UPDATE_REPO=proprietaire/depot ./compil.sh
+#           → Tabulon-<variante>-<version>-<arch>.AppImage + son .zsync, avec
+#           l'information de mise a jour verifiee (scripts/fix-appimage.mjs)
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -50,6 +55,13 @@ if [ -z "${NO_STRIP+x}" ] && [ -r /etc/os-release ]; then
     esac
 fi
 
+APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
+# AppImages publiees d'un build precedent (TABULON_VARIANT, voir
+# scripts/fix-appimage.mjs) : tauri build ne les ecrase pas, elles seraient
+# reprises ci-dessous ou distribuees par erreur a la place de la nouvelle
+rm -f "$APPIMAGE_DIR"/Tabulon-minimal-*.AppImage "$APPIMAGE_DIR"/Tabulon-minimal-*.AppImage.zsync \
+      "$APPIMAGE_DIR"/Tabulon-selection-*.AppImage "$APPIMAGE_DIR"/Tabulon-selection-*.AppImage.zsync
+
 echo "== [1/3] Build (npm run build : check-dist + frontend + tauri build) =="
 if ! npm run build -- "$@"; then
     cat >&2 <<'MSG'
@@ -66,7 +78,6 @@ MSG
     exit 1
 fi
 
-APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
 shopt -s nullglob
 apps=("$APPIMAGE_DIR"/*.AppImage)
 shopt -u nullglob
@@ -82,6 +93,11 @@ for app in "${apps[@]}"; do
     node scripts/fix-appimage.mjs "$app"
 done
 
+# TABULON_VARIANT les a renommees en Tabulon-<variante>-<version>-<arch>
+shopt -s nullglob
+apps=("$APPIMAGE_DIR"/*.AppImage)
+shopt -u nullglob
+
 echo "== [3/3] Preuve : ré-extraction et vérification de chaque AppImage =="
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
@@ -95,6 +111,16 @@ for app in "${apps[@]}"; do
         exit 1
     fi
     echo "OK : $(basename "$app") — aucune libwayland-* embarquée (vérifié par extraction)"
+    if [ -n "${TABULON_UPDATE_REPO:-}" ] && [ -n "${TABULON_VARIANT:-}" ]; then
+        # sans APPIMAGE_EXTRACT_AND_RUN : avec, le runtime ignore les options
+        # --appimage-* et lance l'application elle-meme
+        info="$(env -u APPIMAGE_EXTRACT_AND_RUN "$PWD/$app" --appimage-updateinformation 2>/dev/null || true)"
+        case "$info" in
+            gh-releases-zsync\|*) [ -s "$app.zsync" ] || { echo "compil.sh : ÉCHEC — $app.zsync absent" >&2; exit 1; }
+                                  echo "OK : mise à jour $info" ;;
+            *) echo "compil.sh : ÉCHEC — $app sans information de mise à jour" >&2; exit 1 ;;
+        esac
+    fi
 done
 
 echo

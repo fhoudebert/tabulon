@@ -14,6 +14,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # ── Moteur du Jeu de la guerre (bibliotheque du depot, sans dependance) ───────
 kriegspiel = { path = "crates/kriegspiel" }
+# ── Moteur de Péan, niveau « Maréchal » (bibliotheque du depot) ───────────────
+pean = { path = "crates/pean" }
 # ── Tauri core ────────────────────────────────────────────────────────────────
 tauri = { version = "2.12.5", features = ["devtools"] }
 
@@ -57,6 +59,12 @@ anyhow      = "1"         # gestion d'erreurs ergonomique
 opt-level = 3
 
 [profile.release.package.kriegspiel]
+opt-level = 3
+
+[profile.dev.package.pean]
+opt-level = 3
+
+[profile.release.package.pean]
 opt-level = 3
 
 [profile.release]

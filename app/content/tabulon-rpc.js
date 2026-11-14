@@ -166,6 +166,10 @@ function buildPayload(method, args) {
     kriegspiel_probe:    ()                        => ({}),
     kriegspiel_search:   ([request])               => ({ request }),
     kriegspiel_stop:     ()                        => ({}),
+    // moteur de Péan (crate pean, lié) : la requête est le texte JSON de jocly
+    pean_probe:          ()                        => ({}),
+    pean_search:         ([request])               => ({ request }),
+    pean_stop:           ()                        => ({}),
     // discussion a distance : le scellement vit en Rust, voir seal_cmds.rs
     open_chat:           ([matchId])               => ({ matchId }),
     seal_text:           ([key, text])             => ({ key, text }),

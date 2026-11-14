@@ -174,7 +174,8 @@ pub fn parse_move(text: &str) -> Result<Move, String> {
     Ok(mv)
 }
 
-/// notation lisible, celle de `Move.ToString` dans jocly2 : `r:E5-E6 F3-G4 xE7`
+/// notation lisible, celle de `Move.ToString` dans jocly2, en un seul mot :
+/// `r:E5-E6,F3-G4,xE7` (un PJN separe ses coups par des blancs)
 pub fn move_notation(mv: &Move) -> String {
     if mv.p.is_some() {
         return format_move(mv);
@@ -198,5 +199,5 @@ pub fn move_notation(mv: &Move) -> String {
     if let Some(t) = mv.a {
         parts.push(format!("x{}", pos_name(t as usize)));
     }
-    if parts.is_empty() { "-".into() } else { parts.join(" ") }
+    if parts.is_empty() { "-".into() } else { parts.join(",") }
 }

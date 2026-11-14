@@ -168,10 +168,21 @@ export function ExtractMoves(text) {
  * se devine pas : il court-circuite les deux tolerances ci-dessus, qui
  * feraient plus de mal que de bien. Voir MoveFormat().
  *
+ * `join` (nombre de jetons, 0 par defaut) : un coup ecrit en PLUSIEURS
+ * jetons. L'ancienne notation du Jeu de la guerre mettait des blancs dans un
+ * coup (« Nord: I@C3,… », « F3-G4 H2-H4 xE7 ») et ExtractMoves, qui coupe aux
+ * blancs, en faisait plusieurs coups. On essaie alors le PLUS LONG groupe de
+ * jetons (jusqu'a `join`) que `pick` accepte. Reserve aux jeux qui relisent
+ * leur notation exactement (Model.Board.ParseMove : pick rend null sur ce
+ * qu'il ne lit pas) : avec la lecture floue, le groupe le plus long serait
+ * toujours « accepte ». Le plus long d'abord, car un tour d'un seul pas
+ * (« F3-G4 ») est legal a lui seul ; le jeton suivant ne s'y recolle pas a
+ * tort, puisqu'il deplace les pieces de l'autre camp.
+ *
  * Renvoie {played, unresolved} — unresolved est le premier jeton refuse
  * (la lecture s'arrete la, comme dans JoclyBoard), ou null si tout a passe.
  */
-export async function ReplayBookMoves(tokens, { pick, play, exact }) {
+export async function ReplayBookMoves(tokens, { pick, play, exact, join = 0 }) {
     const queue = (tokens || []).slice();
     let played = 0;
     while (queue.length) {
@@ -193,6 +204,21 @@ export async function ReplayBookMoves(tokens, { pick, play, exact }) {
             await play(move);
             played++;
             continue;
+        }
+
+        if (join > 1) {
+            let joined = null;
+            for (let n = Math.min(join, queue.length + 1); n > 1 && !joined; n--) {
+                const group = [tok, ...queue.slice(0, n - 1)];
+                const move = await pick(group.join(' '));
+                if (move) joined = { move, n };
+            }
+            if (joined) {
+                queue.splice(0, joined.n - 1);
+                await play(joined.move);
+                played++;
+                continue;
+            }
         }
 
         let move = await pick(tok);

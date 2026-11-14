@@ -24,6 +24,20 @@
 // L'original est conservé en <nom>.AppImage.orig. À lancer après chaque
 // `cargo tauri build` produisant une AppImage.
 //
+// PUBLICATION (variables d'environnement, posées par le workflow de release) :
+//   TABULON_VARIANT=minimal|selection
+//       l'AppImage est renommée Tabulon-<variante>-<version>-<arch>.AppImage,
+//       le nommage attendu par appimage.github.io, au lieu du
+//       Tabulon_<version>_amd64.AppImage de Tauri ; elle est réempaquetée même
+//       sans libwayland à purger.
+//   TABULON_UPDATE_REPO=propriétaire/dépôt   (avec TABULON_VARIANT)
+//       information de mise à jour embarquée (AppImageUpdate,
+//       appimageupdatetool) :
+//         gh-releases-zsync|propriétaire|dépôt|latest|Tabulon-<variante>-*-<arch>.AppImage.zsync
+//       et fichier .zsync écrit à côté de l'AppImage : il doit être publié
+//       dans la même release. Chaque variante et chaque architecture ne se
+//       met à jour que vers elle-même.
+//
 // PRÉREQUIS : `appimagetool` pour réempaqueter — pris dans $APPIMAGETOOL,
 // sinon dans le PATH, sinon téléchargé (version figée, voir plus bas) dans
 // ~/.cache/tabulon/. Il est lancé avec --appimage-extract-and-run pour ne
@@ -32,7 +46,7 @@
 // la machine est aussi celle de l'AppImage.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, chmodSync, rmSync, readdirSync, renameSync, copyFileSync, openSync, readSync, closeSync, writeFileSync, lstatSync } from 'node:fs';
+import { existsSync, mkdirSync, chmodSync, rmSync, readdirSync, renameSync, copyFileSync, openSync, readSync, closeSync, writeFileSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
@@ -53,6 +67,33 @@ const APPIMAGETOOL_BASE =
  */
 export function appimageArch(nodeArch) {
     return { x64: 'x86_64', arm64: 'aarch64' }[nodeArch] || null;
+}
+
+/** Variantes publiées (voir l'en-tête) ; null = nom de Tauri conservé. */
+export const VARIANTS = ['minimal', 'selection'];
+
+/**
+ * Nom publié de l'AppImage : Tabulon-<variante>-<version>-<arch>.AppImage.
+ * Pur (testé). Le motif de mise à jour (updateInformation) en dépend : les
+ * deux doivent rester d'accord.
+ */
+export function releaseName(variant, version, arch) {
+    if (!VARIANTS.includes(variant)) throw new Error(`variante inconnue : ${variant} (${VARIANTS.join(', ')})`);
+    if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`version invalide : ${version}`);
+    if (!arch) throw new Error('architecture manquante');
+    return `Tabulon-${variant}-${version}-${arch}.AppImage`;
+}
+
+/**
+ * Information de mise à jour au format gh-releases-zsync de l'AppImageSpec :
+ * la dernière release du dépôt, le .zsync de la MÊME variante et de la MÊME
+ * architecture. Pur (testé).
+ */
+export function updateInformation(repo, variant, arch) {
+    const m = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(repo || '');
+    if (!m) throw new Error(`dépôt invalide : ${repo} (attendu propriétaire/dépôt)`);
+    if (!VARIANTS.includes(variant)) throw new Error(`variante inconnue : ${variant}`);
+    return `gh-releases-zsync|${m[1]}|${m[2]}|latest|Tabulon-${variant}-*-${arch}.AppImage.zsync`;
 }
 
 /**
@@ -143,6 +184,26 @@ function main() {
     }
     console.log(`[fix-appimage] cible : ${appImage} (${arch})`);
 
+    // Publication : nom final et information de mise à jour (voir l'en-tête).
+    // Validés AVANT tout travail : une variable mal écrite échoue tout de suite.
+    const variant = process.env.TABULON_VARIANT || null;
+    const repo = process.env.TABULON_UPDATE_REPO || null;
+    let finalPath = appImage, updInfo = null;
+    try {
+        if (variant) {
+            const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+            finalPath = join(dirname(appImage), releaseName(variant, version, arch));
+            if (repo) updInfo = updateInformation(repo, variant, arch);
+        } else if (repo) {
+            console.warn('[fix-appimage] TABULON_UPDATE_REPO sans TABULON_VARIANT : pas d\'information de mise à jour (le motif dépend du nom publié).');
+        }
+    } catch (e) {
+        console.error(`[fix-appimage] ${e.message}`);
+        process.exit(1);
+    }
+    if (finalPath !== appImage) console.log(`[fix-appimage] nom publié : ${basename(finalPath)}`);
+    if (updInfo) console.log(`[fix-appimage] mise à jour : ${updInfo}`);
+
     // 1. Extraire (l'AppImage sait s'auto-extraire, aucune dépendance FUSE).
     const workDir = join(os.tmpdir(), `tabulon-fix-appimage-${process.pid}`);
     mkdirSync(workDir, { recursive: true });
@@ -152,12 +213,13 @@ function main() {
 
     // 2. Purger.
     const removed = stripAppDir(appDir);
-    if (removed.length === 0) {
+    if (removed.length === 0 && !variant) {
         console.log('[fix-appimage] aucune libwayland-* dans le bundle — rien à faire (déjà purgée ?).');
         rmSync(workDir, { recursive: true, force: true });
         return;
     }
-    console.log(`[fix-appimage] retirées : ${removed.join(', ')}`);
+    if (removed.length) console.log(`[fix-appimage] retirées : ${removed.join(', ')}`);
+    else console.log('[fix-appimage] aucune libwayland-* à retirer ; réempaquetage pour le nom et la mise à jour.');
     restoreModes(appDir);
 
     // 3. Réempaqueter puis remplacer (original conservé en .orig). Le runtime
@@ -165,7 +227,9 @@ function main() {
     // exacte et aucun téléchargement — sans lui, appimagetool irait chercher
     // le runtime sur GitHub à chaque réempaquetage.
     const tool = findAppimagetool(arch);
-    const rebuilt = join(workDir, basename(appImage));
+    // le .zsync qu'appimagetool écrit porte le nom du fichier produit : il
+    // est donc produit directement sous son nom publié
+    const rebuilt = join(workDir, basename(finalPath));
     const runtimeArgs = [];
     const off = spawnSync(appImage, ['--appimage-offset'], { encoding: 'utf8' });
     const offset = parseInt((off.stdout || '').trim(), 10);
@@ -180,11 +244,13 @@ function main() {
     } else {
         console.warn('[fix-appimage] offset du runtime illisible — appimagetool téléchargera le runtime officiel.');
     }
-    const res = spawnSync(tool, ['--appimage-extract-and-run', ...runtimeArgs, appDir, rebuilt], {
+    const updArgs = updInfo ? ['-u', updInfo] : [];
+    const res = spawnSync(tool, ['--appimage-extract-and-run', ...runtimeArgs, ...updArgs, appDir, rebuilt], {
+        cwd: workDir,
         stdio: 'inherit',
         env: { ...process.env, ARCH: arch },
     });
-    if (res.status !== 0 || !existsSync(rebuilt)) {
+    if (res.status !== 0 || !existsSync(rebuilt) || (updInfo && !existsSync(rebuilt + '.zsync'))) {
         console.error('[fix-appimage] échec du réempaquetage (appimagetool) — AppImage originale laissée intacte.');
         rmSync(workDir, { recursive: true, force: true });
         process.exit(1);
@@ -195,12 +261,15 @@ function main() {
     // systeme de fichiers que la cible (/tmp en tmpfs sur Manjaro --
     // constate en reel, reproduit sur tmpfs). On copie donc d'abord dans le
     // REPERTOIRE CIBLE, puis rename local : meme peripherique, atomique.
-    const staged = appImage + '.new';
+    const staged = finalPath + '.new';
     copyFileSync(rebuilt, staged);
     chmodSync(staged, 0o755);
-    renameSync(staged, appImage);
+    renameSync(staged, finalPath);
+    if (updInfo) copyFileSync(rebuilt + '.zsync', finalPath + '.zsync');
+    // renommée : l'AppImage au nom de Tauri ne reste qu'en .orig
+    if (finalPath !== appImage) rmSync(appImage, { force: true });
     rmSync(workDir, { recursive: true, force: true });
-    console.log(`[fix-appimage] OK : ${appImage} réempaquetée sans libwayland (original : ${basename(appImage)}.orig)`);
+    console.log(`[fix-appimage] OK : ${finalPath} réempaquetée${removed.length ? ' sans libwayland' : ''}${updInfo ? ', avec sa mise à jour (.zsync à publier à côté)' : ''} (original : ${basename(appImage)}.orig)`);
 }
 
 // Exécution directe seulement (import sans effet de bord pour les tests).
