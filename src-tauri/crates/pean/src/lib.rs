@@ -1,5 +1,5 @@
 //! Moteur de Péan, wargame tactique à hexagones de jocly2 : le niveau
-//! « Maréchal » de Tabulon.
+//! « Strategos » de Tabulon.
 //!
 //! - [`ctx`]      : le contexte d'un scénario, tel que jocly2 l'exporte ;
 //! - [`rules`]    : les règles, portage fidèle de `pean-rules.js` ;

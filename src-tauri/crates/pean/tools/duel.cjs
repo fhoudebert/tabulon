@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Duel : le Maréchal (pean-engine) contre un niveau jocly2 (Général par
+ * Duel : le Strategos (pean-engine) contre un niveau jocly2 (Taxiarchos par
  * défaut), camps alternés, une partie à la fois.
  *
  *   cargo build --release
@@ -8,8 +8,8 @@
  *
  *   --games N        parties par scénario (défaut 10)
  *   --scenarios a,b  batailles (identifiants des scénarios ; défaut : les quatre)
- *   --level L        niveau jocly2 adverse (défaut 2 : Général)
- *   --ms T           temps du Maréchal par coup (défaut 2500)
+ *   --level L        niveau jocly2 adverse (défaut 2 : Taxiarchos)
+ *   --ms T           temps du Strategos par coup (défaut 2500)
  *   --loops N        borne le niveau jocly2 à N itérations (sans limite de
  *                    temps : mesure indépendante de la charge) ; défaut : le
  *                    niveau tel quel (5 s, 500 itérations)
@@ -113,8 +113,8 @@ async function game(name, marechalSide) {
 			sc[res]++;
 			total[res]++;
 			maxMs = Math.max(maxMs, r.stats.maxMs);
-			console.log(`${name} #${i + 1} Maréchal=${r.camps[side]} : ${res} (${r.reason}, ${r.turns} tours)` +
-				` · Maréchal ${Math.round(r.stats.engineMs / Math.max(1, r.stats.engineMoves))} ms/coup (max ${r.stats.maxMs}, prof. moy. ${(r.stats.depth / Math.max(1, r.stats.engineMoves)).toFixed(1)})` +
+			console.log(`${name} #${i + 1} Strategos=${r.camps[side]} : ${res} (${r.reason}, ${r.turns} tours)` +
+				` · Strategos ${Math.round(r.stats.engineMs / Math.max(1, r.stats.engineMoves))} ms/coup (max ${r.stats.maxMs}, prof. moy. ${(r.stats.depth / Math.max(1, r.stats.engineMoves)).toFixed(1)})` +
 				` · jocly ${Math.round(r.stats.joclyMs / Math.max(1, r.stats.joclyMoves))} ms/coup`);
 		}
 		console.log(`== ${name} : ${sc.win} V / ${sc.draw} N / ${sc.loss} D`);

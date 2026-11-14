@@ -471,7 +471,7 @@ class NativeKriegspielWorker {
 
 /**
  * Faux Worker pour le moteur de Péan (wargame à hexagones), niveau
- * « Maréchal ». Même contrat que celui du Jeu de la guerre : moteur lié à
+ * « Strategos ». Même contrat que celui du Jeu de la guerre : moteur lié à
  * l'application (crate Rust `pean`), rien à traduire — jocly.pean.js écrit la
  * requête (texte JSON : contexte du scénario, état, temps) et relit le tour,
  * qu'il valide lui-même. Le déploiement libre ne passe pas par ici : jocly le

@@ -391,7 +391,7 @@ console.log('Test 12b - moteur du Jeu de la guerre (kriegspiel)');
     ok(seen.length === 1 && seen[0].type === 'Aborted', 'echec consecutif a Stop -> Aborted');
 }
 
-console.log('Test 12c - moteur de Péan (niveau Maréchal)');
+console.log('Test 12c - moteur de Péan (niveau Strategos)');
 {
     const REQUEST = JSON.stringify({ context: { cols: 25 }, state: { phase: 2 }, moveTimeMs: 2500 });
     let rpc = makeRpc({ pean_probe: () => Promise.resolve('Péan 0.1.0') });

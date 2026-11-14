@@ -1,4 +1,4 @@
-//! La recherche du Maréchal : alpha-bêta (négamax) à approfondissement
+//! La recherche du Strategos : alpha-bêta (négamax) à approfondissement
 //! itératif sur des tours candidats.
 //!
 //! Un tour de Péan (N ordres puis des combats) a bien trop de variantes pour

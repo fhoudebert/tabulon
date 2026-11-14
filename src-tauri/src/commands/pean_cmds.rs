@@ -1,4 +1,4 @@
-//! Moteur de Péan (wargame à hexagones de jocly) — niveau « Maréchal ».
+//! Moteur de Péan (wargame à hexagones de jocly) — niveau « Strategos ».
 //!
 //! Comme le moteur du Jeu de la guerre, c'est une bibliothèque Rust du dépôt
 //! (`crates/pean`), liée à Tabulon : pas de binaire à installer, la sonde

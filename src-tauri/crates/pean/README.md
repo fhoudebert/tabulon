@@ -1,4 +1,4 @@
-# pean — moteur de Péan (niveau « Maréchal »)
+# pean — moteur de Péan (niveau « Strategos », Στρατηγός, autrefois « Maréchal »)
 
 Moteur du wargame à hexagones *Péan* de jocly2 (`src/games/pean`), lié à Tabulon : bibliothèque sans autre
 dépendance que serde, appelée directement par `src/commands/pean_cmds.rs` (pas de binaire à fournir à côté de
@@ -29,7 +29,7 @@ clair pour un diagnostic.
 
 ## Mesure
 
-`tools/duel.cjs` : le Maréchal contre un niveau jocly2 (Général par défaut, tel quel : 5 s par tour), camps alternés,
+`tools/duel.cjs` : le Strategos contre un niveau jocly2 (Taxiarchos par défaut, tel quel : 5 s par tour), camps alternés,
 une partie à la fois ; chaque tour du moteur est validé par jocly2.
 
 ```sh
@@ -37,9 +37,9 @@ cargo build --release
 node tools/duel.cjs <racine jocly2> --games 13
 ```
 
-Novembre 2026, 2,5 s par tour, 13 parties par scénario, contre « Général » après la correction de pean-ai.js :
+Novembre 2026, 2,5 s par tour, 13 parties par scénario, contre « Taxiarchos » après la correction de pean-ai.js :
 
-| scénario | Maréchal contre Général |
+| scénario | Strategos contre Taxiarchos |
 |---|---|
 | Bataille libre | 11 V / 0 N / 2 D |
 | Leuctres | 9 V / 0 N / 4 D |
@@ -47,4 +47,4 @@ Novembre 2026, 2,5 s par tour, 13 parties par scénario, contre « Général » 
 | Laurion | 9 V / 0 N / 4 D |
 | total | 35 V / 2 N / 15 D, 69 % ; tour le plus long 2,56 s |
 
-(Avant la correction, contre un « Général » plus faible : 40 V / 1 N / 11 D, 78 %.)
+(Avant la correction, contre un « Taxiarchos » plus faible : 40 V / 1 N / 11 D, 78 %.)
