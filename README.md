@@ -18,16 +18,18 @@ Built on the Jocly game library with Tauri 2, Tabulon is inspired by the now-def
 - **Capture your games** — record a video of the board or take 3D screenshots, right from the app.
 - **Open as many boards as you like** — every game runs in its own window; satellite windows (history, clock, players, possible moves…) follow the one you're playing and close with it. In a timed game the clock opens by itself, next to the board.
 - **Use it in English or French** — the interface follows your system language.
-
-![A game in progress](game.png)
-
+- 
+## Examples
+| ![Rococo](game.png) | ![Le jeu de la guerre](jeu-de-la-guerre.png) |
+|:---:|:---:|
+| *Rococo* | *Le jeu de la guerre* |
 ## Getting started
 
 **You can get ready-to-use, pre-compiled versions of Tabulon available for Windows and Linux (x64 and ARM64) and macOS** on the [Releases page](https://github.com/fhoudebert/tabulon/releases). Download the package for your platform, install (or unpack) it, and launch — Tabulon works out of the box with a starter selection of built-in games. (Prefer building from source? See [DEVELOPMENT.md](DEVELOPMENT.md).)
 
 On Linux, two AppImages need no installation: **`Tabulon-selection`** comes with about thirty-five ready-to-play games (chess and variants, shogi, xiangqi, draughts, go 9×9, reversi, tafl…), **`Tabulon-minimal`** is the small one to complete with the full library or extensions. Make the file executable (`chmod +x Tabulon-selection-*.AppImage`) and run it. Both update themselves to the latest release with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate), downloading only what changed. They run on Ubuntu 22.04 and later and on distributions of the same age (glibc 2.35).
 
-These pre-built versions are not fixed: the game library of any installed Tabulon can be **customized** — up to the **full 125-game library** — in two ways:
+These pre-built versions are not fixed: the game library of any installed Tabulon can be **customized** — up to the **full 130-game library** — in two ways:
 
 1. **Install extensions (add or remove games)** — the easiest way. Open the **Extensions** screen (hub sidebar, Configuration group) and import downloaded `.tabulon-ext` files. Browse the catalogue:
 
